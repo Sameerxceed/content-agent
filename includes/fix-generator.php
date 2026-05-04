@@ -278,5 +278,24 @@ function fix_generate_all(array $site, PDO $db): array
     // 3. Robots.txt
     $fixes[] = fix_generate_robots($site);
 
+    // 4. Platform-specific notes
+    $platform = $site['platform'] ?? 'custom';
+    if ($platform === 'opencart') {
+        $fixes[] = [
+            'filename' => '.htaccess-patch.txt',
+            'path' => '.htaccess',
+            'content' => "# ContentAgent: Update .htaccess to allow llms.txt\n"
+                . "# Change this line:\n"
+                . "#   <FilesMatch \"(?i)((\\.tpl|\\.twig|\\.ini|\\.log|(?<!robots)\\.txt))\">\n"
+                . "# To:\n"
+                . "#   <FilesMatch \"(?i)((\\.tpl|\\.twig|\\.ini|\\.log|(?<!robots|llms)\\.txt))\">\n"
+                . "#\n"
+                . "# Also comment out the sitemap rewrite if using a static sitemap.xml:\n"
+                . "#   #RewriteRule ^sitemap.xml\$ index.php?route=extension/feed/google_sitemap [L]\n",
+            'instructions' => "Manual edit needed: Update .htaccess to allow llms.txt and static sitemap.xml access.",
+            'type' => 'htaccess_patch',
+        ];
+    }
+
     return $fixes;
 }
