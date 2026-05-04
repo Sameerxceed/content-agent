@@ -27,8 +27,8 @@ if ($audit_id):
     if (!$audit):
         echo '<div class="alert alert-error">Audit not found.</div>';
     else:
-        // Get issues (exclude resolved/fix_applied from display)
-        $stmt = $db->prepare('SELECT * FROM seo_issues WHERE audit_id = ? AND status NOT IN ("resolved", "ignored") ORDER BY FIELD(severity, "critical", "warning", "info"), type');
+        // Get issues (exclude resolved/ignored/fixed_by_snippet from display)
+        $stmt = $db->prepare('SELECT * FROM seo_issues WHERE audit_id = ? AND status NOT IN ("resolved", "ignored", "fixed_by_snippet") ORDER BY FIELD(severity, "critical", "warning", "info"), type');
         $stmt->execute([$audit['id']]);
         $issues = $stmt->fetchAll();
 
