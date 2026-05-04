@@ -54,7 +54,7 @@ if ($site_id) {
 }
 
 // Build CLI command
-$php = PHP_BINARY ?: 'php';
+$php = PHP_OS_FAMILY === 'Windows' ? 'C:\\xampp\\php\\php.exe' : '/usr/bin/php8.3';
 if (!file_exists($php)) {
     $php = 'php';
 }
