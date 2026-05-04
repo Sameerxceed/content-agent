@@ -323,38 +323,50 @@ if ($homepage['status'] === 200) {
 }
 echo "  Checked {$external_links_checked} external links\n";
 
-// ── Check for deployed fixes (page_seo + snippet) ──────
-// If fixes exist in page_seo for this site, those issues are resolved
+// ── Check for deployed fixes ──────────────────────────
+// Check if ContentAgent snippet is deployed on the site (site-wide fix)
+$snippet_deployed = false;
+$homepage_html = scraper_fetch($domain, 15);
+if ($homepage_html['status'] === 200 && strpos($homepage_html['body'], 'contentagent') !== false) {
+    $snippet_deployed = true;
+    echo "  ContentAgent snippet detected — marking fixable issues as resolved\n";
+}
+
+// Also check page_seo table for per-page fixes
 $stmt = $db->prepare('SELECT url_path FROM page_seo WHERE site_id = ?');
 $stmt->execute([$site_id]);
 $fixed_paths = $stmt->fetchAll(PDO::FETCH_COLUMN);
-
-// Normalize fixed paths to full URLs for comparison
 $fixed_urls = [];
 foreach ($fixed_paths as $path) {
     $fixed_urls[] = rtrim($domain, '/') . '/' . ltrim($path, '/');
-    $fixed_urls[] = rtrim($domain, '/') . '/' . ltrim($path, '/');
-    // Also match www variant
     $www_domain = str_replace('https://', 'https://www.', $domain);
     $fixed_urls[] = rtrim($www_domain, '/') . '/' . ltrim($path, '/');
 }
 $fixed_urls = array_map(fn($u) => rtrim($u, '/'), $fixed_urls);
+
+// Issues that the snippet / header fix handles site-wide
+$snippet_fixable = ['missing_canonical', 'missing_og', 'missing_schema'];
+// Issues that need per-page data (title, description) — only fix if in page_seo
+$per_page_fixable = ['missing_meta', 'duplicate_meta'];
 
 $resolved_count = 0;
 $open_issues = [];
 foreach ($issues as $issue) {
     $issue_url = rtrim($issue['url'], '/');
     $issue_type = $issue['type'];
-    // These issue types are fixable by our snippet
-    $snippet_fixable = ['missing_meta', 'missing_canonical', 'missing_og', 'missing_schema', 'duplicate_meta'];
-    if (in_array($issue_type, $snippet_fixable) && in_array($issue_url, $fixed_urls)) {
+
+    if ($snippet_deployed && in_array($issue_type, $snippet_fixable)) {
+        // Site-wide fixes: canonical, OG, schema are handled by the header snippet
         $resolved_count++;
         $issue['status'] = 'fixed_by_snippet';
-        $open_issues[] = $issue; // Still save it but mark as fixed
+    } elseif (in_array($issue_type, $per_page_fixable) && in_array($issue_url, $fixed_urls)) {
+        // Per-page fixes: title, description need page_seo data
+        $resolved_count++;
+        $issue['status'] = 'fixed_by_snippet';
     } else {
         $issue['status'] = 'open';
-        $open_issues[] = $issue;
     }
+    $open_issues[] = $issue;
 }
 $issues = $open_issues;
 
