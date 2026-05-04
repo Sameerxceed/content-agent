@@ -78,6 +78,24 @@ echo "  [2/7] Detecting platform...\n";
 $platform = scraper_detect_platform($html, $homepage['headers']);
 echo "         Platform: {$platform}\n";
 
+// ── Step 2b: Detect theme name ─────────────────────────
+echo "  [2b/7] Detecting theme...\n";
+$theme_name = 'default';
+if ($platform === 'opencart') {
+    // OpenCart themes are in catalog/view/theme/{name}/ — detect from CSS/JS paths
+    if (preg_match('/catalog\/view\/theme\/([a-zA-Z0-9_-]+)\//', $html, $tm)) {
+        $theme_name = $tm[1];
+    }
+} elseif ($platform === 'wordpress') {
+    // WordPress themes expose via stylesheet URL: /wp-content/themes/{name}/
+    if (preg_match('/wp-content\/themes\/([a-zA-Z0-9_-]+)\//', $html, $tm)) {
+        $theme_name = $tm[1];
+    }
+} elseif ($platform === 'shopify') {
+    $theme_name = 'theme'; // Shopify uses layout/theme.liquid
+}
+echo "         Theme: {$theme_name}\n";
+
 // ── Step 3: Extract brand elements ──────────────────────
 echo "  [3/7] Extracting brand elements...\n";
 $title  = scraper_get_title($doc);
@@ -159,6 +177,7 @@ echo "\nSaving results...\n";
 
 $stmt = $db->prepare('UPDATE sites SET
     platform     = ?,
+    theme_name   = ?,
     brand_colors = ?,
     brand_fonts  = ?,
     brand_tone   = ?,
@@ -169,6 +188,7 @@ $stmt = $db->prepare('UPDATE sites SET
 
 $stmt->execute([
     $platform,
+    $theme_name,
     json_encode($colors),
     json_encode($fonts),
     $brand_data['tone'] ?? null,

@@ -266,6 +266,75 @@ if ($next_step !== 'done'):
     </div>
 </div>
 
+<!-- 3b. Fix Files — Download/Deploy -->
+<?php if ($has_audit): ?>
+<?php
+    require_once __DIR__ . '/../../includes/fix-generator.php';
+    $platform_info = fix_get_platform_info($site);
+    $has_ftp = !empty($site['server_host']);
+?>
+<div class="section" id="sec-fixfiles">
+    <div class="section-header" onclick="toggleSection('fixfiles')">
+        <div class="section-status">
+            <div class="dot <?= $fixes_ready > 0 ? 'done' : 'not-done' ?>"></div>
+            <div>
+                <div class="section-title">📦 Fix Files</div>
+                <div class="section-subtitle">Download or deploy fix files for <?= e($site['platform'] ?: 'your site') ?></div>
+            </div>
+        </div>
+        <a href="<?= url('/api/download-fix.php?site_id=' . $site_id . '&type=all') ?>" class="section-action" style="background:#3b82f6;text-decoration:none;" onclick="event.stopPropagation()">Download All (ZIP)</a>
+    </div>
+    <div class="section-body">
+        <div style="font-size:13px;margin-bottom:6px;color:#6b7280;">Platform: <strong><?= e($site['platform'] ?: 'custom') ?></strong> | Theme: <strong><?= e($site['theme_name'] ?: 'default') ?></strong></div>
+        <table style="width:100%;font-size:13px;border-collapse:collapse;">
+            <thead>
+                <tr style="text-align:left;border-bottom:1px solid #e5e7eb;">
+                    <th style="padding:6px 8px;">File</th>
+                    <th style="padding:6px 8px;">Upload To</th>
+                    <th style="padding:6px 8px;">Action</th>
+                </tr>
+            </thead>
+            <tbody>
+                <tr style="border-bottom:1px solid #f3f4f6;">
+                    <td style="padding:6px 8px;">🔧 Header SEO Snippet</td>
+                    <td style="padding:6px 8px;font-family:monospace;font-size:11px;color:#6b7280;"><?= e($platform_info['header_path']) ?></td>
+                    <td style="padding:6px 8px;">
+                        <a href="<?= url('/api/download-fix.php?site_id=' . $site_id . '&type=header') ?>" style="background:#3b82f6;color:#fff;padding:3px 10px;border-radius:4px;font-size:12px;text-decoration:none;">Download</a>
+                        <?php if ($has_ftp): ?>
+                            <button onclick="deployFix('header')" style="background:#10b981;color:#fff;padding:3px 10px;border-radius:4px;font-size:12px;border:none;cursor:pointer;margin-left:4px;">Deploy</button>
+                        <?php endif; ?>
+                    </td>
+                </tr>
+                <tr style="border-bottom:1px solid #f3f4f6;">
+                    <td style="padding:6px 8px;">🗺️ sitemap.xml</td>
+                    <td style="padding:6px 8px;font-family:monospace;font-size:11px;color:#6b7280;"><?= e($platform_info['sitemap_path']) ?></td>
+                    <td style="padding:6px 8px;">
+                        <a href="<?= url('/api/download-fix.php?site_id=' . $site_id . '&type=sitemap') ?>" style="background:#3b82f6;color:#fff;padding:3px 10px;border-radius:4px;font-size:12px;text-decoration:none;">Download</a>
+                        <?php if ($has_ftp): ?>
+                            <button onclick="deployFix('sitemap')" style="background:#10b981;color:#fff;padding:3px 10px;border-radius:4px;font-size:12px;border:none;cursor:pointer;margin-left:4px;">Deploy</button>
+                        <?php endif; ?>
+                    </td>
+                </tr>
+                <tr>
+                    <td style="padding:6px 8px;">🤖 robots.txt</td>
+                    <td style="padding:6px 8px;font-family:monospace;font-size:11px;color:#6b7280;"><?= e($platform_info['robots_path']) ?></td>
+                    <td style="padding:6px 8px;">
+                        <a href="<?= url('/api/download-fix.php?site_id=' . $site_id . '&type=robots') ?>" style="background:#3b82f6;color:#fff;padding:3px 10px;border-radius:4px;font-size:12px;text-decoration:none;">Download</a>
+                        <?php if ($has_ftp): ?>
+                            <button onclick="deployFix('robots')" style="background:#10b981;color:#fff;padding:3px 10px;border-radius:4px;font-size:12px;border:none;cursor:pointer;margin-left:4px;">Deploy</button>
+                        <?php endif; ?>
+                    </td>
+                </tr>
+            </tbody>
+        </table>
+        <?php if (!$has_ftp): ?>
+            <div class="text-sm text-muted mt-2">Add FTP/SFTP credentials in <a href="<?= url('/dashboard/sites.php?action=edit&id=' . $site_id) ?>">Edit Settings</a> to enable one-click deploy.</div>
+        <?php endif; ?>
+        <div id="deploy-result" style="display:none;margin-top:8px;padding:8px 12px;border-radius:6px;font-size:13px;"></div>
+    </div>
+</div>
+<?php endif; ?>
+
 <!-- 4. Keywords -->
 <div class="section" id="sec-keywords">
     <div class="section-header" onclick="toggleSection('keywords')">
@@ -352,6 +421,35 @@ const siteId = <?= $site_id ?>;
 
 function toggleSection(name) {
     document.getElementById('sec-' + name).classList.toggle('open');
+}
+
+async function deployFix(type) {
+    const result = document.getElementById('deploy-result');
+    result.style.display = 'block';
+    result.style.background = '#eff6ff';
+    result.style.color = '#1e40af';
+    result.textContent = 'Deploying ' + type + ' via FTP...';
+    try {
+        const res = await fetch(API + '/deploy-fixes.php', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({site_id: siteId, type: type})
+        });
+        const data = await res.json();
+        if (data.success) {
+            result.style.background = '#ecfdf5';
+            result.style.color = '#065f46';
+            result.textContent = '✓ ' + type + ' deployed successfully to ' + (data.path || 'server');
+        } else {
+            result.style.background = '#fef2f2';
+            result.style.color = '#991b1b';
+            result.textContent = '✗ Deploy failed: ' + (data.error || 'Unknown error');
+        }
+    } catch (e) {
+        result.style.background = '#fef2f2';
+        result.style.color = '#991b1b';
+        result.textContent = '✗ Deploy failed: ' + e.message;
+    }
 }
 
 function log(id, text, cls) {

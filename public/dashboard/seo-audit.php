@@ -52,6 +52,7 @@ if ($audit_id):
         </div>
         <div class="flex gap-2">
             <button onclick="fixAll(<?= $audit['id'] ?>)" class="btn btn-accent btn-sm" id="fix-all-btn">🤖 Fix All Issues</button>
+            <a href="<?= url('/api/download-fix.php?site_id=' . $audit['site_id'] . '&type=all') ?>" class="btn btn-sm" style="background:#3b82f6;color:#fff;text-decoration:none;">📦 Download Fix Files</a>
             <a href="<?= url('/dashboard/seo-audit.php?site=' . $audit['site_id']) ?>" class="btn btn-outline btn-sm">All Audits</a>
         </div>
     </div>

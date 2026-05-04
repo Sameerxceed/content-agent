@@ -95,9 +95,19 @@ if ($action === 'scan') {
         }
     }
 
+    // Detect theme name
+    $theme_name = 'default';
+    if ($platform === 'opencart' && preg_match('/catalog\/view\/theme\/([a-zA-Z0-9_-]+)\//', $html, $tm)) {
+        $theme_name = $tm[1];
+    } elseif ($platform === 'wordpress' && preg_match('/wp-content\/themes\/([a-zA-Z0-9_-]+)\//', $html, $tm)) {
+        $theme_name = $tm[1];
+    } elseif ($platform === 'shopify') {
+        $theme_name = 'theme';
+    }
+
     // Save to DB
-    $stmt = $db->prepare('UPDATE sites SET platform = ?, brand_colors = ?, blog_path = ?, scanned_at = NOW() WHERE id = ?');
-    $stmt->execute([$platform, json_encode(array_slice($colors, 0, 5)), $blog_path ?: '/blog', $site_id]);
+    $stmt = $db->prepare('UPDATE sites SET platform = ?, theme_name = ?, brand_colors = ?, blog_path = ?, scanned_at = NOW() WHERE id = ?');
+    $stmt->execute([$platform, $theme_name, json_encode(array_slice($colors, 0, 5)), $blog_path ?: '/blog', $site_id]);
 
     // Log
     $db->prepare('INSERT INTO agent_log (site_id, action, details, status) VALUES (?, ?, ?, ?)')->execute([
