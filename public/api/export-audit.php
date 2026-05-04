@@ -49,26 +49,29 @@ require_once __DIR__ . '/../../includes/haiku.php';
 
 $ai_suggestions = [];
 if (!empty($issues)) {
-    $issues_text = '';
-    foreach ($issues as $idx => $issue) {
-        $issues_text .= ($idx + 1) . ". [{$issue['type']}] URL: {$issue['url']} — {$issue['description']}\n";
-    }
-
-    $ai_prompt = "You are an SEO expert. For the website {$audit['domain']} ({$audit['site_name']}), generate specific, ready-to-use fix text for each issue below. "
-        . "For missing meta descriptions: write the actual meta description text (120-160 chars). "
-        . "For long titles: write a shorter version (under 60 chars). "
-        . "For missing alt text: suggest descriptive alt text based on the image filename. "
-        . "For other issues: give a specific, actionable one-line fix.\n\n"
-        . "Issues:\n{$issues_text}\n\n"
-        . "Reply with ONLY a JSON array of strings, one suggestion per issue, in the same order. No markdown, no explanation.";
-
-    $ai_result = haiku_chat([['role' => 'user', 'content' => $ai_prompt]], 4096);
-    if ($ai_result) {
-        // Extract JSON array from response
-        $json_str = $ai_result;
-        if (preg_match('/\[.*\]/s', $json_str, $matches)) {
-            $ai_suggestions = json_decode($matches[0], true) ?: [];
+    try {
+        $issues_text = '';
+        foreach ($issues as $idx => $issue) {
+            $issues_text .= ($idx + 1) . ". [{$issue['type']}] URL: {$issue['url']} — {$issue['description']}\n";
         }
+
+        $system = "You are an SEO expert. Generate specific, ready-to-use fix text for each issue. "
+            . "For missing meta descriptions: write the actual meta description text (120-160 chars). "
+            . "For long titles: write a shorter version (under 60 chars). "
+            . "For missing alt text: suggest descriptive alt text based on the image filename. "
+            . "For other issues: give a specific, actionable one-line fix. "
+            . "Reply with ONLY a JSON array of strings, one suggestion per issue, in the same order. No markdown, no explanation.";
+
+        $user_msg = "Website: {$audit['domain']} ({$audit['site_name']})\n\nIssues:\n{$issues_text}";
+
+        $ai_result = haiku_chat($system, $user_msg, 4096);
+        if ($ai_result['success'] && !empty($ai_result['content'])) {
+            if (preg_match('/\[.*\]/s', $ai_result['content'], $matches)) {
+                $ai_suggestions = json_decode($matches[0], true) ?: [];
+            }
+        }
+    } catch (\Exception $e) {
+        // AI suggestions are optional — continue without them
     }
 }
 
