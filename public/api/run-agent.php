@@ -54,9 +54,9 @@ if ($site_id) {
 }
 
 // Build CLI command
-$php = 'C:\\xampp\\php\\php.exe';
+$php = PHP_BINARY ?: 'php';
 if (!file_exists($php)) {
-    $php = PHP_BINARY ?: 'php';
+    $php = 'php';
 }
 
 $script = realpath(__DIR__ . '/../../agent/' . $valid_agents[$agent]);

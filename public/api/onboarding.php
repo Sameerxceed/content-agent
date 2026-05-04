@@ -129,7 +129,7 @@ if ($action === 'audit') {
     if (!$site) json_response(['error' => 'Site not found'], 404);
 
     // Run auditor via CLI (captures output)
-    $php = 'C:\\xampp\\php\\php.exe';
+    $php = PHP_BINARY;
     $script = realpath(__DIR__ . '/../../agent/seo-auditor.php');
     $cmd = "\"{$php}\" \"{$script}\" --site={$site_id} --max-pages=30 2>&1";
 
@@ -164,7 +164,7 @@ if ($action === 'keywords') {
     if (!$site) json_response(['error' => 'Site not found'], 404);
 
     // Run keyword research via CLI
-    $php = 'C:\\xampp\\php\\php.exe';
+    $php = PHP_BINARY;
     $script = realpath(__DIR__ . '/../../agent/keyword-research.php');
     $seed = $site['domain'];
     $cmd = "\"{$php}\" \"{$script}\" --site={$site_id} 2>&1";
