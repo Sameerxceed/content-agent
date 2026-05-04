@@ -70,6 +70,10 @@ return [
     'stripe_price_growth'     => '',
     'stripe_price_agency'     => '',
 
+    // Auto-deploy (GitHub webhook)
+    'deploy_secret' => '', // GitHub webhook secret
+    'deploy_path'   => '/opt/contentagent',
+
     // Rate limiting
     'rate_limit_requests'    => 60,
     'rate_limit_window'      => 60, // seconds
