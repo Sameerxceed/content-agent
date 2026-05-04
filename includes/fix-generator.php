@@ -196,8 +196,10 @@ function fix_generate_sitemap(array $site, PDO $db): array
     $xml .= '<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">' . "\n";
 
     foreach ($all_urls as $url) {
-        // Skip non-page URLs
+        // Skip non-page URLs, fragments, and system routes
         if (preg_match('/\.(jpg|jpeg|png|gif|svg|pdf|css|js|zip)(\?|$)/i', $url)) continue;
+        if (strpos($url, '#') !== false) continue;
+        if (preg_match('/route=(extension\/|checkout\/|account\/|affiliate\/)/', $url)) continue;
 
         $xml .= "  <url>\n";
         $xml .= "    <loc>" . htmlspecialchars($url) . "</loc>\n";

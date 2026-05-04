@@ -125,8 +125,18 @@ while (!empty($urls_to_crawl) && $pages_crawled < $max_pages) {
     // Skip data: URIs and non-page URLs
     if (strpos($url, 'data:') !== false) continue;
 
-    // Skip OpenCart system/extension routes that aren't real pages
-    if (preg_match('/route=(extension\/(captcha|feed|analytics)|checkout\/(cart|checkout)|account\/(login|register|logout))/', $url)) {
+    // Skip CMS system/extension routes that aren't real content pages
+    if (preg_match('/route=(extension\/|checkout\/|account\/|affiliate\/|information\/gdpr)/', $url)) {
+        continue;
+    }
+
+    // Skip OpenCart index.php pages without a route (or with common system routes)
+    if (preg_match('/index\.php\?route=(common\/(home|maintenance)|error\/)/', $url)) {
+        continue;
+    }
+
+    // Skip common non-content paths
+    if (preg_match('/\/(wp-admin|wp-login|admin|cron|api|feed|xmlrpc)\b/i', $url)) {
         continue;
     }
 
