@@ -1,0 +1,314 @@
+<html xmlns:o="urn:schemas-microsoft-com:office:office"
+xmlns:w="urn:schemas-microsoft-com:office:word"
+xmlns="http://www.w3.org/TR/REC-html40">
+<head>
+<meta charset="utf-8">
+<title>ContentAgent — Feature List</title>
+<style>
+body { font-family: Calibri, Arial, sans-serif; font-size: 11pt; line-height: 1.5; margin: 2cm; }
+h1 { font-size: 22pt; color: #1a1a1a; border-bottom: 2px solid #333; padding-bottom: 6pt; }
+h2 { font-size: 16pt; color: #2c3e50; margin-top: 18pt; }
+h3 { font-size: 13pt; color: #34495e; margin-top: 14pt; }
+ul { margin-left: 20pt; }
+li { margin-bottom: 3pt; }
+code { font-family: Consolas, monospace; font-size: 10pt; background: #f4f4f4; padding: 1pt 3pt; }
+pre { font-family: Consolas, monospace; font-size: 9pt; background: #f4f4f4; padding: 10pt; border: 1px solid #ddd; white-space: pre-wrap; }
+hr { border: none; border-top: 1px solid #ccc; margin: 18pt 0; }
+b { color: #1a6b3a; }
+</style>
+</head>
+<body>
+
+<h1>ContentAgent &mdash; Feature List</h1>
+
+<h2>MVP (Week 1-4)</h2>
+
+<h3>1. Website Scanner</h3>
+<ul>
+<li>&#9744; Enter any URL &rarr; agent fetches and analyzes the site</li>
+<li>&#9744; Detect platform (WordPress, Shopify, OpenCart, custom)</li>
+<li>&#9744; Extract brand colors, fonts, logo</li>
+<li>&#9744; Extract existing content (pages, products, about)</li>
+<li>&#9744; Identify social media links</li>
+<li>&#9744; Detect if blog exists</li>
+<li>&#9744; Generate brand tone/voice description</li>
+</ul>
+
+<h3>2. Technical SEO Audit</h3>
+<ul>
+<li>&#9744; Crawl all internal links &rarr; detect broken links (404, 410)</li>
+<li>&#9744; Detect 401/403 unauthorized pages (login walls, restricted content)</li>
+<li>&#9744; Check sitemap.xml exists and is valid (parseable, no orphan URLs)</li>
+<li>&#9744; Check robots.txt exists and isn't blocking important pages</li>
+<li>&#9744; Validate structured data / schema markup (JSON-LD, Microdata)</li>
+<li>&#9744; Detect missing or duplicate meta titles / descriptions</li>
+<li>&#9744; Check canonical tags (missing, self-referencing, conflicting)</li>
+<li>&#9744; Detect redirect chains and loops (301/302)</li>
+<li>&#9744; Check SSL certificate validity</li>
+<li>&#9744; Page speed basics: detect render-blocking resources, large images</li>
+<li>&#9744; Mobile-friendliness check (viewport meta, responsive hints)</li>
+<li>&#9744; Detect missing alt text on images</li>
+<li>&#9744; Check Open Graph / Twitter Card tags</li>
+<li>&#9744; Generate technical audit report per site (score + issues list)</li>
+<li>&#9744; Store issues in DB, track fixes over time</li>
+<li>&#9744; Re-run audit weekly via cron, flag regressions</li>
+<li>&#9744; <b>Auto-remediation:</b> for each issue, propose specific fix with code/config snippet</li>
+<li>&#9744; Auto-fix broken internal links (suggest correct URL from sitemap)</li>
+<li>&#9744; Auto-generate missing meta titles/descriptions using Haiku</li>
+<li>&#9744; Auto-generate missing alt text for images using Haiku</li>
+<li>&#9744; Auto-generate missing schema markup (JSON-LD) per page type</li>
+<li>&#9744; Generate sitemap.xml if missing (crawl-based)</li>
+<li>&#9744; Generate robots.txt if missing (sensible defaults)</li>
+<li>&#9744; Fix report: exportable checklist with issue &rarr; fix &rarr; status</li>
+<li>&#9744; Dashboard: technical health score card per site with trend</li>
+</ul>
+
+<h3>3. Keyword Research</h3>
+<ul>
+<li>&#9744; Google Autocomplete scraper (free)</li>
+<li>&#9744; Google &quot;People Also Ask&quot; scraper (free)</li>
+<li>&#9744; Keyword clustering (group related terms into article topics)</li>
+<li>&#9744; Competitor content analysis (what similar sites rank for)</li>
+<li>&#9744; Keyword difficulty estimation (basic &mdash; by search result count)</li>
+<li>&#9744; Store keyword list per site with priority scores</li>
+</ul>
+
+<h3>4. Blog Writer (Haiku)</h3>
+<ul>
+<li>&#9744; Generate 800-1200 word SEO articles from keyword clusters</li>
+<li>&#9744; Auto-generate: title, meta description, H2 structure, excerpt</li>
+<li>&#9744; Internal linking suggestions (to other posts on same site)</li>
+<li>&#9744; Match brand tone per site (system prompt per customer)</li>
+<li>&#9744; Create as draft &rarr; queue for approval</li>
+<li>&#9744; 4 posts/week/site schedule</li>
+</ul>
+
+<h3>5. News Scraper</h3>
+<ul>
+<li>&#9744; Pull from 10+ RSS feeds (configurable per site/niche)</li>
+<li>&#9744; Parse title, description, date, source URL</li>
+<li>&#9744; Filter by relevance (keyword matching)</li>
+<li>&#9744; Deduplicate (same story from multiple sources)</li>
+<li>&#9744; Store in database, publish to blog as &quot;news&quot; type</li>
+<li>&#9744; Daily cron job</li>
+</ul>
+
+<h3>6. Hosted Blog Engine</h3>
+<ul>
+<li>&#9744; Multi-tenant: one engine serves all customer blogs</li>
+<li>&#9744; URL structure: customer.com/blog/post-slug</li>
+<li>&#9744; Dynamic theme: uses customer's brand colors/fonts</li>
+<li>&#9744; SEO: meta tags, Open Graph, JSON-LD, sitemap.xml</li>
+<li>&#9744; Responsive design</li>
+<li>&#9744; Blog listing page with pagination</li>
+<li>&#9744; Single post page with prose styling</li>
+<li>&#9744; RSS feed per site</li>
+<li>&#9744; Customer connects via reverse proxy (Apache/Nginx config provided)</li>
+</ul>
+
+<h3>7. Dashboard</h3>
+<ul>
+<li>&#9744; Login / auth (session-based)</li>
+<li>&#9744; Add new site (enter URL &rarr; scanner runs)</li>
+<li>&#9744; View all sites</li>
+<li>&#9744; Per-site: content queue (drafts, approved, published)</li>
+<li>&#9744; Approve / edit / reject posts</li>
+<li>&#9744; Agent settings per site (topics, keywords, tone, schedule)</li>
+<li>&#9744; Agent activity log (what it did and why)</li>
+</ul>
+
+<h3>8. Cron / Scheduler</h3>
+<ul>
+<li>&#9744; Daily: news scraper runs for all active sites</li>
+<li>&#9744; Mon + Thu: blog writer generates posts</li>
+<li>&#9744; Weekly: keyword re-evaluation</li>
+<li>&#9744; Weekly: technical SEO audit re-scan, flag regressions</li>
+<li>&#9744; All jobs logged with status (success/fail/skipped)</li>
+</ul>
+
+<hr>
+
+<h2>V2 (Month 2-3)</h2>
+
+<h3>9. Social Media Distribution</h3>
+<ul>
+<li>&#9744; Repurpose blog post &rarr; LinkedIn post (200-word summary)</li>
+<li>&#9744; Repurpose blog post &rarr; Twitter/X thread (5 tweets)</li>
+<li>&#9744; Repurpose blog post &rarr; Facebook post</li>
+<li>&#9744; LinkedIn API integration</li>
+<li>&#9744; Twitter/X API integration</li>
+<li>&#9744; Facebook/Meta Graph API integration</li>
+<li>&#9744; Scheduling: post at optimal times</li>
+<li>&#9744; Per-site social account connections</li>
+</ul>
+
+<h3>10. Newsletter / Email</h3>
+<ul>
+<li>&#9744; Weekly digest email (top posts from the week)</li>
+<li>&#9744; Subscriber management (signup form embed)</li>
+<li>&#9744; Resend API integration (or SendGrid)</li>
+<li>&#9744; Unsubscribe handling</li>
+</ul>
+
+<h3>11. Analytics</h3>
+<ul>
+<li>&#9744; Google Search Console API integration</li>
+<li>&#9744; Track keyword rankings over time</li>
+<li>&#9744; Track page views per post (via Search Console)</li>
+<li>&#9744; Dashboard charts: traffic trend, top posts, keyword positions</li>
+<li>&#9744; Agent uses analytics to adjust strategy (write more of what ranks)</li>
+</ul>
+
+<h3>12. Agent Intelligence (upgrade from automation to real agent)</h3>
+<ul>
+<li>&#9744; Observe: check rankings, traffic, engagement weekly</li>
+<li>&#9744; Decide: which keywords need more content, what topics are trending</li>
+<li>&#9744; Act: generate targeted content to fill gaps</li>
+<li>&#9744; Learn: track what worked, adjust tone/topics/frequency</li>
+<li>&#9744; Log all decisions with reasoning</li>
+</ul>
+
+<hr>
+
+<h2>V3 (Month 4-6)</h2>
+
+<h3>13. External CMS Connectors</h3>
+<ul>
+<li>&#9744; WordPress REST API connector</li>
+<li>&#9744; Shopify Blog API connector</li>
+<li>&#9744; Generic REST API connector (configurable endpoint + auth)</li>
+<li>&#9744; Auto-detect and suggest connector during scan</li>
+</ul>
+
+<h3>14. Multi-user / Agency</h3>
+<ul>
+<li>&#9744; Team accounts (invite collaborators)</li>
+<li>&#9744; Per-user permissions (admin, editor, viewer)</li>
+<li>&#9744; Client-facing read-only dashboard</li>
+<li>&#9744; White-label option (remove ContentAgent branding)</li>
+</ul>
+
+<h3>15. Billing</h3>
+<ul>
+<li>&#9744; Stripe integration</li>
+<li>&#9744; Plan management (Starter / Growth / Agency)</li>
+<li>&#9744; Usage tracking (posts generated, sites connected)</li>
+<li>&#9744; Trial period (14 days free)</li>
+</ul>
+
+<h3>16. Instagram Carousel Generator</h3>
+<ul>
+<li>&#9744; Turn blog post into 5-slide carousel images</li>
+<li>&#9744; Auto-generate using HTML canvas or PHP GD</li>
+<li>&#9744; Post via Instagram API</li>
+</ul>
+
+<hr>
+
+<h2>Database Schema (MVP)</h2>
+
+<pre>
+-- Users / Auth
+users (id, email, password_hash, name, plan, created_at)
+
+-- Customer websites
+sites (id, user_id, name, domain, platform, brand_colors, brand_fonts,
+       brand_tone, topics, keywords, agent_mode, blog_path,
+       rss_feeds, is_active, created_at)
+
+-- Blog posts + news
+posts (id, site_id, title, slug, body, excerpt,
+       seo_title, seo_description, seo_keywords,
+       type, tags, status, created_at, published_at)
+       -- type: "blog" | "news"
+       -- status: "draft" | "approved" | "published" | "rejected"
+
+-- Social media posts
+social_posts (id, post_id, site_id, platform, content,
+              status, scheduled_at, posted_at)
+
+-- Agent activity log
+agent_log (id, site_id, action, details, created_at)
+
+-- Keyword tracking
+keywords (id, site_id, keyword, search_volume, difficulty,
+          current_rank, target_rank, last_checked, created_at)
+
+-- Technical SEO audit
+seo_audits (id, site_id, score, total_issues, critical, warnings,
+            passed, run_at)
+
+-- Individual audit issues
+seo_issues (id, audit_id, site_id, type, severity, url,
+            description, suggested_fix, status, fixed_at, created_at)
+            -- type: "broken_link" | "missing_meta" | "missing_schema" | "missing_sitemap" |
+            --       "missing_robots" | "redirect_chain" | "missing_alt" | "ssl_error" |
+            --       "missing_canonical" | "missing_og" | "auth_error" | "speed_issue"
+            -- severity: "critical" | "warning" | "info"
+            -- status: "open" | "fix_proposed" | "fix_applied" | "resolved" | "ignored"
+</pre>
+
+<h2>File Structure</h2>
+
+<pre>
+contentagent/
+├── public/                     ← Web root (Apache/Nginx points here)
+│   ├── index.php               ← Dashboard entry
+│   ├── dashboard/
+│   │   ├── sites.php
+│   │   ├── posts.php
+│   │   ├── settings.php
+│   │   ├── analytics.php
+│   │   └── assets/             ← CSS, JS for dashboard
+│   ├── blog/                   ← Hosted blog engine
+│   │   ├── index.php           ← Blog listing
+│   │   └── post.php            ← Single post
+│   ├── api/
+│   │   ├── scan.php
+│   │   ├── posts.php
+│   │   └── sites.php
+│   └── auth/
+│       ├── login.php
+│       └── logout.php
+│
+├── agent/                      ← CLI scripts (run by cron)
+│   ├── scanner.php
+│   ├── keyword-research.php
+│   ├── blog-writer.php
+│   ├── news-scraper.php
+│   ├── social-poster.php
+│   ├── seo-auditor.php
+│   └── evaluator.php
+│
+├── includes/
+│   ├── db.php
+│   ├── auth.php
+│   ├── haiku.php               ← Claude API wrapper
+│   ├── rss.php                 ← RSS feed parser
+│   ├── scraper.php             ← Web scraper utilities
+│   └── helpers.php
+│
+├── config/
+│   ├── config.example.php
+│   └── rss-feeds.php           ← Default RSS feed lists by niche
+│
+├── database/
+│   ├── migrations/
+│   │   └── 001_initial.sql
+│   └── seeds/
+│       └── default_feeds.sql
+│
+├── templates/
+│   ├── dashboard/              ← Dashboard HTML templates
+│   ├── blog/                   ← Blog theme templates
+│   └── email/                  ← Newsletter templates
+│
+├── logs/                       ← Agent logs
+├── cache/                      ← Static blog page cache
+├── CLAUDE.md
+├── FEATURES.md
+└── README.md
+</pre>
+
+</body>
+</html>

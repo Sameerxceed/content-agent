@@ -1,0 +1,451 @@
+<?php
+/**
+ * Site Command Center — Single page for everything.
+ * This is THE page for a site. No other pages needed.
+ *
+ * Flow: Scan → Audit → Fix → Keywords → Content → Monitor
+ * Each section shows status + action button + results when done.
+ */
+require_once __DIR__ . '/../../includes/helpers.php';
+require_once __DIR__ . '/../../includes/auth.php';
+
+auth_start();
+auth_require();
+
+$db = require __DIR__ . '/../../includes/db.php';
+$user_id = auth_user_id();
+
+$site_id = (int)($_GET['id'] ?? 0);
+
+if (!$site_id) { redirect('/dashboard/sites.php'); }
+
+$stmt = $db->prepare('SELECT * FROM sites WHERE id = ? AND user_id = ?');
+$stmt->execute([$site_id, $user_id]);
+$site = $stmt->fetch();
+
+if (!$site) { redirect('/dashboard/sites.php'); }
+
+// ── Gather all data ─────────────────────────────────────
+// Latest audit
+$stmt = $db->prepare('SELECT * FROM seo_audits WHERE site_id = ? ORDER BY run_at DESC LIMIT 1');
+$stmt->execute([$site_id]);
+$audit = $stmt->fetch();
+
+// Post counts
+$stmt = $db->prepare('SELECT status, COUNT(*) as cnt FROM posts WHERE site_id = ? GROUP BY status');
+$stmt->execute([$site_id]);
+$pc = []; foreach ($stmt->fetchAll() as $r) $pc[$r['status']] = $r['cnt'];
+
+// Keywords
+$stmt = $db->prepare('SELECT COUNT(*) FROM keywords WHERE site_id = ?');
+$stmt->execute([$site_id]);
+$kw_count = $stmt->fetchColumn();
+
+// Open issues (latest audit only)
+$open_issues = 0;
+if ($audit) {
+    $stmt = $db->prepare('SELECT COUNT(*) FROM seo_issues WHERE audit_id = ? AND status = "open"');
+    $stmt->execute([$audit['id']]);
+    $open_issues = $stmt->fetchColumn();
+}
+
+// Fixed issues
+$stmt = $db->prepare('SELECT COUNT(*) FROM page_seo WHERE site_id = ?');
+$stmt->execute([$site_id]);
+$fixes_ready = $stmt->fetchColumn();
+
+// Recent posts
+$stmt = $db->prepare('SELECT id, title, slug, type, status, created_at FROM posts WHERE site_id = ? ORDER BY created_at DESC LIMIT 5');
+$stmt->execute([$site_id]);
+$recent_posts = $stmt->fetchAll();
+
+// Top keywords
+$stmt = $db->prepare('SELECT keyword, priority, difficulty FROM keywords WHERE site_id = ? ORDER BY priority DESC LIMIT 8');
+$stmt->execute([$site_id]);
+$top_kws = $stmt->fetchAll();
+
+// Audit history for chart
+$stmt = $db->prepare('SELECT score, DATE_FORMAT(run_at, "%d %b") as label FROM seo_audits WHERE site_id = ? ORDER BY run_at ASC');
+$stmt->execute([$site_id]);
+$score_history = $stmt->fetchAll();
+
+// Determine what step user is on
+$has_scan = !empty($site['scanned_at']);
+$has_audit = !empty($audit);
+$has_fixes = $fixes_ready > 0;
+$has_keywords = $kw_count > 0;
+$has_content = array_sum($pc) > 0;
+
+$page_title = $site['name'];
+
+ob_start();
+?>
+
+<style>
+.site-header { display:flex; align-items:center; gap:16px; margin-bottom:16px; }
+.site-header .score { width:56px; height:56px; border-radius:50%; display:flex; align-items:center; justify-content:center; font-weight:800; font-size:20px; color:#fff; flex-shrink:0; }
+.site-header .score.good { background:#10b981; }
+.site-header .score.ok { background:#f59e0b; }
+.site-header .score.bad { background:#ef4444; }
+.site-header .score.na { background:#e2e8f0; color:#94a3b8; font-size:14px; }
+
+.section { background:#fff; border:1px solid var(--border); border-radius:8px; margin-bottom:12px; overflow:hidden; }
+.section-header { padding:14px 18px; display:flex; align-items:center; justify-content:space-between; cursor:pointer; }
+.section-header:hover { background:#f8fafb; }
+.section-status { display:flex; align-items:center; gap:8px; }
+.section-status .dot { width:10px; height:10px; border-radius:50%; flex-shrink:0; }
+.section-status .dot.done { background:#10b981; }
+.section-status .dot.pending { background:#f59e0b; }
+.section-status .dot.not-done { background:#e2e8f0; }
+.section-title { font-weight:600; font-size:14px; }
+.section-subtitle { font-size:12px; color:#94a3b8; }
+.section-body { padding:0 18px 18px; display:none; }
+.section.open .section-body { display:block; }
+.section-action { padding:10px 20px; border:none; border-radius:6px; font-size:13px; font-weight:600; cursor:pointer; color:#fff; }
+
+.next-action { background:var(--accent); color:#fff; border:none; border-radius:8px; padding:14px 28px; font-size:15px; font-weight:600; cursor:pointer; display:block; width:100%; text-align:center; margin-top:12px; }
+.next-action:hover { background:#a82a00; }
+
+.mini-log { font-family:monospace; font-size:11px; background:#0f172a; color:#94a3b8; border-radius:6px; padding:12px; max-height:200px; overflow-y:auto; margin-top:10px; display:none; }
+.mini-log .s { color:#10b981; }
+.mini-log .i { color:#3b82f6; }
+.mini-log .w { color:#f59e0b; }
+
+.kw-list { display:flex; flex-wrap:wrap; gap:6px; margin-top:8px; }
+.kw-list span { background:#f1f5f9; padding:3px 10px; border-radius:12px; font-size:12px; color:#475569; }
+
+.edit-link { font-size:12px; color:var(--primary); text-decoration:none; }
+.edit-link:hover { text-decoration:underline; }
+</style>
+
+<!-- Site Header -->
+<div class="site-header">
+    <?php
+    $sc = $audit ? $audit['score'] : -1;
+    $sc_cls = $sc < 0 ? 'na' : ($sc >= 80 ? 'good' : ($sc >= 50 ? 'ok' : 'bad'));
+    ?>
+    <div class="score <?= $sc_cls ?>"><?= $sc >= 0 ? $sc : 'N/A' ?></div>
+    <div>
+        <div style="font-size:18px;font-weight:700;color:var(--primary);"><?= e($site['name']) ?></div>
+        <div class="text-sm text-muted">
+            <?= e($site['domain']) ?>
+            <?php if ($site['platform']): ?><span class="badge badge-info" style="font-size:10px;margin-left:4px;"><?= e($site['platform']) ?></span><?php endif; ?>
+        </div>
+    </div>
+    <div style="margin-left:auto;display:flex;gap:8px;">
+        <a href="<?= url('/dashboard/sites.php?action=edit&id=' . $site_id) ?>" class="btn btn-outline btn-sm">Edit Settings</a>
+        <a href="<?= url('/api/export.php?site_id=' . $site_id . '&type=full') ?>" class="btn btn-outline btn-sm">Export Report</a>
+    </div>
+</div>
+
+<!-- Quick Stats -->
+<div class="stats-grid" style="margin-bottom:12px;">
+    <div class="stat-card"><div class="stat-label">SEO Score</div><div class="stat-value"><?= $sc >= 0 ? $sc . '/100' : '—' ?></div></div>
+    <div class="stat-card"><div class="stat-label">Published</div><div class="stat-value"><?= $pc['published'] ?? 0 ?></div></div>
+    <div class="stat-card"><div class="stat-label">Keywords</div><div class="stat-value"><?= $kw_count ?></div></div>
+    <div class="stat-card"><div class="stat-label">Issues</div><div class="stat-value" style="color:<?= $open_issues > 0 ? 'var(--danger)' : 'var(--success)' ?>;"><?= $open_issues ?></div></div>
+    <div class="stat-card"><div class="stat-label">Fixes Ready</div><div class="stat-value" style="color:<?= $fixes_ready > 0 ? 'var(--success)' : '#94a3b8' ?>;"><?= $fixes_ready ?></div></div>
+</div>
+
+<!-- What to do next -->
+<?php
+$next_step = 'scan';
+$next_label = '🔍 Start: Scan Your Website';
+if ($has_scan && !$has_audit) { $next_step = 'audit'; $next_label = '📊 Next: Run SEO Audit'; }
+elseif ($has_audit && $open_issues > 0) { $next_step = 'fix'; $next_label = "🤖 Next: Auto-Fix {$open_issues} Issues"; }
+elseif ($has_audit && !$has_keywords) { $next_step = 'keywords'; $next_label = '🔑 Next: Find Keywords'; }
+elseif ($has_keywords && !$has_content) { $next_step = 'content'; $next_label = '🧠 Next: Write Your First Blog Post'; }
+else { $next_step = 'done'; $next_label = ''; }
+
+if ($next_step !== 'done'):
+?>
+<button class="next-action" onclick="runStep('<?= $next_step ?>')"><?= $next_label ?></button>
+<?php endif; ?>
+
+<!-- ═══════════════════════════════════════════════ -->
+<!-- SECTIONS (click to expand) -->
+<!-- ═══════════════════════════════════════════════ -->
+
+<!-- 1. Scan -->
+<div class="section <?= !$has_scan ? 'open' : '' ?>" id="sec-scan">
+    <div class="section-header" onclick="toggleSection('scan')">
+        <div class="section-status">
+            <div class="dot <?= $has_scan ? 'done' : 'not-done' ?>"></div>
+            <div>
+                <div class="section-title">🔍 Website Scan</div>
+                <div class="section-subtitle"><?= $has_scan ? 'Scanned ' . format_date($site['scanned_at'], 'd M Y') . ' — ' . ($site['platform'] ?: 'custom') : 'Not scanned yet' ?></div>
+            </div>
+        </div>
+        <?php if ($has_scan): ?>
+            <button class="section-action" style="background:var(--primary);" onclick="event.stopPropagation();runStep('scan')">Re-scan</button>
+        <?php endif; ?>
+    </div>
+    <div class="section-body">
+        <?php if ($has_scan): ?>
+            <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;font-size:13px;">
+                <div><span class="text-muted">Platform:</span> <?= e($site['platform'] ?: 'Unknown') ?></div>
+                <div><span class="text-muted">Tone:</span> <?= e($site['brand_tone'] ?: 'Not analyzed') ?></div>
+                <div><span class="text-muted">Blog:</span> <?= e($site['blog_path'] ?: 'None') ?></div>
+                <div><span class="text-muted">Colors:</span>
+                    <?php foreach (json_decode($site['brand_colors'] ?? '[]', true) ?: [] as $c): ?>
+                        <span style="display:inline-block;width:16px;height:16px;background:<?= e($c) ?>;border-radius:3px;vertical-align:middle;border:1px solid #ddd;margin-right:2px;"></span>
+                    <?php endforeach; ?>
+                </div>
+            </div>
+        <?php else: ?>
+            <p class="text-sm text-muted">Click the button above to scan your website. We'll detect the platform, brand, content structure, and more.</p>
+        <?php endif; ?>
+        <div class="mini-log" id="log-scan"></div>
+    </div>
+</div>
+
+<!-- 2. SEO Audit -->
+<div class="section" id="sec-audit">
+    <div class="section-header" onclick="toggleSection('audit')">
+        <div class="section-status">
+            <div class="dot <?= $has_audit ? 'done' : 'not-done' ?>"></div>
+            <div>
+                <div class="section-title">📊 SEO Audit</div>
+                <div class="section-subtitle"><?= $has_audit ? "Score: {$audit['score']}/100 — {$audit['total_issues']} issues, {$audit['pages_crawled']} pages" : 'Not audited yet' ?></div>
+            </div>
+        </div>
+        <?php if ($has_audit): ?>
+            <a href="<?= url('/dashboard/seo-audit.php?audit=' . $audit['id']) ?>" class="edit-link" onclick="event.stopPropagation()">View details →</a>
+        <?php endif; ?>
+    </div>
+    <div class="section-body">
+        <?php if (!empty($score_history) && count($score_history) > 1): ?>
+            <div style="display:flex;align-items:flex-end;gap:4px;height:60px;margin-bottom:10px;">
+                <?php foreach ($score_history as $h):
+                    $bh = max(8, ($h['score'] / 100) * 55);
+                    $bc = $h['score'] >= 80 ? '#10b981' : ($h['score'] >= 50 ? '#f59e0b' : '#ef4444');
+                ?>
+                <div style="flex:1;display:flex;flex-direction:column;align-items:center;gap:2px;">
+                    <span style="font-size:10px;font-weight:700;color:<?= $bc ?>;"><?= $h['score'] ?></span>
+                    <div style="width:100%;max-width:40px;height:<?= $bh ?>px;background:<?= $bc ?>;border-radius:3px 3px 0 0;"></div>
+                    <span style="font-size:8px;color:#94a3b8;"><?= $h['label'] ?></span>
+                </div>
+                <?php endforeach; ?>
+            </div>
+        <?php endif; ?>
+        <div class="mini-log" id="log-audit"></div>
+    </div>
+</div>
+
+<!-- 3. Auto-Fix -->
+<div class="section" id="sec-fix">
+    <div class="section-header" onclick="toggleSection('fix')">
+        <div class="section-status">
+            <div class="dot <?= $fixes_ready > 0 ? 'done' : ($open_issues > 0 ? 'pending' : 'not-done') ?>"></div>
+            <div>
+                <div class="section-title">🤖 Auto-Fix</div>
+                <div class="section-subtitle"><?= $fixes_ready > 0 ? "{$fixes_ready} fixes ready to deploy" : ($open_issues > 0 ? "{$open_issues} issues to fix" : 'No issues to fix') ?></div>
+            </div>
+        </div>
+        <?php if ($open_issues > 0): ?>
+            <button class="section-action" style="background:#ef4444;" onclick="event.stopPropagation();runStep('fix')">Fix All</button>
+        <?php endif; ?>
+    </div>
+    <div class="section-body">
+        <?php if ($fixes_ready > 0): ?>
+            <div style="font-size:13px;margin-bottom:10px;">
+                <strong><?= $fixes_ready ?></strong> SEO rules saved. To apply them to your live site, add this snippet:
+            </div>
+            <div style="background:#1a1a2e;color:#10b981;padding:10px 14px;border-radius:6px;font-family:monospace;font-size:11px;cursor:pointer;word-break:break-all;" onclick="navigator.clipboard.writeText(this.innerText.trim());alert('Copied!')">
+                &lt;script src="<?= e(config('app_url')) ?>/snippet/contentagent.js" data-site="<?= e($site['domain']) ?>"&gt;&lt;/script&gt;
+            </div>
+            <div class="text-sm text-muted mt-2">Click to copy. Or add FTP credentials in <a href="<?= url('/dashboard/sites.php?action=edit&id=' . $site_id) ?>">Edit Settings</a> for direct deployment.</div>
+        <?php endif; ?>
+        <div class="mini-log" id="log-fix"></div>
+        <div id="fix-progress" style="display:none;margin-top:10px;">
+            <div style="height:6px;background:#e5e7eb;border-radius:3px;overflow:hidden;">
+                <div id="fix-bar" style="height:100%;width:0%;background:#10b981;border-radius:3px;transition:width 0.3s;"></div>
+            </div>
+            <div class="text-sm text-muted mt-2" id="fix-counter"></div>
+        </div>
+    </div>
+</div>
+
+<!-- 4. Keywords -->
+<div class="section" id="sec-keywords">
+    <div class="section-header" onclick="toggleSection('keywords')">
+        <div class="section-status">
+            <div class="dot <?= $has_keywords ? 'done' : 'not-done' ?>"></div>
+            <div>
+                <div class="section-title">🔑 Keywords</div>
+                <div class="section-subtitle"><?= $has_keywords ? "{$kw_count} keywords found" : 'No keywords yet' ?></div>
+            </div>
+        </div>
+        <?php if ($has_keywords): ?>
+            <a href="<?= url('/dashboard/keywords.php?site=' . $site_id) ?>" class="edit-link" onclick="event.stopPropagation()">View all →</a>
+        <?php endif; ?>
+    </div>
+    <div class="section-body">
+        <?php if (!empty($top_kws)): ?>
+            <div class="kw-list">
+                <?php foreach ($top_kws as $kw): ?>
+                    <span><?= e($kw['keyword']) ?></span>
+                <?php endforeach; ?>
+            </div>
+        <?php endif; ?>
+        <div class="mini-log" id="log-keywords"></div>
+    </div>
+</div>
+
+<!-- 5. Content -->
+<div class="section" id="sec-content">
+    <div class="section-header" onclick="toggleSection('content')">
+        <div class="section-status">
+            <div class="dot <?= $has_content ? 'done' : 'not-done' ?>"></div>
+            <div>
+                <div class="section-title">📝 Content</div>
+                <div class="section-subtitle"><?= $has_content ? (($pc['published'] ?? 0) . ' published, ' . ($pc['draft'] ?? 0) . ' drafts') : 'No content yet' ?></div>
+            </div>
+        </div>
+        <a href="<?= url('/dashboard/write.php?site=' . $site_id . '&step=propose') ?>" class="edit-link" onclick="event.stopPropagation()">AI Writer →</a>
+    </div>
+    <div class="section-body">
+        <?php if (!empty($recent_posts)): ?>
+            <?php foreach ($recent_posts as $rp): ?>
+            <div style="padding:6px 0;border-bottom:1px solid #f1f5f9;display:flex;justify-content:space-between;align-items:center;">
+                <a href="<?= url('/dashboard/posts.php?action=edit&id=' . $rp['id']) ?>" style="font-size:13px;color:var(--text);text-decoration:none;"><?= e(truncate($rp['title'], 50)) ?></a>
+                <span class="badge badge-<?= $rp['status'] ?>" style="font-size:10px;"><?= $rp['status'] ?></span>
+            </div>
+            <?php endforeach; ?>
+        <?php else: ?>
+            <p class="text-sm text-muted">Click "AI Writer" above to create your first blog post.</p>
+        <?php endif; ?>
+    </div>
+</div>
+
+<!-- 6. AI SEO -->
+<div class="section" id="sec-aiseo">
+    <div class="section-header" onclick="toggleSection('aiseo')">
+        <div class="section-status">
+            <div class="dot not-done"></div>
+            <div>
+                <div class="section-title">🤖 AI Discoverability</div>
+                <div class="section-subtitle">llms.txt, AI crawlers, schema markup</div>
+            </div>
+        </div>
+        <a href="<?= url('/dashboard/ai-seo.php?site=' . $site_id) ?>" class="edit-link" onclick="event.stopPropagation()">Manage →</a>
+    </div>
+</div>
+
+<!-- 7. Social Media -->
+<div class="section" id="sec-social">
+    <div class="section-header" onclick="toggleSection('social')">
+        <div class="section-status">
+            <div class="dot not-done"></div>
+            <div>
+                <div class="section-title">📱 Social Media</div>
+                <div class="section-subtitle">Connect & auto-post to LinkedIn, Twitter, Instagram</div>
+            </div>
+        </div>
+        <a href="<?= url('/dashboard/social.php?site=' . $site_id) ?>" class="edit-link" onclick="event.stopPropagation()">Connect →</a>
+    </div>
+</div>
+
+<script>
+const API = '<?= url('/api') ?>';
+const siteId = <?= $site_id ?>;
+
+function toggleSection(name) {
+    document.getElementById('sec-' + name).classList.toggle('open');
+}
+
+function log(id, text, cls) {
+    const el = document.getElementById('log-' + id);
+    el.style.display = 'block';
+    const prefix = cls === 's' ? '✓ ' : cls === 'i' ? '→ ' : cls === 'w' ? '⚠ ' : '  ';
+    el.innerHTML += '<div class="' + cls + '">' + prefix + text + '</div>';
+    el.scrollTop = el.scrollHeight;
+}
+
+async function runStep(step) {
+    // Open the section
+    document.getElementById('sec-' + step).classList.add('open');
+
+    if (step === 'scan') {
+        log('scan', 'Scanning website...', 'i');
+        const res = await fetch(API + '/onboarding.php', {
+            method: 'POST', headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({action: 'scan', site_id: siteId})
+        });
+        const data = await res.json();
+        if (data.success) {
+            log('scan', 'Platform: ' + (data.platform || 'custom'), 's');
+            log('scan', 'Pages: ' + data.internal_links + ' | Images: ' + data.images, 'i');
+            log('scan', 'SSL: ' + (data.ssl_valid ? 'Valid' : 'Invalid'), data.ssl_valid ? 's' : 'w');
+            log('scan', 'Sitemap: ' + (data.sitemap ? 'Found' : 'Missing'), data.sitemap ? 's' : 'w');
+            log('scan', 'Scan complete! Refresh to see results.', 's');
+            setTimeout(() => location.reload(), 2000);
+        } else {
+            log('scan', 'Error: ' + (data.error || 'Unknown'), 'w');
+        }
+    }
+
+    else if (step === 'audit') {
+        log('audit', 'Running SEO audit (up to 30 pages)...', 'i');
+        const res = await fetch(API + '/onboarding.php', {
+            method: 'POST', headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({action: 'audit', site_id: siteId})
+        });
+        const data = await res.json();
+        if (data.success) {
+            log('audit', 'Score: ' + data.score + '/100 | Issues: ' + data.issues + ' | Pages: ' + data.pages, 's');
+            setTimeout(() => location.reload(), 2000);
+        } else {
+            log('audit', 'Error: ' + (data.error || 'Unknown'), 'w');
+        }
+    }
+
+    else if (step === 'fix') {
+        document.getElementById('fix-progress').style.display = 'block';
+        log('fix', 'Starting auto-fixer...', 'i');
+
+        let offset = 0, totalFixed = 0, totalSkipped = 0, totalIssues = 0, hasMore = true;
+        while (hasMore) {
+            const res = await fetch(API + '/auto-fix-all.php', {
+                method: 'POST', headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({site_id: siteId, batch_size: 10, offset: offset})
+            });
+            const data = await res.json();
+            if (!data.success) { log('fix', data.error || 'Error', 'w'); break; }
+            totalFixed += data.fixed; totalSkipped += data.skipped;
+            totalIssues = data.total_issues; hasMore = data.has_more;
+            offset = data.next_offset || offset + 10;
+            const pct = totalIssues > 0 ? Math.round((Math.min(offset, totalIssues) / totalIssues) * 100) : 100;
+            document.getElementById('fix-bar').style.width = pct + '%';
+            document.getElementById('fix-counter').textContent = Math.min(offset, totalIssues) + ' / ' + totalIssues + ' processed';
+            if (data.applied) data.applied.forEach(a => log('fix', a, 's'));
+        }
+        log('fix', totalFixed + ' fixes ready to deploy, ' + totalSkipped + ' skipped.', 's');
+        setTimeout(() => location.reload(), 2000);
+    }
+
+    else if (step === 'keywords') {
+        log('keywords', 'Researching keywords...', 'i');
+        const res = await fetch(API + '/onboarding.php', {
+            method: 'POST', headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({action: 'keywords', site_id: siteId})
+        });
+        const data = await res.json();
+        if (data.success) {
+            log('keywords', 'Found ' + data.total + ' keywords', 's');
+            if (data.samples) data.samples.forEach(k => log('keywords', '  ' + k, 'i'));
+            setTimeout(() => location.reload(), 2000);
+        } else {
+            log('keywords', data.error || 'Error', 'w');
+        }
+    }
+
+    else if (step === 'content') {
+        window.location.href = '<?= url('/dashboard/write.php?site=' . $site_id . '&step=propose') ?>';
+    }
+}
+</script>
+
+<?php
+$page_content = ob_get_clean();
+require __DIR__ . '/../../templates/dashboard/layout.php';

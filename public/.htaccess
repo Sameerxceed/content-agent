@@ -1,0 +1,14 @@
+RewriteEngine On
+
+# Force HTTPS in production
+# RewriteCond %{HTTPS} off
+# RewriteRule ^ https://%{HTTP_HOST}%{REQUEST_URI} [L,R=301]
+
+# Prevent directory listing
+Options -Indexes
+
+# Deny access to sensitive files
+<FilesMatch "\.(sql|md|log|example)$">
+    Order allow,deny
+    Deny from all
+</FilesMatch>

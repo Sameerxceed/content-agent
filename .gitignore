@@ -1,0 +1,9 @@
+config/config.php
+logs/*.log
+cache/*
+!cache/.gitkeep
+.env
+*.swp
+*.swo
+.DS_Store
+Thumbs.db
