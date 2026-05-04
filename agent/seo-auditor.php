@@ -305,11 +305,50 @@ if ($homepage['status'] === 200) {
 }
 echo "  Checked {$external_links_checked} external links\n";
 
+// ── Check for deployed fixes (page_seo + snippet) ──────
+// If fixes exist in page_seo for this site, those issues are resolved
+$stmt = $db->prepare('SELECT url_path FROM page_seo WHERE site_id = ?');
+$stmt->execute([$site_id]);
+$fixed_paths = $stmt->fetchAll(PDO::FETCH_COLUMN);
+
+// Normalize fixed paths to full URLs for comparison
+$fixed_urls = [];
+foreach ($fixed_paths as $path) {
+    $fixed_urls[] = rtrim($domain, '/') . '/' . ltrim($path, '/');
+    $fixed_urls[] = rtrim($domain, '/') . '/' . ltrim($path, '/');
+    // Also match www variant
+    $www_domain = str_replace('https://', 'https://www.', $domain);
+    $fixed_urls[] = rtrim($www_domain, '/') . '/' . ltrim($path, '/');
+}
+$fixed_urls = array_map(fn($u) => rtrim($u, '/'), $fixed_urls);
+
+$resolved_count = 0;
+$open_issues = [];
+foreach ($issues as $issue) {
+    $issue_url = rtrim($issue['url'], '/');
+    $issue_type = $issue['type'];
+    // These issue types are fixable by our snippet
+    $snippet_fixable = ['missing_meta', 'missing_canonical', 'missing_og', 'missing_schema', 'duplicate_meta'];
+    if (in_array($issue_type, $snippet_fixable) && in_array($issue_url, $fixed_urls)) {
+        $resolved_count++;
+        $issue['status'] = 'fixed_by_snippet';
+        $open_issues[] = $issue; // Still save it but mark as fixed
+    } else {
+        $issue['status'] = 'open';
+        $open_issues[] = $issue;
+    }
+}
+$issues = $open_issues;
+
+echo "\n  Snippet fixes applied: {$resolved_count} issues resolved by ContentAgent snippet\n";
+
 // ── Calculate score & save ──────────────────────────────
-$critical_count = count(array_filter($issues, fn($i) => $i['severity'] === 'critical'));
-$warning_count  = count(array_filter($issues, fn($i) => $i['severity'] === 'warning'));
-$info_count     = count(array_filter($issues, fn($i) => $i['severity'] === 'info'));
-$total_issues   = count($issues);
+// Only count unfixed issues against the score
+$unfixed_issues = array_filter($issues, fn($i) => ($i['status'] ?? 'open') === 'open');
+$critical_count = count(array_filter($unfixed_issues, fn($i) => $i['severity'] === 'critical'));
+$warning_count  = count(array_filter($unfixed_issues, fn($i) => $i['severity'] === 'warning'));
+$info_count     = count(array_filter($unfixed_issues, fn($i) => $i['severity'] === 'info'));
+$total_issues   = count($unfixed_issues);
 
 // Score: percentage-based — checks passed vs total checks
 // Each page has ~10 checks (title, meta, canonical, og, schema, viewport, alt, speed, headings, links)
@@ -343,7 +382,7 @@ $stmt->execute([$site_id, $score, $total_issues, $critical_count, $warning_count
 $audit_id = $db->lastInsertId();
 
 // Save individual issues
-$issue_stmt = $db->prepare('INSERT INTO seo_issues (audit_id, site_id, type, severity, url, description, suggested_fix) VALUES (?, ?, ?, ?, ?, ?, ?)');
+$issue_stmt = $db->prepare('INSERT INTO seo_issues (audit_id, site_id, type, severity, url, description, suggested_fix, status) VALUES (?, ?, ?, ?, ?, ?, ?, ?)');
 foreach ($issues as $issue) {
     $issue_stmt->execute([
         $audit_id,
@@ -353,6 +392,7 @@ foreach ($issues as $issue) {
         $issue['url'],
         $issue['description'],
         $issue['suggested_fix'],
+        $issue['status'] ?? 'open',
     ]);
 }
 
