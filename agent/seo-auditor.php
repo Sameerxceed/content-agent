@@ -323,54 +323,14 @@ if ($homepage['status'] === 200) {
 }
 echo "  Checked {$external_links_checked} external links\n";
 
-// ── Check for deployed fixes ──────────────────────────
-// Check if ContentAgent snippet is deployed on the site (site-wide fix)
-$snippet_deployed = false;
-$homepage_html = scraper_fetch($domain, 15);
-if ($homepage_html['status'] === 200 && strpos($homepage_html['body'], 'contentagent') !== false) {
-    $snippet_deployed = true;
-    echo "  ContentAgent snippet detected — marking fixable issues as resolved\n";
+// ── All issues are reported as-is ─────────────────────
+// No masking — if the HTML doesn't have canonical/OG/schema,
+// we report it. Other SEO tools will see the same thing.
+// Credibility > vanity score.
+foreach ($issues as &$issue) {
+    $issue['status'] = 'open';
 }
-
-// Also check page_seo table for per-page fixes
-$stmt = $db->prepare('SELECT url_path FROM page_seo WHERE site_id = ?');
-$stmt->execute([$site_id]);
-$fixed_paths = $stmt->fetchAll(PDO::FETCH_COLUMN);
-$fixed_urls = [];
-foreach ($fixed_paths as $path) {
-    $fixed_urls[] = rtrim($domain, '/') . '/' . ltrim($path, '/');
-    $www_domain = str_replace('https://', 'https://www.', $domain);
-    $fixed_urls[] = rtrim($www_domain, '/') . '/' . ltrim($path, '/');
-}
-$fixed_urls = array_map(fn($u) => rtrim($u, '/'), $fixed_urls);
-
-// Issues that the snippet / header fix handles site-wide
-$snippet_fixable = ['missing_canonical', 'missing_og', 'missing_schema'];
-// Issues that need per-page data (title, description) — only fix if in page_seo
-$per_page_fixable = ['missing_meta', 'duplicate_meta'];
-
-$resolved_count = 0;
-$open_issues = [];
-foreach ($issues as $issue) {
-    $issue_url = rtrim($issue['url'], '/');
-    $issue_type = $issue['type'];
-
-    if ($snippet_deployed && in_array($issue_type, $snippet_fixable)) {
-        // Site-wide fixes: canonical, OG, schema are handled by the header snippet
-        $resolved_count++;
-        $issue['status'] = 'fixed_by_snippet';
-    } elseif (in_array($issue_type, $per_page_fixable) && in_array($issue_url, $fixed_urls)) {
-        // Per-page fixes: title, description need page_seo data
-        $resolved_count++;
-        $issue['status'] = 'fixed_by_snippet';
-    } else {
-        $issue['status'] = 'open';
-    }
-    $open_issues[] = $issue;
-}
-$issues = $open_issues;
-
-echo "\n  Snippet fixes applied: {$resolved_count} issues resolved by ContentAgent snippet\n";
+unset($issue);
 
 // ── Calculate score & save ──────────────────────────────
 // Only count unfixed issues against the score
