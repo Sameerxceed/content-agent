@@ -122,6 +122,14 @@ while (!empty($urls_to_crawl) && $pages_crawled < $max_pages) {
         continue;
     }
 
+    // Skip data: URIs and non-page URLs
+    if (strpos($url, 'data:') !== false) continue;
+
+    // Skip OpenCart system/extension routes that aren't real pages
+    if (preg_match('/route=(extension\/(captcha|feed|analytics)|checkout\/(cart|checkout)|account\/(login|register|logout))/', $url)) {
+        continue;
+    }
+
     $pages_crawled++;
     echo "  [{$pages_crawled}/{$max_pages}] {$url}\n";
 

@@ -94,7 +94,7 @@ function scraper_get_links(DOMDocument $doc, string $base_url): array
 
     foreach ($anchors as $a) {
         $href = trim($a->getAttribute('href'));
-        if (empty($href) || $href === '#' || strpos($href, 'javascript:') === 0 || strpos($href, 'mailto:') === 0) {
+        if (empty($href) || $href === '#' || strpos($href, 'javascript:') === 0 || strpos($href, 'mailto:') === 0 || strpos($href, 'data:') === 0 || strpos($href, 'tel:') === 0) {
             continue;
         }
 
@@ -122,7 +122,7 @@ function scraper_get_images(DOMDocument $doc, string $base_url): array
 
     foreach ($imgs as $img) {
         $src = $img->getAttribute('src') ?: $img->getAttribute('data-src');
-        if (empty($src)) continue;
+        if (empty($src) || strpos($src, 'data:') === 0) continue;
 
         $images[] = [
             'src'     => scraper_resolve_url($src, $base_url),
