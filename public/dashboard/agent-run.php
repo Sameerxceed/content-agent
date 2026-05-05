@@ -175,11 +175,11 @@ async function run() {
             log('Title: ' + (data.title || 'N/A'), data.title ? 'success' : 'warn');
 
             if (data.internal_links > 10) {
-                log('Internal links: ' + data.internal_links + ' — Good site structure', 'success');
+                log('Pages found: ' + data.internal_links + ' — Good site structure', 'success');
             } else if (data.internal_links > 0) {
-                log('Internal links: ' + data.internal_links + ' — Low. Add more navigation links between pages', 'warn');
+                log('Pages found: ' + data.internal_links + ' — Small site. More pages = more SEO opportunities', 'warn');
             } else {
-                log('Internal links: 0 — No internal links found. Search engines can\'t discover your pages', 'error');
+                log('This is a single-page website — only 1 page found, no internal links. SEO needs multiple pages with content to rank.', 'error');
             }
 
             if (data.images > 0) {
