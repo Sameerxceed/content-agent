@@ -108,6 +108,10 @@ $tab = $_GET['tab'] ?? 'profile';
 ob_start();
 ?>
 
+<div style="margin-bottom:10px;">
+    <a href="<?= url('/dashboard/index.php') ?>" style="font-size:13px;color:var(--primary);text-decoration:none;">&larr; Back to Dashboard</a>
+</div>
+
 <!-- Tabs -->
 <div class="flex gap-2 mb-4" style="border-bottom:2px solid var(--border);padding-bottom:8px;">
     <a href="<?= url('/dashboard/settings.php?tab=profile') ?>" class="btn btn-sm <?= $tab === 'profile' ? 'btn-primary' : 'btn-outline' ?>" style="text-decoration:none;">Profile</a>

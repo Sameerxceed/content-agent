@@ -17,6 +17,12 @@ $page_title = 'Analytics';
 
 ob_start();
 
+if (empty($filter_site)): ?>
+<div style="margin-bottom:10px;">
+    <a href="<?= url('/dashboard/index.php') ?>" style="font-size:13px;color:var(--primary);text-decoration:none;">&larr; Back to Dashboard</a>
+</div>
+<?php endif;
+
 // Get sites
 $stmt = $db->prepare('SELECT id, name, domain FROM sites WHERE user_id = ? ORDER BY name');
 $stmt->execute([$user_id]);

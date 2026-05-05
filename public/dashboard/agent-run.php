@@ -176,7 +176,7 @@ async function run() {
             const platformMsg = {
                 'wordpress': 'WordPress detected — plugins available for most SEO fixes',
                 'opencart': 'OpenCart detected — template and .htaccess fixes needed for SEO',
-                'shopify': 'Shopify detected — limited control over root files (sitemap, llms.txt)',
+                'shopify': 'Shopify detected — robots.txt customizable via theme, llms.txt via CDN upload + URL redirect',
                 'wix': 'Wix detected — limited SEO control, consider migrating for full SEO',
                 'squarespace': 'Squarespace detected — basic SEO built-in, limited customization',
                 'nextjs': 'Next.js detected — great for SEO with server-side rendering',

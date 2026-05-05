@@ -22,7 +22,12 @@ $stmt->execute([$user_id]);
 $sites = $stmt->fetchAll();
 
 ob_start();
-?>
+
+if (empty($site_id)): ?>
+<div style="margin-bottom:10px;">
+    <a href="<?= url('/dashboard/index.php') ?>" style="font-size:13px;color:var(--primary);text-decoration:none;">&larr; Back to Dashboard</a>
+</div>
+<?php endif; ?>
 
 <!-- Site selector -->
 <div class="card" style="padding:10px 16px;margin-bottom:14px;">
