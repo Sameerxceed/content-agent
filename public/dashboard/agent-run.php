@@ -118,7 +118,7 @@ ob_start();
         <?php if ($agent === 'scanner'): ?>
             <a href="<?= url('/dashboard/agent-run.php?agent=seo-auditor&site=' . $site_id) ?>" class="btn btn-accent btn-sm">Next: Run SEO Audit →</a>
         <?php elseif ($agent === 'seo-auditor'): ?>
-            <a href="<?= url('/dashboard/agent-run.php?agent=auto-fixer&site=' . $site_id) ?>" class="btn btn-accent btn-sm">Next: Auto-Fix Issues →</a>
+            <!-- View Issues button added dynamically via JS with audit_id -->
         <?php elseif ($agent === 'auto-fixer'): ?>
             <a href="<?= url('/dashboard/agent-run.php?agent=keyword-research&site=' . $site_id) ?>" class="btn btn-accent btn-sm">Next: Find Keywords →</a>
         <?php elseif ($agent === 'keyword-research'): ?>
@@ -204,7 +204,7 @@ async function run() {
             log('Issues found: ' + data.issues + ' (' + data.critical + ' critical, ' + data.warnings + ' warnings)', data.issues > 0 ? 'warn' : 'success');
             showResult(data.score + '/100', data.issues + ' issues found across ' + data.pages + ' pages');
 
-            if (data.issues > 0) {
+            if (data.audit_id) {
                 document.getElementById('action-buttons').innerHTML += '<a href="<?= url('/dashboard/seo-audit.php?audit=') ?>' + data.audit_id + '" class="btn btn-accent btn-sm">View Issues & Fix →</a>';
             }
         } else {
