@@ -42,6 +42,9 @@ if ($audit_id):
         if ($audit['score'] >= 80) $score_class = 'score-good';
         elseif ($audit['score'] >= 50) $score_class = 'score-ok';
 ?>
+    <div style="margin-bottom:10px;">
+        <a href="<?= url('/dashboard/site.php?id=' . $audit['site_id']) ?>" style="font-size:13px;color:var(--primary);text-decoration:none;">&larr; Back to <?= e($audit['site_name']) ?></a>
+    </div>
     <div class="flex justify-between items-center mb-4">
         <div class="flex items-center gap-4">
             <span class="score-circle <?= $score_class ?>" style="width:56px;height:56px;font-size:20px;"><?= $audit['score'] ?></span>
@@ -139,6 +142,20 @@ if ($audit_id):
             </table>
         <?php endif; ?>
     </div>
+
+    <!-- Clear next step -->
+    <?php if (!empty($issues)): ?>
+    <div style="display:flex;justify-content:center;gap:10px;margin:14px 0;flex-wrap:wrap;">
+        <a href="<?= url('/dashboard/agent-run.php?agent=auto-fixer&site=' . $audit['site_id']) ?>" class="btn btn-accent" style="padding:12px 28px;font-size:14px;text-decoration:none;">Auto-Fix All <?= count($issues) ?> Issues →</a>
+        <a href="<?= url('/dashboard/site.php?id=' . $audit['site_id']) ?>" class="btn btn-outline" style="padding:12px 28px;font-size:14px;text-decoration:none;">← Back to Site</a>
+    </div>
+    <?php else: ?>
+    <div style="display:flex;justify-content:center;gap:10px;margin:14px 0;flex-wrap:wrap;">
+        <a href="<?= url('/dashboard/agent-run.php?agent=keyword-research&site=' . $audit['site_id']) ?>" class="btn btn-accent" style="padding:12px 28px;font-size:14px;text-decoration:none;">Next: Find Keywords →</a>
+        <a href="<?= url('/dashboard/site.php?id=' . $audit['site_id']) ?>" class="btn btn-outline" style="padding:12px 28px;font-size:14px;text-decoration:none;">← Back to Site</a>
+    </div>
+    <?php endif; ?>
+
     <script>
     const API = '<?= url('/api/fix-issue.php') ?>';
     const AUTO_FIX_API = '<?= url('/api/auto-fix-all.php') ?>';
