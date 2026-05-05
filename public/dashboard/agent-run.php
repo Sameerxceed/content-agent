@@ -172,13 +172,38 @@ async function run() {
         if (data.success) {
             setProgress(100, 'Scan complete!');
             log('Platform: ' + (data.platform || 'custom'), 'success');
-            log('Title: ' + (data.title || 'N/A'), 'success');
-            log('Internal links: ' + data.internal_links, 'info');
-            log('Images: ' + data.images, 'info');
-            log('SSL: ' + (data.ssl_valid ? 'Valid' : 'Invalid'), data.ssl_valid ? 'success' : 'warn');
-            log('Sitemap: ' + (data.sitemap ? 'Found' : 'Missing'), data.sitemap ? 'success' : 'warn');
-            log('Blog: ' + (data.blog_path || 'Not found'), 'info');
-            showResult('✓', 'Site scanned successfully');
+            log('Title: ' + (data.title || 'N/A'), data.title ? 'success' : 'warn');
+
+            if (data.internal_links > 10) {
+                log('Internal links: ' + data.internal_links + ' — Good site structure', 'success');
+            } else if (data.internal_links > 0) {
+                log('Internal links: ' + data.internal_links + ' — Low. Add more navigation links between pages', 'warn');
+            } else {
+                log('Internal links: 0 — No internal links found. Search engines can\'t discover your pages', 'error');
+            }
+
+            if (data.images > 0) {
+                log('Images: ' + data.images + ' found', 'info');
+            } else {
+                log('Images: 0 — Add images to improve engagement', 'warn');
+            }
+
+            log('SSL: ' + (data.ssl_valid ? 'Valid — Secure connection' : 'Invalid — Not secure! Get an SSL certificate'), data.ssl_valid ? 'success' : 'error');
+            log('Sitemap: ' + (data.sitemap ? 'Found — Search engines can discover your pages' : 'Missing — Search engines can\'t find all your pages'), data.sitemap ? 'success' : 'error');
+            log('Blog: ' + (data.blog_path ? data.blog_path + ' — Content hub found' : 'Not found — No blog means no fresh content for SEO'), data.blog_path ? 'success' : 'warn');
+
+            // Summary feedback
+            let issues = 0;
+            if (!data.ssl_valid) issues++;
+            if (!data.sitemap) issues++;
+            if (data.internal_links === 0) issues++;
+            if (!data.blog_path) issues++;
+
+            if (issues === 0) {
+                showResult('✓', 'Site looks great! Ready for SEO audit.');
+            } else {
+                showResult(issues + ' issue' + (issues > 1 ? 's' : ''), 'Found ' + issues + ' thing' + (issues > 1 ? 's' : '') + ' to fix. Run SEO Audit for full analysis.');
+            }
         } else {
             setProgress(100, 'Scan failed');
             log(data.error || 'Unknown error', 'error');
