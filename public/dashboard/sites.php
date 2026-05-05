@@ -92,7 +92,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         ]);
 
         $_SESSION['flash_success'] = 'Site settings updated.';
-        redirect('/dashboard/sites.php?action=view&id=' . $id);
+        redirect('/dashboard/site.php?id=' . $id);
     }
 
     if ($post_action === 'delete') {
@@ -136,6 +136,10 @@ if ($action === 'add'):
     </div>
 
 <?php elseif ($action === 'view' && isset($_GET['id'])):
+    // Redirect to unified site page
+    redirect('/dashboard/site.php?id=' . (int)$_GET['id']);
+
+<?php elseif ($action === '_old_view_disabled' && isset($_GET['id'])):
     $stmt = $db->prepare('SELECT * FROM sites WHERE id = ? AND user_id = ?');
     $stmt->execute([(int)$_GET['id'], $user_id]);
     $site = $stmt->fetch();
@@ -387,7 +391,7 @@ if ($action === 'add'):
 
             <div class="flex gap-2">
                 <button type="submit" class="btn btn-primary">Save Changes</button>
-                <a href="<?= url('/dashboard/sites.php?action=view&id=' . $site['id']) ?>" class="btn btn-outline">Cancel</a>
+                <a href="<?= url('/dashboard/site.php?id=' . $site['id']) ?>" class="btn btn-outline">Cancel</a>
             </div>
         </form>
 

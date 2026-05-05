@@ -65,9 +65,28 @@ $stmt->execute([$site_id]);
 $top_kws = $stmt->fetchAll();
 
 // Audit history for chart
-$stmt = $db->prepare('SELECT score, DATE_FORMAT(run_at, "%d %b") as label FROM seo_audits WHERE site_id = ? ORDER BY run_at ASC');
+$stmt = $db->prepare('SELECT score, total_issues, DATE_FORMAT(run_at, "%d %b") as label FROM seo_audits WHERE site_id = ? ORDER BY run_at ASC');
 $stmt->execute([$site_id]);
 $score_history = $stmt->fetchAll();
+
+// Issues fixed vs open (all time)
+$stmt = $db->prepare('SELECT COUNT(*) FROM seo_issues WHERE site_id = ? AND status IN ("fix_proposed","fix_applied","resolved","fixed_by_snippet")');
+$stmt->execute([$site_id]);
+$issues_fixed = $stmt->fetchColumn();
+
+// This week stats
+$stmt = $db->prepare('SELECT COUNT(*) FROM posts WHERE site_id = ? AND created_at > DATE_SUB(NOW(), INTERVAL 7 DAY)');
+$stmt->execute([$site_id]);
+$posts_this_week = $stmt->fetchColumn();
+
+$stmt = $db->prepare('SELECT COUNT(*) FROM keywords WHERE site_id = ? AND created_at > DATE_SUB(NOW(), INTERVAL 7 DAY)');
+$stmt->execute([$site_id]);
+$kw_this_week = $stmt->fetchColumn();
+
+// Score change since first audit
+$first_score = !empty($score_history) ? $score_history[0]['score'] : null;
+$latest_score = $audit ? $audit['score'] : null;
+$score_change = ($first_score !== null && $latest_score !== null && count($score_history) > 1) ? $latest_score - $first_score : null;
 
 // Determine what step user is on
 $has_scan = !empty($site['scanned_at']);
@@ -82,15 +101,8 @@ ob_start();
 ?>
 
 <style>
-.site-header { display:flex; align-items:center; gap:16px; margin-bottom:16px; }
-.site-header .score { width:56px; height:56px; border-radius:50%; display:flex; align-items:center; justify-content:center; font-weight:800; font-size:20px; color:#fff; flex-shrink:0; }
-.site-header .score.good { background:#10b981; }
-.site-header .score.ok { background:#f59e0b; }
-.site-header .score.bad { background:#ef4444; }
-.site-header .score.na { background:#e2e8f0; color:#94a3b8; font-size:14px; }
-
-.section { background:#fff; border:1px solid var(--border); border-radius:8px; margin-bottom:12px; overflow:hidden; }
-.section-header { padding:14px 18px; display:flex; align-items:center; justify-content:space-between; cursor:pointer; }
+.section { background:#fff; border:1px solid var(--border); border-radius:8px; margin-bottom:10px; overflow:hidden; }
+.section-header { padding:12px 16px; display:flex; align-items:center; justify-content:space-between; cursor:pointer; }
 .section-header:hover { background:#f8fafb; }
 .section-status { display:flex; align-items:center; gap:8px; }
 .section-status .dot { width:10px; height:10px; border-radius:50%; flex-shrink:0; }
@@ -99,11 +111,11 @@ ob_start();
 .section-status .dot.not-done { background:#e2e8f0; }
 .section-title { font-weight:600; font-size:14px; }
 .section-subtitle { font-size:12px; color:#94a3b8; }
-.section-body { padding:0 18px 18px; display:none; }
+.section-body { padding:0 16px 14px; display:none; }
 .section.open .section-body { display:block; }
-.section-action { padding:10px 20px; border:none; border-radius:6px; font-size:13px; font-weight:600; cursor:pointer; color:#fff; }
+.section-action { padding:8px 16px; border:none; border-radius:6px; font-size:13px; font-weight:600; cursor:pointer; color:#fff; text-decoration:none; display:inline-block; }
 
-.next-action { background:var(--accent); color:#fff; border:none; border-radius:8px; padding:14px 28px; font-size:15px; font-weight:600; cursor:pointer; display:block; width:100%; text-align:center; margin-top:12px; }
+.next-action { background:var(--accent); color:#fff; border:none; border-radius:8px; padding:12px 24px; font-size:14px; font-weight:600; cursor:pointer; display:block; width:100%; text-align:center; margin-bottom:10px; }
 .next-action:hover { background:#a82a00; }
 
 .mini-log { font-family:monospace; font-size:11px; background:#0f172a; color:#94a3b8; border-radius:6px; padding:12px; max-height:200px; overflow-y:auto; margin-top:10px; display:none; }
@@ -113,48 +125,133 @@ ob_start();
 
 .kw-list { display:flex; flex-wrap:wrap; gap:6px; margin-top:8px; }
 .kw-list span { background:#f1f5f9; padding:3px 10px; border-radius:12px; font-size:12px; color:#475569; }
-
 .edit-link { font-size:12px; color:var(--primary); text-decoration:none; }
 .edit-link:hover { text-decoration:underline; }
+.action-bar { display:flex; flex-wrap:wrap; gap:6px; margin-bottom:10px; }
 </style>
 
+<?php
+$sc = $audit ? $audit['score'] : -1;
+$sc_cls = $sc < 0 ? '' : ($sc >= 80 ? 'score-good' : ($sc >= 50 ? 'score-ok' : 'score-bad'));
+?>
+
 <!-- Site Header -->
-<div class="site-header">
-    <?php
-    $sc = $audit ? $audit['score'] : -1;
-    $sc_cls = $sc < 0 ? 'na' : ($sc >= 80 ? 'good' : ($sc >= 50 ? 'ok' : 'bad'));
-    ?>
-    <div class="score <?= $sc_cls ?>"><?= $sc >= 0 ? $sc : 'N/A' ?></div>
-    <div>
-        <div style="font-size:18px;font-weight:700;color:var(--primary);"><?= e($site['name']) ?></div>
-        <div class="text-sm text-muted">
-            <?= e($site['domain']) ?>
-            <?php if ($site['platform']): ?><span class="badge badge-info" style="font-size:10px;margin-left:4px;"><?= e($site['platform']) ?></span><?php endif; ?>
+<div class="card" style="margin-bottom:2px; border-bottom:3px solid var(--primary); border-radius:var(--radius) var(--radius) 0 0;">
+    <div class="flex justify-between items-center">
+        <div class="flex items-center gap-4">
+            <?php if ($sc >= 0): ?>
+                <span class="score-circle <?= $sc_cls ?>" style="width:48px;height:48px;font-size:18px;"><?= $sc ?></span>
+            <?php else: ?>
+                <span class="score-circle" style="width:48px;height:48px;font-size:12px;background:#f1f5f9;color:#94a3b8;">N/A</span>
+            <?php endif; ?>
+            <div>
+                <div style="font-size:16px;font-weight:600;color:var(--primary);"><?= e($site['name']) ?></div>
+                <div class="text-sm text-muted">
+                    <?= e($site['domain']) ?>
+                    <?php if ($site['platform']): ?><span class="badge badge-info" style="margin-left:4px;"><?= e($site['platform']) ?></span><?php endif; ?>
+                    <span class="badge badge-<?= $site['is_active'] ? 'approved' : 'rejected' ?>"><?= $site['is_active'] ? 'Active' : 'Off' ?></span>
+                    <span class="badge badge-<?= $site['agent_mode'] === 'auto' ? 'approved' : 'draft' ?>"><?= $site['agent_mode'] ?> mode</span>
+                </div>
+            </div>
         </div>
-    </div>
-    <div style="margin-left:auto;display:flex;gap:8px;">
-        <a href="<?= url('/dashboard/sites.php?action=edit&id=' . $site_id) ?>" class="btn btn-outline btn-sm">Edit Settings</a>
-        <a href="<?= url('/api/export.php?site_id=' . $site_id . '&type=full') ?>" class="btn btn-outline btn-sm">Export Report</a>
+        <div class="flex gap-2">
+            <a href="<?= url('/api/export.php?site_id=' . $site_id . '&type=full') ?>" class="btn btn-outline btn-sm">Export CSV</a>
+            <a href="<?= url('/dashboard/sites.php?action=edit&id=' . $site_id) ?>" class="btn btn-outline btn-sm">Edit</a>
+            <a href="<?= url('/dashboard/seo-audit.php?site=' . $site_id) ?>" class="btn btn-outline btn-sm">Full Audit</a>
+        </div>
     </div>
 </div>
 
-<!-- Quick Stats -->
-<div class="stats-grid" style="margin-bottom:12px;">
-    <div class="stat-card"><div class="stat-label">SEO Score</div><div class="stat-value"><?= $sc >= 0 ? $sc . '/100' : '—' ?></div></div>
-    <div class="stat-card"><div class="stat-label">Published</div><div class="stat-value"><?= $pc['published'] ?? 0 ?></div></div>
-    <div class="stat-card"><div class="stat-label">Keywords</div><div class="stat-value"><?= $kw_count ?></div></div>
-    <div class="stat-card"><div class="stat-label">Issues</div><div class="stat-value" style="color:<?= $open_issues > 0 ? 'var(--danger)' : 'var(--success)' ?>;"><?= $open_issues ?></div></div>
-    <div class="stat-card"><div class="stat-label">Fixes Ready</div><div class="stat-value" style="color:<?= $fixes_ready > 0 ? 'var(--success)' : '#94a3b8' ?>;"><?= $fixes_ready ?></div></div>
+<!-- Agent Actions -->
+<div class="card" style="margin-bottom:2px; padding:10px 14px;">
+    <div class="action-bar">
+        <a href="<?= url('/dashboard/agent-run.php?agent=auto-fixer&site=' . $site_id) ?>" class="btn btn-sm" style="background:#ef4444;color:#fff;text-decoration:none;">Auto-Fix All Issues</a>
+        <a href="<?= url('/dashboard/write.php?site=' . $site_id . '&step=propose') ?>" class="btn btn-accent btn-sm" style="text-decoration:none;">AI Content Planner</a>
+        <a href="<?= url('/dashboard/agent-run.php?agent=scanner&site=' . $site_id) ?>" class="btn btn-primary btn-sm" style="text-decoration:none;">Scan Site</a>
+        <a href="<?= url('/dashboard/agent-run.php?agent=seo-auditor&site=' . $site_id) ?>" class="btn btn-primary btn-sm" style="text-decoration:none;">SEO Audit</a>
+        <a href="<?= url('/dashboard/agent-run.php?agent=keyword-research&site=' . $site_id) ?>" class="btn btn-primary btn-sm" style="text-decoration:none;">Find Keywords</a>
+        <a href="<?= url('/dashboard/agent-run.php?agent=news-scraper&site=' . $site_id) ?>" class="btn btn-primary btn-sm" style="text-decoration:none;">Scrape News</a>
+        <a href="<?= url('/dashboard/agent-run.php?agent=evaluator&site=' . $site_id) ?>" class="btn btn-outline btn-sm" style="text-decoration:none;">Evaluate Strategy</a>
+    </div>
 </div>
+
+<!-- Stats -->
+<div class="stats-grid" style="margin-bottom:2px;">
+    <a href="<?= url('/dashboard/posts.php?site=' . $site_id . '&status=published') ?>" class="stat-card" style="text-decoration:none;color:inherit;">
+        <div class="stat-label">Published</div><div class="stat-value"><?= $pc['published'] ?? 0 ?></div>
+    </a>
+    <a href="<?= url('/dashboard/posts.php?site=' . $site_id . '&status=draft') ?>" class="stat-card" style="text-decoration:none;color:inherit;">
+        <div class="stat-label">Drafts</div><div class="stat-value"><?= $pc['draft'] ?? 0 ?></div>
+    </a>
+    <a href="<?= url('/dashboard/keywords.php?site=' . $site_id) ?>" class="stat-card" style="text-decoration:none;color:inherit;">
+        <div class="stat-label">Keywords</div><div class="stat-value"><?= $kw_count ?></div>
+    </a>
+    <a href="<?= url('/dashboard/seo-audit.php?site=' . $site_id) ?>" class="stat-card" style="text-decoration:none;color:inherit;">
+        <div class="stat-label">SEO Issues</div><div class="stat-value" style="color:<?= $open_issues > 0 ? 'var(--danger)' : 'var(--success)' ?>;"><?= $open_issues ?></div>
+    </a>
+    <a href="<?= url('/dashboard/posts.php?site=' . $site_id) ?>" class="stat-card" style="text-decoration:none;color:inherit;">
+        <div class="stat-label">Total Posts</div><div class="stat-value"><?= array_sum($pc) ?></div>
+    </a>
+</div>
+
+<!-- Progress Tracker -->
+<?php if (!empty($score_history)): ?>
+<div class="card" style="margin-bottom:10px;">
+    <div class="card-header flex justify-between items-center" style="padding:10px 14px;">
+        <span style="font-weight:600;font-size:13px;">Progress Tracker</span>
+        <?php if ($score_change !== null): ?>
+            <span class="text-sm">Since first audit: <span style="color:<?= $score_change >= 0 ? 'var(--success)' : 'var(--danger)' ?>;font-weight:600;"><?= $score_change >= 0 ? '+' : '' ?><?= $score_change ?> points</span></span>
+        <?php endif; ?>
+    </div>
+    <!-- SEO Score Chart -->
+    <div style="padding:0 14px 6px;">
+        <div class="text-sm text-muted mb-2" style="font-weight:600;font-size:12px;">SEO Score Over Time</div>
+        <div style="display:flex;align-items:flex-end;gap:4px;height:70px;">
+            <?php foreach ($score_history as $h):
+                $bh = max(8, ($h['score'] / 100) * 60);
+                $bc = $h['score'] >= 80 ? '#10b981' : ($h['score'] >= 50 ? '#f59e0b' : '#ef4444');
+            ?>
+            <div style="flex:1;display:flex;flex-direction:column;align-items:center;gap:2px;">
+                <span style="font-size:10px;font-weight:700;color:<?= $bc ?>;"><?= $h['score'] ?></span>
+                <div style="width:100%;max-width:45px;height:<?= $bh ?>px;background:<?= $bc ?>;border-radius:3px 3px 0 0;"></div>
+                <span style="font-size:8px;color:#94a3b8;"><?= $h['label'] ?></span>
+            </div>
+            <?php endforeach; ?>
+        </div>
+    </div>
+    <!-- Issues Progress Bar -->
+    <?php
+    $total_tracked = $issues_fixed + $open_issues;
+    $fix_pct = $total_tracked > 0 ? round(($issues_fixed / $total_tracked) * 100) : 0;
+    ?>
+    <div style="padding:6px 14px 10px;">
+        <div class="text-sm text-muted mb-2" style="font-weight:600;font-size:12px;">Issues: <?= $issues_fixed ?> fixed, <?= $open_issues ?> open</div>
+        <div style="height:8px;background:#fecaca;border-radius:4px;overflow:hidden;">
+            <div style="height:100%;width:<?= $fix_pct ?>%;background:#10b981;border-radius:4px;"></div>
+        </div>
+        <div class="flex justify-between mt-2" style="font-size:10px;color:#94a3b8;">
+            <span><?= $fix_pct ?>% resolved</span>
+            <span><?= $total_tracked ?> total tracked</span>
+        </div>
+    </div>
+    <!-- Weekly Summary -->
+    <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:6px;padding:8px 14px;border-top:1px solid var(--border);">
+        <div style="text-align:center;"><div style="font-size:18px;font-weight:700;color:var(--primary);"><?= $posts_this_week ?></div><div style="font-size:9px;color:#94a3b8;text-transform:uppercase;">Posts this week</div></div>
+        <div style="text-align:center;"><div style="font-size:18px;font-weight:700;color:var(--primary);"><?= $kw_this_week ?></div><div style="font-size:9px;color:#94a3b8;text-transform:uppercase;">New keywords</div></div>
+        <div style="text-align:center;"><div style="font-size:18px;font-weight:700;color:var(--success);"><?= $issues_fixed ?></div><div style="font-size:9px;color:#94a3b8;text-transform:uppercase;">Issues fixed</div></div>
+        <div style="text-align:center;"><div style="font-size:18px;font-weight:700;color:<?= $sc >= 50 ? 'var(--success)' : ($sc >= 0 ? 'var(--danger)' : '#94a3b8') ?>;"><?= $sc >= 0 ? $sc . '%' : '--' ?></div><div style="font-size:9px;color:#94a3b8;text-transform:uppercase;">SEO Health</div></div>
+    </div>
+</div>
+<?php endif; ?>
 
 <!-- What to do next -->
 <?php
 $next_step = 'scan';
-$next_label = '🔍 Start: Scan Your Website';
-if ($has_scan && !$has_audit) { $next_step = 'audit'; $next_label = '📊 Next: Run SEO Audit'; }
-elseif ($has_audit && $open_issues > 0) { $next_step = 'fix'; $next_label = "🤖 Next: Auto-Fix {$open_issues} Issues"; }
-elseif ($has_audit && !$has_keywords) { $next_step = 'keywords'; $next_label = '🔑 Next: Find Keywords'; }
-elseif ($has_keywords && !$has_content) { $next_step = 'content'; $next_label = '🧠 Next: Write Your First Blog Post'; }
+$next_label = 'Start: Scan Your Website';
+if ($has_scan && !$has_audit) { $next_step = 'audit'; $next_label = 'Next: Run SEO Audit'; }
+elseif ($has_audit && $open_issues > 0) { $next_step = 'fix'; $next_label = "Next: Auto-Fix {$open_issues} Issues"; }
+elseif ($has_audit && !$has_keywords) { $next_step = 'keywords'; $next_label = 'Next: Find Keywords'; }
+elseif ($has_keywords && !$has_content) { $next_step = 'content'; $next_label = 'Next: Write Your First Blog Post'; }
 else { $next_step = 'done'; $next_label = ''; }
 
 if ($next_step !== 'done'):
