@@ -437,13 +437,26 @@ $current_page = basename($_SERVER['PHP_SELF'], '.php');
 
     <div class="content">
         <?php
-        // Auto back button — show on pages with query params (detail views)
-        $has_params = !empty($_GET['action']) || !empty($_GET['audit']) || !empty($_GET['id']);
-        $parent_page = basename($_SERVER['PHP_SELF'], '.php');
-        if ($has_params && $parent_page !== 'index'):
+        // Auto back button
+        $current_file = basename($_SERVER['PHP_SELF'], '.php');
+        $has_params = !empty($_GET['action']) || !empty($_GET['audit']) || !empty($_GET['id']) || !empty($_GET['site']);
+        if ($has_params && $current_file !== 'index'):
+            if ($current_file === 'site'):
+                // Site detail → back to Dashboard
+                $back_url = url('/dashboard/index.php');
+                $back_label = 'Dashboard';
+            elseif (!empty($_GET['site']) || !empty($_GET['id'])):
+                // Tool pages with site context → back to site
+                $back_site_id = $_GET['site'] ?? $_GET['id'] ?? '';
+                $back_url = url('/dashboard/site.php?id=' . (int)$back_site_id);
+                $back_label = 'Site';
+            else:
+                $back_url = url('/dashboard/index.php');
+                $back_label = 'Dashboard';
+            endif;
         ?>
             <div style="margin-bottom: 10px;">
-                <a href="<?= url('/dashboard/' . $parent_page . '.php') ?>" style="color: var(--text-light); text-decoration: none; font-size: 13px;">&laquo; Back to <?= ucfirst(str_replace('-', ' ', $parent_page)) ?></a>
+                <a href="<?= $back_url ?>" style="color: var(--text-light); text-decoration: none; font-size: 13px;">&laquo; Back to <?= $back_label ?></a>
             </div>
         <?php endif; ?>
 

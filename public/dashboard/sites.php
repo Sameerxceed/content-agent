@@ -423,13 +423,13 @@ if ($action === 'add'):
             <!-- Agent Actions -->
             <div class="card" style="margin-bottom: 2px; padding: 12px 16px;">
                 <div class="flex gap-2" style="flex-wrap: wrap;">
-                    <a href="<?= url('/dashboard/agent-run.php?agent=auto-fixer&site=' . $s['id']) ?>" class="btn btn-sm" style="background:#ef4444;color:#fff;text-decoration:none;">🤖 Auto-Fix All Issues</a>
-                    <a href="<?= url('/dashboard/write.php?site=' . $s['id'] . '&step=propose') ?>" class="btn btn-accent btn-sm" style="text-decoration:none;">🧠 AI Content Planner</a>
-                    <a href="<?= url('/dashboard/agent-run.php?agent=scanner&site=' . $s['id']) ?>" class="btn btn-primary btn-sm" style="text-decoration:none;">🔍 Scan Site</a>
-                    <a href="<?= url('/dashboard/agent-run.php?agent=seo-auditor&site=' . $s['id']) ?>" class="btn btn-primary btn-sm" style="text-decoration:none;">📊 SEO Audit</a>
-                    <a href="<?= url('/dashboard/agent-run.php?agent=keyword-research&site=' . $s['id']) ?>" class="btn btn-primary btn-sm" style="text-decoration:none;">🔑 Find Keywords</a>
-                    <a href="<?= url('/dashboard/agent-run.php?agent=news-scraper&site=' . $s['id']) ?>" class="btn btn-primary btn-sm" style="text-decoration:none;">📰 Scrape News</a>
-                    <a href="<?= url('/dashboard/agent-run.php?agent=evaluator&site=' . $s['id']) ?>" class="btn btn-outline btn-sm" style="text-decoration:none;">📈 Evaluate Strategy</a>
+                    <a href="<?= url('/dashboard/agent-run.php?agent=scanner&site=' . $s['id']) ?>" class="btn btn-primary btn-sm" style="text-decoration:none;">Scan Site</a>
+                    <a href="<?= url('/dashboard/agent-run.php?agent=seo-auditor&site=' . $s['id']) ?>" class="btn btn-primary btn-sm" style="text-decoration:none;">SEO Audit</a>
+                    <a href="<?= url('/dashboard/agent-run.php?agent=auto-fixer&site=' . $s['id']) ?>" class="btn btn-sm" style="background:#ef4444;color:#fff;text-decoration:none;">Auto-Fix Issues</a>
+                    <a href="<?= url('/dashboard/agent-run.php?agent=keyword-research&site=' . $s['id']) ?>" class="btn btn-primary btn-sm" style="text-decoration:none;">Find Keywords</a>
+                    <a href="<?= url('/dashboard/write.php?site=' . $s['id'] . '&step=propose') ?>" class="btn btn-accent btn-sm" style="text-decoration:none;">AI Content Planner</a>
+                    <a href="<?= url('/dashboard/agent-run.php?agent=news-scraper&site=' . $s['id']) ?>" class="btn btn-primary btn-sm" style="text-decoration:none;">Scrape News</a>
+                    <a href="<?= url('/dashboard/agent-run.php?agent=evaluator&site=' . $s['id']) ?>" class="btn btn-outline btn-sm" style="text-decoration:none;">Evaluate Strategy</a>
                 </div>
             </div>
 
