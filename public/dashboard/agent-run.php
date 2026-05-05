@@ -87,6 +87,9 @@ ob_start();
 </style>
 
 <div class="agent-page">
+    <div style="margin-bottom:10px;">
+        <a href="<?= url('/dashboard/site.php?id=' . $site_id) ?>" style="font-size:13px;color:var(--primary);text-decoration:none;">&larr; Back to <?= e($site['name']) ?></a>
+    </div>
     <div class="agent-header">
         <h2><?= e($info['name']) ?></h2>
         <p><?= e($info['desc']) ?></p>
