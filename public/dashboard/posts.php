@@ -327,16 +327,38 @@ if ($action === 'edit' && isset($_GET['id'])):
     $stmt = $db->prepare('SELECT id, name, domain FROM sites WHERE user_id = ? ORDER BY name');
     $stmt->execute([$user_id]);
     $sites = $stmt->fetchAll();
+
+    // Get site name if filtered
+    $site_name = '';
+    if ($filter_site) {
+        foreach ($sites as $s) {
+            if ($s['id'] == $filter_site) { $site_name = $s['name']; break; }
+        }
+    }
 ?>
+    <?php if ($filter_site && $site_name): ?>
+    <div style="margin-bottom:10px;">
+        <a href="<?= url('/dashboard/site.php?id=' . (int)$filter_site) ?>" style="font-size:13px;color:var(--primary);text-decoration:none;">&larr; Back to <?= e($site_name) ?></a>
+    </div>
+    <?php else: ?>
+    <div style="margin-bottom:10px;">
+        <a href="<?= url('/dashboard/index.php') ?>" style="font-size:13px;color:var(--primary);text-decoration:none;">&larr; Back to Dashboard</a>
+    </div>
+    <?php endif; ?>
+
     <!-- Filters -->
     <div class="card" style="padding: 10px 16px;">
         <form method="GET" class="flex gap-4 items-center" style="flex-wrap: wrap;">
+            <?php if ($filter_site): ?>
+                <input type="hidden" name="site" value="<?= (int)$filter_site ?>">
+            <?php else: ?>
             <select name="site" class="form-control" style="width: auto; min-width: 150px;">
                 <option value="">All Sites</option>
                 <?php foreach ($sites as $s): ?>
                     <option value="<?= $s['id'] ?>" <?= $filter_site == $s['id'] ? 'selected' : '' ?>><?= e($s['name']) ?></option>
                 <?php endforeach; ?>
             </select>
+            <?php endif; ?>
             <select name="status" class="form-control" style="width: auto;">
                 <option value="">All Status</option>
                 <option value="draft" <?= $filter_status === 'draft' ? 'selected' : '' ?>>Draft</option>

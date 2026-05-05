@@ -45,7 +45,25 @@ $clusters = $cluster_stmt->fetchAll(PDO::FETCH_COLUMN);
 $stmt = $db->prepare("SELECT COUNT(*) as total, COUNT(DISTINCT cluster) as clusters, AVG(priority) as avg_priority FROM keywords k JOIN sites s ON k.site_id = s.id WHERE s.user_id = ?");
 $stmt->execute([$user_id]);
 $stats = $stmt->fetch();
+
+// Get site name if filtered
+$site_name_kw = '';
+if ($filter_site) {
+    foreach ($sites as $s) {
+        if ($s['id'] == $filter_site) { $site_name_kw = $s['name']; break; }
+    }
+}
 ?>
+
+<?php if ($filter_site && $site_name_kw): ?>
+<div style="margin-bottom:10px;">
+    <a href="<?= url('/dashboard/site.php?id=' . (int)$filter_site) ?>" style="font-size:13px;color:var(--primary);text-decoration:none;">&larr; Back to <?= e($site_name_kw) ?></a>
+</div>
+<?php else: ?>
+<div style="margin-bottom:10px;">
+    <a href="<?= url('/dashboard/index.php') ?>" style="font-size:13px;color:var(--primary);text-decoration:none;">&larr; Back to Dashboard</a>
+</div>
+<?php endif; ?>
 
 <div class="stats-grid">
     <div class="stat-card">
@@ -65,12 +83,16 @@ $stats = $stmt->fetch();
 <!-- Filters -->
 <div class="card" style="padding: 10px 16px;">
     <form method="GET" class="flex gap-4 items-center" style="flex-wrap: wrap;">
+        <?php if ($filter_site): ?>
+            <input type="hidden" name="site" value="<?= (int)$filter_site ?>">
+        <?php else: ?>
         <select name="site" class="form-control" style="width: auto; min-width: 150px;">
             <option value="">All Sites</option>
             <?php foreach ($sites as $s): ?>
                 <option value="<?= $s['id'] ?>" <?= $filter_site == $s['id'] ? 'selected' : '' ?>><?= e($s['name']) ?></option>
             <?php endforeach; ?>
         </select>
+        <?php endif; ?>
         <select name="cluster" class="form-control" style="width: auto; min-width: 150px;">
             <option value="">All Clusters</option>
             <?php foreach ($clusters as $c): ?>
