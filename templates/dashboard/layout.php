@@ -388,12 +388,7 @@ $current_page = basename($_SERVER['PHP_SELF'], '.php');
             <span class="nav-icon">&#9632;</span> Dashboard
         </a>
         <!-- Sites tab removed — Dashboard shows all sites -->
-        <a href="<?= url('/dashboard/posts.php') ?>" class="<?= $current_page === 'posts' ? 'active' : '' ?>">
-            <span class="nav-icon">&#9998;</span> Posts
-        </a>
-        <a href="<?= url('/dashboard/write.php') ?>" class="<?= $current_page === 'write' ? 'active' : '' ?>">
-            <span class="nav-icon">&#9997;</span> AI Writer
-        </a>
+        <!-- Posts & AI Writer removed — accessed from site detail page -->
 
         <!-- Tools removed from sidebar — accessed from within site detail page -->
 
