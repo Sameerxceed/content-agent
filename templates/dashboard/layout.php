@@ -395,25 +395,7 @@ $current_page = basename($_SERVER['PHP_SELF'], '.php');
             <span class="nav-icon">&#9997;</span> AI Writer
         </a>
 
-        <div class="nav-section">Tools</div>
-        <a href="<?= url('/dashboard/analytics.php') ?>" class="<?= $current_page === 'analytics' ? 'active' : '' ?>">
-            <span class="nav-icon">&#9783;</span> Analytics
-        </a>
-        <a href="<?= url('/dashboard/search-console.php') ?>" class="<?= $current_page === 'search-console' ? 'active' : '' ?>">
-            <span class="nav-icon">&#9906;</span> Search Console
-        </a>
-        <a href="<?= url('/dashboard/seo-audit.php') ?>" class="<?= $current_page === 'seo-audit' ? 'active' : '' ?>">
-            <span class="nav-icon">&#10003;</span> SEO Audit
-        </a>
-        <a href="<?= url('/dashboard/keywords.php') ?>" class="<?= $current_page === 'keywords' ? 'active' : '' ?>">
-            <span class="nav-icon">&#9906;</span> Keywords
-        </a>
-        <a href="<?= url('/dashboard/ai-seo.php') ?>" class="<?= $current_page === 'ai-seo' ? 'active' : '' ?>">
-            <span class="nav-icon">&#9881;</span> AI SEO
-        </a>
-        <a href="<?= url('/dashboard/social.php') ?>" class="<?= $current_page === 'social' ? 'active' : '' ?>">
-            <span class="nav-icon">&#9993;</span> Social Media
-        </a>
+        <!-- Tools removed from sidebar — accessed from within site detail page -->
 
         <div class="nav-section">Settings</div>
         <a href="<?= url('/dashboard/settings.php') ?>" class="<?= $current_page === 'settings' ? 'active' : '' ?>">

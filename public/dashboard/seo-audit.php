@@ -283,6 +283,9 @@ if ($audit_id):
     $stmt->execute([$user_id]);
     $sites = $stmt->fetchAll();
 ?>
+    <div style="margin-bottom:10px;">
+        <a href="<?= url('/dashboard/index.php') ?>" style="font-size:13px;color:var(--primary);text-decoration:none;">&larr; Back to Dashboard</a>
+    </div>
     <div class="card" style="padding: 10px 16px;">
         <form method="GET" class="flex gap-4 items-center">
             <select name="site" class="form-control" style="width: auto; min-width: 150px;">
