@@ -165,11 +165,11 @@ $sc_cls = $sc < 0 ? '' : ($sc >= 80 ? 'score-good' : ($sc >= 50 ? 'score-ok' : '
 <!-- Agent Actions -->
 <div class="card" style="margin-bottom:2px; padding:10px 14px;">
     <div class="action-bar">
-        <a href="<?= url('/dashboard/agent-run.php?agent=auto-fixer&site=' . $site_id) ?>" class="btn btn-sm" style="background:#ef4444;color:#fff;text-decoration:none;">Auto-Fix All Issues</a>
-        <a href="<?= url('/dashboard/write.php?site=' . $site_id . '&step=propose') ?>" class="btn btn-accent btn-sm" style="text-decoration:none;">AI Content Planner</a>
         <a href="<?= url('/dashboard/agent-run.php?agent=scanner&site=' . $site_id) ?>" class="btn btn-primary btn-sm" style="text-decoration:none;">Scan Site</a>
         <a href="<?= url('/dashboard/agent-run.php?agent=seo-auditor&site=' . $site_id) ?>" class="btn btn-primary btn-sm" style="text-decoration:none;">SEO Audit</a>
+        <a href="<?= url('/dashboard/agent-run.php?agent=auto-fixer&site=' . $site_id) ?>" class="btn btn-sm" style="background:#ef4444;color:#fff;text-decoration:none;">Auto-Fix Issues</a>
         <a href="<?= url('/dashboard/agent-run.php?agent=keyword-research&site=' . $site_id) ?>" class="btn btn-primary btn-sm" style="text-decoration:none;">Find Keywords</a>
+        <a href="<?= url('/dashboard/write.php?site=' . $site_id . '&step=propose') ?>" class="btn btn-accent btn-sm" style="text-decoration:none;">AI Content Planner</a>
         <a href="<?= url('/dashboard/agent-run.php?agent=news-scraper&site=' . $site_id) ?>" class="btn btn-primary btn-sm" style="text-decoration:none;">Scrape News</a>
         <a href="<?= url('/dashboard/agent-run.php?agent=evaluator&site=' . $site_id) ?>" class="btn btn-outline btn-sm" style="text-decoration:none;">Evaluate Strategy</a>
     </div>
