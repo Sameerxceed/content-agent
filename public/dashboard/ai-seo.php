@@ -154,7 +154,11 @@ if ($filter_site && !$action) {
         <div class="card" style="padding:12px 16px;margin-bottom:14px;">
             <div class="flex justify-between items-center" style="flex-wrap:wrap;gap:8px;">
                 <div class="flex gap-2" style="flex-wrap:wrap;">
-                    <button onclick="deployNow('all', <?= $site['id'] ?>, this)" class="btn btn-accent" style="padding:8px 20px;">Fix All & Deploy to Website</button>
+                    <?php if ($audit['score'] < 100): ?>
+                        <button onclick="deployNow('all', <?= $site['id'] ?>, this)" class="btn btn-accent" style="padding:8px 20px;">Fix All & Deploy to Website</button>
+                    <?php else: ?>
+                        <span style="color:var(--success);font-weight:600;font-size:14px;">All checks passed — nothing to fix!</span>
+                    <?php endif; ?>
                     <a href="<?= url('/dashboard/ai-seo.php?site=' . $site['id'] . '&action=generate-llms') ?>" class="btn btn-outline btn-sm">Preview llms.txt</a>
                     <a href="<?= url('/dashboard/ai-seo.php?site=' . $site['id'] . '&action=generate-robots') ?>" class="btn btn-outline btn-sm">Preview robots.txt</a>
                     <a href="<?= url('/dashboard/ai-seo.php?site=' . $site['id'] . '&action=generate-schema') ?>" class="btn btn-outline btn-sm">Preview Schema</a>
