@@ -171,38 +171,87 @@ async function run() {
 
         if (data.success) {
             setProgress(100, 'Scan complete!');
-            log('Platform: ' + (data.platform || 'custom'), 'success');
-            log('Title: ' + (data.title || 'N/A'), data.title ? 'success' : 'warn');
+            // Platform insight
+            const p = data.platform || 'custom';
+            const platformMsg = {
+                'wordpress': 'WordPress detected — plugins available for most SEO fixes',
+                'opencart': 'OpenCart detected — template and .htaccess fixes needed for SEO',
+                'shopify': 'Shopify detected — limited control over root files (sitemap, llms.txt)',
+                'wix': 'Wix detected — limited SEO control, consider migrating for full SEO',
+                'squarespace': 'Squarespace detected — basic SEO built-in, limited customization',
+                'nextjs': 'Next.js detected — great for SEO with server-side rendering',
+                'custom': 'Custom platform — full control over all SEO elements'
+            };
+            log('Platform: ' + p + ' — ' + (platformMsg[p] || 'Custom build'), 'success');
 
-            if (data.internal_links > 10) {
-                log('Pages found: ' + data.internal_links + ' — Good site structure', 'success');
+            // Title check
+            if (!data.title || data.title.length < 10) {
+                log('Title: "' + (data.title || '') + '" — Too short or missing. Title should be 50-60 characters describing your business', 'error');
+            } else if (data.title.length > 70) {
+                log('Title: "' + data.title + '" — Too long (' + data.title.length + ' chars). Shorten to under 60 characters', 'warn');
+            } else {
+                log('Title: "' + data.title + '" — Good length (' + data.title.length + ' chars)', 'success');
+            }
+
+            // Pages / internal links
+            if (data.internal_links > 20) {
+                log('Pages found: ' + data.internal_links + ' — Strong site structure with good internal linking', 'success');
+            } else if (data.internal_links > 10) {
+                log('Pages found: ' + data.internal_links + ' — Decent structure. Consider adding more content pages', 'success');
             } else if (data.internal_links > 0) {
-                log('Pages found: ' + data.internal_links + ' — Small site. More pages = more SEO opportunities', 'warn');
+                log('Pages found: ' + data.internal_links + ' — Small site. More pages = more keywords you can rank for', 'warn');
             } else {
-                log('This is a single-page website — only 1 page found, no internal links. SEO needs multiple pages with content to rank.', 'error');
+                log('Single-page website — no internal links found. Google can only rank this 1 page. You need multiple pages to compete in search.', 'error');
             }
 
-            if (data.images > 0) {
-                log('Images: ' + data.images + ' found', 'info');
+            // Images
+            if (data.images > 10) {
+                log('Images: ' + data.images + ' — Good visual content', 'success');
+            } else if (data.images > 0) {
+                log('Images: ' + data.images + ' — Consider adding more images for better engagement', 'info');
             } else {
-                log('Images: 0 — Add images to improve engagement', 'warn');
+                log('No images found — pages with images get 94% more views. Add product/service images', 'warn');
             }
 
-            log('SSL: ' + (data.ssl_valid ? 'Valid — Secure connection' : 'Invalid — Not secure! Get an SSL certificate'), data.ssl_valid ? 'success' : 'error');
-            log('Sitemap: ' + (data.sitemap ? 'Found — Search engines can discover your pages' : 'Missing — Search engines can\'t find all your pages'), data.sitemap ? 'success' : 'error');
-            log('Blog: ' + (data.blog_path ? data.blog_path + ' — Content hub found' : 'Not found — No blog means no fresh content for SEO'), data.blog_path ? 'success' : 'warn');
+            // SSL
+            if (data.ssl_valid) {
+                log('SSL: Secure (HTTPS) — Google prefers secure sites', 'success');
+            } else {
+                log('SSL: NOT SECURE — Google marks this site as "Not Secure". Visitors will see a warning. Get an SSL certificate immediately', 'error');
+            }
 
-            // Summary feedback
+            // Sitemap
+            if (data.sitemap) {
+                log('Sitemap: Found — Google and AI bots can discover all your pages', 'success');
+            } else if (data.internal_links === 0) {
+                log('Sitemap: Missing — With only 1 page, a sitemap won\'t help much. Focus on adding more pages first', 'warn');
+            } else {
+                log('Sitemap: Missing — Google is probably missing ' + Math.round(data.internal_links * 0.4) + '+ of your pages. Create a sitemap.xml urgently', 'error');
+            }
+
+            // Blog
+            if (data.blog_path) {
+                log('Blog: Found at ' + data.blog_path + ' — Great for publishing fresh content that ranks', 'success');
+            } else {
+                log('No blog found — Websites with blogs get 55% more traffic. A blog lets you target keywords and attract visitors', 'warn');
+            }
+
+            // Summary
             let issues = 0;
-            if (!data.ssl_valid) issues++;
-            if (!data.sitemap) issues++;
-            if (data.internal_links === 0) issues++;
+            let critical = 0;
+            if (!data.ssl_valid) { issues++; critical++; }
+            if (!data.sitemap && data.internal_links > 0) { issues++; critical++; }
+            if (data.internal_links === 0) { issues++; critical++; }
             if (!data.blog_path) issues++;
+            if (!data.title || data.title.length < 10) { issues++; critical++; }
+            if (data.images === 0) issues++;
 
             if (issues === 0) {
-                showResult('✓', 'Site looks great! Ready for SEO audit.');
+                showResult('✓', 'Site looks great! Ready for a detailed SEO audit.');
+            } else if (critical > 0) {
+                showResult(critical + ' critical', critical + ' urgent issue' + (critical > 1 ? 's' : '') + ' found. Run SEO Audit for full analysis and fixes.');
             } else {
-                showResult(issues + ' issue' + (issues > 1 ? 's' : ''), 'Found ' + issues + ' thing' + (issues > 1 ? 's' : '') + ' to fix. Run SEO Audit for full analysis.');
+                showResult(issues + ' suggestion' + (issues > 1 ? 's' : ''), 'Minor improvements possible. Run SEO Audit for details.');
             }
         } else {
             setProgress(100, 'Scan failed');
@@ -225,8 +274,35 @@ async function run() {
         if (data.success) {
             setProgress(100, 'Audit complete!');
             log('Crawled ' + data.pages + ' pages in ' + data.duration + 's', 'success');
-            log('Score: ' + data.score + '/100', 'highlight');
-            log('Issues found: ' + data.issues + ' (' + data.critical + ' critical, ' + data.warnings + ' warnings)', data.issues > 0 ? 'warn' : 'success');
+
+            // Score with context
+            const score = data.score;
+            if (score >= 90) {
+                log('Score: ' + score + '/100 — Excellent! Your site is well optimized', 'success');
+            } else if (score >= 75) {
+                log('Score: ' + score + '/100 — Good, but room for improvement', 'success');
+            } else if (score >= 50) {
+                log('Score: ' + score + '/100 — Needs work. Several SEO issues are hurting your rankings', 'warn');
+            } else {
+                log('Score: ' + score + '/100 — Poor. Major SEO problems are preventing this site from ranking', 'error');
+            }
+
+            // Issues breakdown with context
+            if (data.critical > 0) {
+                log(data.critical + ' critical issues — These are blocking your site from ranking. Fix these first!', 'error');
+            }
+            if (data.warnings > 0) {
+                log(data.warnings + ' warnings — These hurt your SEO but won\'t block you completely', 'warn');
+            }
+            if (data.issues === 0) {
+                log('No issues found — Your site is fully optimized!', 'success');
+            }
+
+            // Pages context
+            if (data.pages <= 1) {
+                log('Only ' + data.pages + ' page audited — single-page sites have very limited SEO potential', 'warn');
+            }
+
             showResult(data.score + '/100', data.issues + ' issues found across ' + data.pages + ' pages');
 
             if (data.audit_id) {
@@ -267,7 +343,15 @@ async function run() {
         }
 
         setProgress(100, 'Auto-fix complete!');
-        log('Done! ' + totalFixed + ' fixed, ' + totalSkipped + ' skipped', 'success');
+        if (totalFixed > 0) {
+            log(totalFixed + ' issues auto-fixed — These fixes are ready to deploy to your site', 'success');
+        }
+        if (totalSkipped > 0) {
+            log(totalSkipped + ' issues skipped — These need manual fixing (content changes, image alt text, etc.)', 'info');
+        }
+        if (totalFixed === 0 && totalIssues > 0) {
+            log('No auto-fixes available — The remaining issues need manual content changes', 'warn');
+        }
         showResult(totalFixed, 'fixes generated & ready to deploy (out of ' + totalIssues + ' issues)');
 
         // Show snippet info
@@ -290,7 +374,18 @@ async function run() {
 
         if (data.success) {
             setProgress(100, 'Keywords found!');
-            log('Found ' + data.total + ' keywords in ' + data.clusters + ' clusters', 'success');
+            if (data.total > 30) {
+                log('Found ' + data.total + ' keywords — Excellent keyword opportunity!', 'success');
+            } else if (data.total > 10) {
+                log('Found ' + data.total + ' keywords — Good starting point for content', 'success');
+            } else if (data.total > 0) {
+                log('Found ' + data.total + ' keywords — Limited opportunities. Consider broadening your niche', 'warn');
+            } else {
+                log('No keywords found — Try adding topics in site settings', 'error');
+            }
+            if (data.clusters > 1) {
+                log(data.clusters + ' topic clusters identified — Each cluster can become a content series', 'info');
+            }
             if (data.samples) data.samples.forEach(k => log('  → ' + k, 'dim'));
             showResult(data.total, 'keywords discovered');
             document.getElementById('action-buttons').innerHTML += '<a href="<?= url('/dashboard/keywords.php?site=' . $site_id) ?>" class="btn btn-primary btn-sm">View Keywords →</a>';
