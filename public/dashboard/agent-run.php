@@ -111,8 +111,16 @@ ob_start();
     </div>
 
     <div class="action-buttons" id="action-buttons" style="display:none;">
-        <a href="<?= url('/dashboard/sites.php?action=view&id=' . $site_id) ?>" class="btn btn-primary btn-sm">← Back to Site</a>
-        <a href="<?= url('/dashboard/sites.php') ?>" class="btn btn-outline btn-sm">All Sites</a>
+        <a href="<?= url('/dashboard/site.php?id=' . $site_id) ?>" class="btn btn-primary btn-sm">← Back to Site</a>
+        <?php if ($agent === 'scanner'): ?>
+            <a href="<?= url('/dashboard/agent-run.php?agent=seo-auditor&site=' . $site_id) ?>" class="btn btn-accent btn-sm">Next: Run SEO Audit →</a>
+        <?php elseif ($agent === 'seo-auditor'): ?>
+            <a href="<?= url('/dashboard/agent-run.php?agent=auto-fixer&site=' . $site_id) ?>" class="btn btn-accent btn-sm">Next: Auto-Fix Issues →</a>
+        <?php elseif ($agent === 'auto-fixer'): ?>
+            <a href="<?= url('/dashboard/agent-run.php?agent=keyword-research&site=' . $site_id) ?>" class="btn btn-accent btn-sm">Next: Find Keywords →</a>
+        <?php elseif ($agent === 'keyword-research'): ?>
+            <a href="<?= url('/dashboard/write.php?site=' . $site_id . '&step=propose') ?>" class="btn btn-accent btn-sm">Next: AI Content Planner →</a>
+        <?php endif; ?>
     </div>
 </div>
 
