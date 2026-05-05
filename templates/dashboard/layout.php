@@ -387,9 +387,7 @@ $current_page = basename($_SERVER['PHP_SELF'], '.php');
         <a href="<?= url('/dashboard/index.php') ?>" class="<?= $current_page === 'index' ? 'active' : '' ?>">
             <span class="nav-icon">&#9632;</span> Dashboard
         </a>
-        <a href="<?= url('/dashboard/sites.php') ?>" class="<?= $current_page === 'sites' ? 'active' : '' ?>">
-            <span class="nav-icon">&#9673;</span> Sites
-        </a>
+        <!-- Sites tab removed — Dashboard shows all sites -->
         <a href="<?= url('/dashboard/posts.php') ?>" class="<?= $current_page === 'posts' ? 'active' : '' ?>">
             <span class="nav-icon">&#9998;</span> Posts
         </a>
