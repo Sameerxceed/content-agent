@@ -80,25 +80,29 @@ function haiku_chat(string $system_prompt, string $user_message, int $max_tokens
 /**
  * Generate a blog post from a topic/keyword.
  */
-function haiku_write_blog(string $topic, string $brand_tone, array $keywords = [], int $word_count = 1000): array
+function haiku_write_blog(string $topic, string $brand_tone, array $keywords = [], int $word_count = 1000, ?array $site = null): array
 {
     $keyword_list = implode(', ', $keywords);
 
     $current_year = date('Y');
     $current_date = date('d M Y');
 
-    $system = "You are the content writer for Xceed Imagination — a boutique software studio in Pune, India with 12+ years experience and 200+ shipped projects. Team of ~40 engineers.
+    // Site-aware system prompt
+    $site_name = $site['name'] ?? 'our company';
+    $site_domain = $site['domain'] ?? '';
+    $topics = json_decode($site['topics'] ?? '[]', true) ?: [];
+    $niche = !empty($topics) ? implode(', ', array_slice($topics, 0, 3)) : 'our industry';
 
-WRITING STYLE (match this exactly):
-- First person plural: \"we\", \"our team\", \"at Xceed\"
+    $system = "You are the content writer for {$site_name}" . ($site_domain ? " ({$site_domain})" : "") . ".
+
+WRITING STYLE:
+- Write as {$site_name}. Use \"we\", \"our team\" naturally.
 - Opinionated, direct, no fluff. Lead with the answer, not the question.
-- Use real-world context: mention actual project types you've built (ERPs, marketplaces, AI pipelines, mobile apps)
-- Include specific numbers and ranges where relevant (timelines, costs, team sizes)
-- Tone: confident practitioner sharing hard-won knowledge, NOT a generic content mill
-- Short paragraphs. No corporate jargon. Write like you're explaining to a smart founder.
-- Start posts with a bold statement or counter-intuitive insight, not \"In today's fast-paced world...\"
+- Tone: {$brand_tone}
+- Short paragraphs. No corporate jargon. Write like you're explaining to a smart reader.
+- Start posts with a bold statement or insight, not \"In today's fast-paced world...\"
+- Our niche: {$niche}
 
-Brand voice: $brand_tone
 IMPORTANT: Today is {$current_date}. Current year is {$current_year}. NEVER use 2024 or 2025.
 
 Output ONLY valid JSON with keys: title, seo_title, seo_description, excerpt, body (HTML), tags (array of strings).
@@ -109,9 +113,7 @@ Do not wrap in markdown code blocks.";
 Target keywords: {$keyword_list}
 Year: {$current_year}
 
-Write from Xceed Imagination's perspective — a Pune-based studio that builds custom software and AI solutions.
-Reference real experience where appropriate (without inventing specific client names).
-Make it genuinely useful — the kind of post a CTO or founder would bookmark.
+Write from {$site_name}'s perspective. Make it genuinely useful and authoritative.
 Include: a punchy title, 3-4 H2 sections, specific actionable advice, and a clear conclusion.";
 
     $result = haiku_chat($system, $prompt);

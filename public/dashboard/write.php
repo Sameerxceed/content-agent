@@ -174,8 +174,8 @@ Output ONLY valid JSON array:
         $kw_array = array_filter(array_map('trim', explode(',', $keywords_str)));
         $prompt_topic = $description ? "{$topic}. {$description}" : $topic;
 
-        // Write the post
-        $result = haiku_write_blog($prompt_topic, $brand_tone, $kw_array, rand(config('agent_min_word_count'), config('agent_max_word_count')));
+        // Write the post (pass site context for brand-aware writing)
+        $result = haiku_write_blog($prompt_topic, $brand_tone, $kw_array, rand(config('agent_min_word_count'), config('agent_max_word_count')), $site);
 
         $post = $result['parsed'] ?? null;
         $error = null;
