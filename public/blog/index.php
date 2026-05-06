@@ -93,13 +93,14 @@ $blog_path = $site['blog_path'] ?: '/blog';
         header {
             background: var(--primary);
             color: #fff;
-            padding: 20px 0;
+            padding: 12px 0;
         }
-        header h1 {
-            font-size: 20px;
-            font-weight: 600;
-        }
-        header h1 a { color: #fff; text-decoration: none; }
+        header .header-inner { display:flex; align-items:center; justify-content:space-between; }
+        header .brand { display:flex; align-items:center; gap:10px; text-decoration:none; color:#fff; }
+        header .brand img { height:36px; width:auto; }
+        header .brand span { font-size:16px; font-weight:600; letter-spacing:0.5px; }
+        header nav a { color:rgba(255,255,255,0.8); text-decoration:none; font-size:13px; margin-left:16px; }
+        header nav a:hover { color:#fff; }
         .posts { padding: 24px 0; }
         .post-card {
             background: #fff;
@@ -171,8 +172,16 @@ $blog_path = $site['blog_path'] ?: '/blog';
 <body>
 
 <header>
-    <div class="container">
-        <h1><a href="<?= e($blog_path) ?>"><?= e($site['name']) ?> — Blog</a></h1>
+    <div class="container header-inner">
+        <a href="https://<?= e($site['domain']) ?>" class="brand">
+            <img src="https://www.google.com/s2/favicons?domain=<?= e($site['domain']) ?>&sz=64" alt="<?= e($site['name']) ?>" onerror="this.style.display='none'">
+            <span><?= e($site['name']) ?></span>
+        </a>
+        <nav>
+            <a href="https://<?= e($site['domain']) ?>">Home</a>
+            <a href="<?= e($blog_path) ?>?site=<?= $site['id'] ?>">Blog</a>
+            <a href="https://<?= e($site['domain']) ?>/contact">Contact</a>
+        </nav>
     </div>
 </header>
 
@@ -216,8 +225,9 @@ $blog_path = $site['blog_path'] ?: '/blog';
     <?php endif; ?>
 </div>
 
-<footer>
-    &copy; <?= date('Y') ?> <?= e($site['name']) ?>. Powered by ContentAgent.
+<footer style="text-align:center;padding:20px;font-size:12px;color:#888;background:#f8fafc;border-top:1px solid #e5e7eb;margin-top:20px;">
+    <div>&copy; <?= date('Y') ?> <a href="https://<?= e($site['domain']) ?>" style="color:var(--primary);text-decoration:none;"><?= e($site['name']) ?></a></div>
+    <div style="margin-top:4px;font-size:10px;color:#bbb;">Powered by <a href="https://contentagent.xceedtech.in" style="color:#bbb;text-decoration:none;">ContentAgent</a></div>
 </footer>
 
 </body>

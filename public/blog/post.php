@@ -115,10 +115,14 @@ $read_time = max(1, round($word_count / 200));
         header {
             background: var(--primary);
             color: #fff;
-            padding: 16px 0;
+            padding: 12px 0;
         }
-        header a { color: #fff; text-decoration: none; font-size: 14px; }
-        header a:hover { text-decoration: underline; }
+        header .header-inner { display:flex; align-items:center; justify-content:space-between; }
+        header .brand { display:flex; align-items:center; gap:10px; text-decoration:none; color:#fff; }
+        header .brand img { height:36px; width:auto; }
+        header .brand span { font-size:16px; font-weight:600; letter-spacing:0.5px; }
+        header nav a { color:rgba(255,255,255,0.8); text-decoration:none; font-size:13px; margin-left:16px; }
+        header nav a:hover { color:#fff; }
         article { background: #fff; padding: 32px; margin: 20px 0; border-radius: 8px; border: 1px solid #e5e7eb; }
         article h1 { font-size: 26px; line-height: 1.3; margin-bottom: 10px; color: #1a1a1a; }
         .post-meta { font-size: 13px; color: #888; margin-bottom: 20px; padding-bottom: 16px; border-bottom: 1px solid #eee; }
@@ -147,14 +151,23 @@ $read_time = max(1, round($word_count / 200));
         .related a:hover { color: var(--accent); }
         .source-link { margin-top: 14px; padding: 10px 14px; background: #f8f9fa; border-radius: 6px; font-size: 13px; }
         .source-link a { color: var(--accent); }
-        footer { text-align: center; padding: 16px; font-size: 11px; color: #aaa; }
+        footer { text-align:center; padding:20px; font-size:12px; color:#888; background:#f8fafc; border-top:1px solid #e5e7eb; margin-top:20px; }
+        footer a { color:var(--primary); text-decoration:none; }
     </style>
 </head>
 <body>
 
 <header>
-    <div class="container">
-        <a href="<?= e($blog_path) ?>">&laquo; <?= e($site['name']) ?> Blog</a>
+    <div class="container header-inner">
+        <a href="https://<?= e($site['domain']) ?>" class="brand">
+            <img src="https://www.google.com/s2/favicons?domain=<?= e($site['domain']) ?>&sz=64" alt="<?= e($site['name']) ?>" onerror="this.style.display='none'">
+            <span><?= e($site['name']) ?></span>
+        </a>
+        <nav>
+            <a href="https://<?= e($site['domain']) ?>">Home</a>
+            <a href="<?= e($blog_path) ?>?site=<?= $site['id'] ?>">Blog</a>
+            <a href="https://<?= e($site['domain']) ?>/contact">Contact</a>
+        </nav>
     </div>
 </header>
 
@@ -201,7 +214,8 @@ $read_time = max(1, round($word_count / 200));
 </div>
 
 <footer>
-    &copy; <?= date('Y') ?> <?= e($site['name']) ?>. Powered by ContentAgent.
+    <div>&copy; <?= date('Y') ?> <a href="https://<?= e($site['domain']) ?>"><?= e($site['name']) ?></a></div>
+    <div style="margin-top:4px;font-size:10px;color:#bbb;">Powered by <a href="https://contentagent.xceedtech.in" style="color:#bbb;">ContentAgent</a></div>
 </footer>
 
 </body>
