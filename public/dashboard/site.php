@@ -155,6 +155,7 @@ $sc_cls = $sc < 0 ? '' : ($sc >= 80 ? 'score-good' : ($sc >= 50 ? 'score-ok' : '
             </div>
         </div>
         <div class="flex gap-2">
+            <a href="<?= url('/dashboard/report.php?site=' . $site_id) ?>" class="btn btn-sm" style="background:var(--primary);color:#fff;text-decoration:none;">Health Report</a>
             <a href="<?= url('/api/export.php?site_id=' . $site_id . '&type=full') ?>" class="btn btn-outline btn-sm">Export CSV</a>
             <a href="<?= url('/dashboard/sites.php?action=edit&id=' . $site_id) ?>" class="btn btn-outline btn-sm">Edit</a>
             <a href="<?= url('/dashboard/seo-audit.php?site=' . $site_id) ?>" class="btn btn-outline btn-sm">Full Audit</a>
