@@ -114,10 +114,11 @@ if ($action === 'edit' && isset($_GET['id'])):
                 <button onclick="publishToCMS(<?= $post['id'] ?>, this)" class="btn btn-accent btn-sm">Publish to CMS</button>
             <?php endif; ?>
             <?php if ($post['status'] === 'published'): ?>
-                <button onclick="shareToSocial(<?= $post['id'] ?>)" class="btn btn-outline btn-sm" style="border-color:#0A66C2;color:#0A66C2;">📱 Share to Social</button>
+                <a href="<?= url('/dashboard/social.php?site=' . $post['site_id'] . '&post=' . $post['id']) ?>" class="btn btn-outline btn-sm" style="border-color:#0A66C2;color:#0A66C2;text-decoration:none;">Share to Social</a>
             <?php endif; ?>
             <?php if ($post['type'] === 'blog'): ?>
-                <button onclick="generateCarousel(<?= $post['id'] ?>, this)" class="btn btn-outline btn-sm" style="border-color:#E1306C;color:#E1306C;">Instagram Carousel</button>
+                <!-- Instagram Carousel: needs proper implementation -->
+
             <?php endif; ?>
             <?php if ($post['status'] === 'draft'): ?>
                 <form method="POST" style="display:inline">
