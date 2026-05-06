@@ -107,6 +107,55 @@ function generate_llms_full_txt(array $site, PDO $db): string
 }
 
 /**
+ * Regenerate and deploy llms.txt for a site after content changes.
+ * Attempts CMS API deploy first, falls back to logging for manual deploy.
+ */
+function regenerate_llms_txt(array $site, PDO $db): array
+{
+    $llms = generate_llms_txt($site, $db);
+    $llms_full = generate_llms_full_txt($site, $db);
+    $deployed = [];
+    $errors = [];
+
+    $cms_url = $site['cms_url'] ?? '';
+    $cms_api_key = $site['cms_api_key'] ?? '';
+
+    if (!empty($cms_url) && !empty($cms_api_key)) {
+        $deploy_url = rtrim($cms_url, '/') . '/api/deploy-file.php';
+
+        foreach (['llms.txt' => $llms, 'llms-full.txt' => $llms_full] as $filename => $content) {
+            $ch = curl_init($deploy_url);
+            curl_setopt_array($ch, [
+                CURLOPT_RETURNTRANSFER => true,
+                CURLOPT_POST => true,
+                CURLOPT_POSTFIELDS => json_encode(['filename' => $filename, 'content' => $content]),
+                CURLOPT_HTTPHEADER => ['Content-Type: application/json', 'X-API-Key: ' . $cms_api_key],
+                CURLOPT_TIMEOUT => 10,
+            ]);
+            $body = curl_exec($ch);
+            $status = curl_getinfo($ch, CURLINFO_HTTP_CODE);
+            curl_close($ch);
+
+            if ($status === 200) {
+                $deployed[] = $filename;
+            } else {
+                $errors[] = $filename . ': HTTP ' . $status;
+            }
+        }
+    }
+
+    // Log the regeneration
+    $db->prepare('INSERT INTO agent_log (site_id, action, details, status) VALUES (?, ?, ?, ?)')->execute([
+        $site['id'],
+        'regenerate_llms',
+        json_encode(['deployed' => $deployed, 'errors' => $errors, 'llms_size' => strlen($llms)]),
+        !empty($deployed) ? 'success' : (empty($cms_url) ? 'skipped' : 'fail'),
+    ]);
+
+    return ['deployed' => $deployed, 'errors' => $errors, 'content' => $llms];
+}
+
+/**
  * Audit a site's AI discoverability.
  * Returns a list of checks with pass/fail and recommendations.
  */

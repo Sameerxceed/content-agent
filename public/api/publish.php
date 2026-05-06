@@ -70,6 +70,15 @@ if ($result['success']) {
     // Mark as published locally
     $db->prepare('UPDATE posts SET status = "published", published_at = NOW() WHERE id = ?')->execute([$post_id]);
 
+    // Regenerate llms.txt with new post included
+    require_once __DIR__ . '/../../includes/ai-seo.php';
+    $stmt_site = $db->prepare('SELECT * FROM sites WHERE id = ?');
+    $stmt_site->execute([$post['site_id']]);
+    $pub_site = $stmt_site->fetch();
+    if ($pub_site) {
+        regenerate_llms_txt($pub_site, $db);
+    }
+
     // Log
     $db->prepare('INSERT INTO agent_log (site_id, action, details, status) VALUES (?, ?, ?, ?)')->execute([
         $post['site_id'],

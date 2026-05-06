@@ -39,22 +39,46 @@ $site = $stmt->fetch();
 
 if (!$site) json_response(['error' => 'Site not found'], 404);
 
-$cms_url = $site['cms_url'];
-$cms_api_key = $site['cms_api_key'];
+$cms_url = $site['cms_url'] ?? '';
+$cms_api_key = $site['cms_api_key'] ?? '';
+$has_cms = !empty($cms_url) && !empty($cms_api_key);
+$has_ftp = !empty($site['server_host']);
 
-if (empty($cms_url) || empty($cms_api_key)) {
-    json_response(['error' => 'CMS not configured. Go to Site Edit → add CMS URL and API Key.'], 400);
+if (!$has_cms && !$has_ftp) {
+    json_response(['error' => 'No deploy method configured. Add CMS API credentials or FTP/SFTP credentials in Site Settings.'], 400);
 }
 
-$deploy_url = rtrim($cms_url, '/') . '/api/deploy-file.php';
+// Determine deploy method
+$deploy_method = $has_cms ? 'cms' : 'ftp';
+$deploy_url = $has_cms ? rtrim($cms_url, '/') . '/api/deploy-file.php' : '';
+
+if ($has_ftp && !$has_cms) {
+    require_once __DIR__ . '/../../includes/server-deploy.php';
+}
+
 $deployed = [];
 $errors = [];
 
 // ── Generate and deploy based on type ────────────────────
 
+// Unified deploy function — tries CMS API or FTP
+function deploy_seo_file(array $site, string $filename, string $content, string $method, string $deploy_url, string $api_key): array
+{
+    if ($method === 'cms') {
+        return deploy_file($deploy_url, $api_key, $filename, $content);
+    } else {
+        // FTP deploy — put in site root
+        $path = $filename;
+        if (!empty($site['server_path'])) {
+            $path = rtrim($site['server_path'], '/') . '/' . $filename;
+        }
+        return server_deploy_file($site, $path, $content);
+    }
+}
+
 if ($type === 'llms' || $type === 'all') {
     $llms = generate_llms_txt($site, $db);
-    $result = deploy_file($deploy_url, $cms_api_key, 'llms.txt', $llms);
+    $result = deploy_seo_file($site, 'llms.txt', $llms, $deploy_method, $deploy_url, $cms_api_key);
     if ($result['success']) {
         $deployed[] = 'llms.txt';
     } else {
@@ -62,7 +86,7 @@ if ($type === 'llms' || $type === 'all') {
     }
 
     $llms_full = generate_llms_full_txt($site, $db);
-    $result = deploy_file($deploy_url, $cms_api_key, 'llms-full.txt', $llms_full);
+    $result = deploy_seo_file($site, 'llms-full.txt', $llms_full, $deploy_method, $deploy_url, $cms_api_key);
     if ($result['success']) {
         $deployed[] = 'llms-full.txt';
     } else {
@@ -72,7 +96,7 @@ if ($type === 'llms' || $type === 'all') {
 
 if ($type === 'robots' || $type === 'all') {
     $robots = generate_ai_robots_txt($site['domain'], true);
-    $result = deploy_file($deploy_url, $cms_api_key, 'robots.txt', $robots);
+    $result = deploy_seo_file($site, 'robots.txt', $robots, $deploy_method, $deploy_url, $cms_api_key);
     if ($result['success']) {
         $deployed[] = 'robots.txt';
     } else {
@@ -87,7 +111,7 @@ if ($type === 'schema' || $type === 'all') {
     ];
 
     foreach ($schemas as $filename => $content) {
-        $result = deploy_file($deploy_url, $cms_api_key, $filename, $content);
+        $result = deploy_seo_file($site, $filename, $content, $deploy_method, $deploy_url, $cms_api_key);
         if ($result['success']) {
             $deployed[] = $filename;
         } else {
