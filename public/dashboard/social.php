@@ -158,6 +158,135 @@ if (empty($site_id)): ?>
         <?php endforeach; ?>
     </div>
 
+    <!-- Instagram Carousel Generator -->
+    <?php
+    $post_id = (int)($_GET['post'] ?? 0);
+    $carousel_action = $_GET['action'] ?? '';
+
+    if ($post_id && ($carousel_action === 'carousel' || $carousel_action === 'share')):
+        $stmt = $db->prepare('SELECT * FROM posts WHERE id = ? AND site_id = ?');
+        $stmt->execute([$post_id, $site_id]);
+        $share_post = $stmt->fetch();
+
+        if ($share_post):
+            $colors = json_decode($site['brand_colors'] ?? '[]', true) ?: [];
+            $bg_color = $colors[0] ?? '#1B3A6B';
+            $accent = $colors[1] ?? '#CC3300';
+
+            // Generate carousel slides from post content
+            $post_body = strip_tags($share_post['body']);
+            $sentences = preg_split('/(?<=[.!?])\s+/', $post_body, -1, PREG_SPLIT_NO_EMPTY);
+
+            // Build slides: title slide + 4-5 content slides + CTA slide
+            $slides = [];
+            // Slide 1: Title
+            $slides[] = ['type' => 'title', 'text' => $share_post['title']];
+
+            // Content slides: group sentences into chunks
+            $chunk = '';
+            $slide_count = 0;
+            foreach ($sentences as $s) {
+                $s = trim($s);
+                if (empty($s)) continue;
+                if (strlen($chunk . ' ' . $s) > 280 || $slide_count === 0) {
+                    if (!empty($chunk)) {
+                        $slides[] = ['type' => 'content', 'text' => trim($chunk)];
+                        $slide_count++;
+                    }
+                    $chunk = $s;
+                } else {
+                    $chunk .= ' ' . $s;
+                }
+                if ($slide_count >= 5) break;
+            }
+            if (!empty($chunk) && $slide_count < 5) {
+                $slides[] = ['type' => 'content', 'text' => trim($chunk)];
+            }
+
+            // Final slide: CTA
+            $slides[] = ['type' => 'cta', 'text' => "Follow " . $site['name'] . " for more\n\n" . $site['domain']];
+    ?>
+    <div class="card" style="margin-bottom:14px;">
+        <div class="card-header" style="display:flex;justify-content:space-between;align-items:center;">
+            <span style="font-weight:600;">Instagram Carousel — <?= e(truncate($share_post['title'], 50)) ?></span>
+            <span class="text-sm text-muted"><?= count($slides) ?> slides</span>
+        </div>
+
+        <div style="padding:14px;overflow-x:auto;">
+            <div style="display:flex;gap:12px;min-width:max-content;">
+                <?php foreach ($slides as $i => $slide): ?>
+                <div style="width:300px;height:300px;flex-shrink:0;border-radius:8px;display:flex;align-items:center;justify-content:center;padding:24px;text-align:center;position:relative;
+                    <?php if ($slide['type'] === 'title'): ?>
+                        background:<?= e($bg_color) ?>;color:#fff;
+                    <?php elseif ($slide['type'] === 'cta'): ?>
+                        background:<?= e($accent) ?>;color:#fff;
+                    <?php else: ?>
+                        background:#fff;border:2px solid <?= e($bg_color) ?>;color:<?= e($bg_color) ?>;
+                    <?php endif; ?>
+                ">
+                    <div style="position:absolute;top:8px;left:12px;font-size:10px;opacity:0.5;"><?= $i + 1 ?>/<?= count($slides) ?></div>
+                    <?php if ($slide['type'] === 'title'): ?>
+                        <div style="font-size:20px;font-weight:700;line-height:1.3;"><?= e($slide['text']) ?></div>
+                    <?php elseif ($slide['type'] === 'cta'): ?>
+                        <div style="font-size:18px;font-weight:600;line-height:1.4;white-space:pre-line;"><?= e($slide['text']) ?></div>
+                    <?php else: ?>
+                        <div style="font-size:14px;line-height:1.6;"><?= e($slide['text']) ?></div>
+                    <?php endif; ?>
+                    <?php if ($slide['type'] !== 'cta'): ?>
+                        <div style="position:absolute;bottom:10px;right:12px;font-size:9px;opacity:0.4;"><?= e($site['name']) ?></div>
+                    <?php endif; ?>
+                </div>
+                <?php endforeach; ?>
+            </div>
+        </div>
+
+        <div style="padding:10px 14px;background:#f8fafc;display:flex;gap:8px;align-items:center;flex-wrap:wrap;">
+            <button onclick="downloadSlides()" class="btn btn-accent btn-sm">Download All Slides</button>
+            <button onclick="copyCaption()" class="btn btn-outline btn-sm">Copy Caption</button>
+            <span class="text-sm text-muted">Tip: Screenshot each slide or use the download button</span>
+        </div>
+
+        <!-- Caption for Instagram -->
+        <div style="padding:10px 14px;">
+            <div style="font-size:12px;font-weight:600;margin-bottom:4px;">Instagram Caption:</div>
+            <textarea id="insta-caption" class="form-control" rows="4" style="font-size:12px;"><?= e($share_post['excerpt'] ?: truncate(strip_tags($share_post['body']), 200)) ?>
+
+#<?= e(str_replace(' ', '', $site['name'])) ?> <?php
+                $tags = json_decode($share_post['tags'] ?? '[]', true) ?: [];
+                foreach (array_slice($tags, 0, 5) as $tag) {
+                    echo '#' . e(str_replace([' ', ','], '', $tag)) . ' ';
+                }
+            ?></textarea>
+        </div>
+    </div>
+
+    <script>
+    function copyCaption() {
+        const el = document.getElementById('insta-caption');
+        navigator.clipboard.writeText(el.value);
+        event.target.textContent = 'Copied!';
+        setTimeout(() => event.target.textContent = 'Copy Caption', 2000);
+    }
+
+    function downloadSlides() {
+        // Use html2canvas if available, otherwise prompt screenshot
+        const slides = document.querySelectorAll('[style*="width:300px;height:300px"]');
+        if (typeof html2canvas !== 'undefined') {
+            slides.forEach((slide, i) => {
+                html2canvas(slide).then(canvas => {
+                    const link = document.createElement('a');
+                    link.download = 'slide-' + (i+1) + '.png';
+                    link.href = canvas.toDataURL();
+                    link.click();
+                });
+            });
+        } else {
+            alert('Take a screenshot of each slide. Tip: Right-click → Save as Image, or use a browser extension like GoFullPage.');
+        }
+    }
+    </script>
+    <?php endif; endif; ?>
+
     <!-- Recent social posts -->
     <?php
     $stmt = $db->prepare('SELECT sp.*, p.title as post_title FROM social_posts sp JOIN posts p ON sp.post_id = p.id WHERE sp.site_id = ? ORDER BY sp.created_at DESC LIMIT 10');
