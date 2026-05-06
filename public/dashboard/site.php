@@ -491,11 +491,14 @@ if ($next_step !== 'done'):
         <div class="section-status">
             <div class="dot not-done"></div>
             <div>
-                <div class="section-title">🤖 AI Discoverability</div>
+                <div class="section-title">AI Discoverability</div>
                 <div class="section-subtitle">llms.txt, AI crawlers, schema markup</div>
             </div>
         </div>
-        <a href="<?= url('/dashboard/ai-seo.php?site=' . $site_id) ?>" class="edit-link" onclick="event.stopPropagation()">Manage →</a>
+        <div style="display:flex;gap:6px;" onclick="event.stopPropagation()">
+            <a href="<?= url('/dashboard/ai-seo.php?site=' . $site_id) ?>" class="edit-link">AI SEO →</a>
+            <a href="<?= url('/dashboard/ai-visibility.php?site=' . $site_id) ?>" class="edit-link" style="color:var(--accent);">Visibility Check →</a>
+        </div>
     </div>
 </div>
 
