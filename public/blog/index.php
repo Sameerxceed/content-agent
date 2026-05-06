@@ -9,11 +9,17 @@ require_once __DIR__ . '/../../includes/helpers.php';
 $db = require __DIR__ . '/../../includes/db.php';
 
 // Determine which site this blog belongs to
-$host = $_SERVER['HTTP_HOST'] ?? '';
-$host = preg_replace('/^www\./', '', $host);
-
-$stmt = $db->prepare('SELECT * FROM sites WHERE domain = ? AND is_active = 1 LIMIT 1');
-$stmt->execute([$host]);
+$test_site_id = (int)($_GET['site'] ?? 0);
+if ($test_site_id) {
+    // Test mode: allow viewing blog by site ID
+    $stmt = $db->prepare('SELECT * FROM sites WHERE id = ? AND is_active = 1 LIMIT 1');
+    $stmt->execute([$test_site_id]);
+} else {
+    $host = $_SERVER['HTTP_HOST'] ?? '';
+    $host = preg_replace('/^www\./', '', $host);
+    $stmt = $db->prepare('SELECT * FROM sites WHERE domain = ? AND is_active = 1 LIMIT 1');
+    $stmt->execute([$host]);
+}
 $site = $stmt->fetch();
 
 if (!$site) {
