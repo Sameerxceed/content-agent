@@ -472,7 +472,7 @@ if ($next_step !== 'done'):
         <div style="display:flex;gap:6px;" onclick="event.stopPropagation()">
             <a href="<?= url('/dashboard/write.php?site=' . $site_id . '&step=propose') ?>" class="edit-link" style="color:var(--accent);">Write New →</a>
             <?php if ($has_content): ?>
-                <a href="<?= url('/dashboard/posts.php?site=' . $site_id) ?>" class="edit-link">View All →</a>
+                <a href="<?= url('/dashboard/write.php?site=' . $site_id . '&step=propose') ?>" class="edit-link">View All →</a>
             <?php endif; ?>
         </div>
     </div>

@@ -95,6 +95,36 @@ Output ONLY valid JSON array:
         <span class="text-muted">Writing for:</span> <strong><?= e($site['name']) ?></strong> (<?= e($site['domain']) ?>)
     </div>
 
+    <?php
+    // Previous posts for this site
+    $prev_stmt = $db->prepare('SELECT id, title, slug, status, type, published_at, created_at FROM posts WHERE site_id = ? ORDER BY created_at DESC LIMIT 10');
+    $prev_stmt->execute([$site_id]);
+    $prev_posts = $prev_stmt->fetchAll();
+    ?>
+    <?php if (!empty($prev_posts)): ?>
+    <div class="card mb-4">
+        <div class="card-header" style="display:flex;justify-content:space-between;align-items:center;">
+            <span>📝 Previous Posts (<?= count($prev_posts) ?>)</span>
+            <a href="<?= url('/dashboard/posts.php?site=' . $site_id) ?>" style="font-size:12px;color:var(--primary);">View All →</a>
+        </div>
+        <div style="max-height:240px;overflow-y:auto;">
+        <?php foreach ($prev_posts as $pp): ?>
+            <div style="padding:8px 0;border-bottom:1px solid #f1f5f9;display:flex;justify-content:space-between;align-items:center;gap:8px;">
+                <div style="flex:1;min-width:0;">
+                    <div style="font-size:13px;font-weight:500;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;"><?= e($pp['title']) ?></div>
+                    <div style="font-size:11px;color:#888;">
+                        <?= $pp['published_at'] ? format_date($pp['published_at'], 'd M Y') : format_date($pp['created_at'], 'd M Y') ?>
+                        · <span class="badge badge-<?= $pp['status'] === 'published' ? 'success' : 'draft' ?>" style="font-size:10px;"><?= $pp['status'] ?></span>
+                        · <?= e($pp['type']) ?>
+                    </div>
+                </div>
+                <a href="<?= url('/dashboard/posts.php?action=edit&id=' . $pp['id'] . '&site=' . $site_id) ?>" class="btn btn-outline btn-sm" style="font-size:11px;padding:3px 8px;">Edit</a>
+            </div>
+        <?php endforeach; ?>
+        </div>
+    </div>
+    <?php endif; ?>
+
     <?php if (!empty($proposals)): ?>
     <div class="card">
         <div class="card-header">🧠 AI Proposed Topics — Pick one or write your own</div>
