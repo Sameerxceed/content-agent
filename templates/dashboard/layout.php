@@ -398,9 +398,11 @@ $current_page = basename($_SERVER['PHP_SELF'], '.php');
         </a>
     </div>
 
+    <?php if (($user['id'] ?? 0) == 1): ?>
     <div style="padding: 8px 12px; border-top: 1px solid rgba(255,255,255,0.1);">
         <button onclick="deployToHtdocs(this)" style="width:100%;padding:6px;background:var(--accent);color:#fff;border:none;border-radius:4px;font-size:11px;cursor:pointer;font-weight:600;">Deploy Changes</button>
     </div>
+    <?php endif; ?>
 
     <div class="sidebar-user">
         <span><?= e($user['name'] ?? 'User') ?></span>
