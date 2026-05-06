@@ -17,7 +17,7 @@ $db = require __DIR__ . '/../../includes/db.php';
 $user_id = auth_user_id();
 
 $site_id = (int)($_GET['site'] ?? $_POST['site_id'] ?? 0);
-$step = $_GET['step'] ?? $_POST['step'] ?? 'pick-site';
+$step = $_POST['step'] ?? $_GET['step'] ?? 'pick-site';
 
 $page_title = '🧠 AI Content Writer';
 
