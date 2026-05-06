@@ -117,8 +117,7 @@ if ($action === 'edit' && isset($_GET['id'])):
                 <a href="<?= url('/dashboard/social.php?site=' . $post['site_id'] . '&post=' . $post['id']) ?>" class="btn btn-outline btn-sm" style="border-color:#0A66C2;color:#0A66C2;text-decoration:none;">Share to Social</a>
             <?php endif; ?>
             <?php if ($post['type'] === 'blog'): ?>
-                <!-- Instagram Carousel: needs proper implementation -->
-
+                <a href="<?= url('/dashboard/social.php?site=' . $post['site_id'] . '&post=' . $post['id'] . '&action=carousel') ?>" class="btn btn-outline btn-sm" style="border-color:#E1306C;color:#E1306C;text-decoration:none;">Instagram Carousel</a>
             <?php endif; ?>
             <?php if ($post['status'] === 'draft'): ?>
                 <form method="POST" style="display:inline">
