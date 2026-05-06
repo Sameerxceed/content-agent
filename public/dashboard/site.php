@@ -170,7 +170,7 @@ $sc_cls = $sc < 0 ? '' : ($sc >= 80 ? 'score-good' : ($sc >= 50 ? 'score-ok' : '
         <a href="<?= url('/dashboard/agent-run.php?agent=seo-auditor&site=' . $site_id) ?>" class="btn btn-primary btn-sm" style="text-decoration:none;">SEO Audit</a>
         <a href="<?= url('/dashboard/agent-run.php?agent=auto-fixer&site=' . $site_id) ?>" class="btn btn-sm" style="background:#ef4444;color:#fff;text-decoration:none;">Auto-Fix Issues</a>
         <a href="<?= url('/dashboard/agent-run.php?agent=keyword-research&site=' . $site_id) ?>" class="btn btn-primary btn-sm" style="text-decoration:none;">Find Keywords</a>
-        <a href="<?= url('/dashboard/write.php?site=' . $site_id . '&step=propose') ?>" class="btn btn-accent btn-sm" style="text-decoration:none;">AI Content Planner</a>
+        <a href="<?= url('/dashboard/write.php?site=' . $site_id . '&step=propose') ?>" class="btn btn-accent btn-sm" style="text-decoration:none;">Content Planner</a>
         <a href="<?= url('/dashboard/agent-run.php?agent=news-scraper&site=' . $site_id) ?>" class="btn btn-primary btn-sm" style="text-decoration:none;">Scrape News</a>
         <a href="<?= url('/dashboard/agent-run.php?agent=evaluator&site=' . $site_id) ?>" class="btn btn-outline btn-sm" style="text-decoration:none;">Evaluate Strategy</a>
     </div>
@@ -298,7 +298,7 @@ if ($next_step !== 'done'):
 </div>
 
 <!-- 2. SEO Audit -->
-<div class="section" id="sec-audit">
+<div class="section <?= $has_audit ? 'open' : '' ?>" id="sec-audit">
     <div class="section-header" onclick="toggleSection('audit')">
         <div class="section-status">
             <div class="dot <?= $has_audit ? 'done' : 'not-done' ?>"></div>
@@ -434,7 +434,7 @@ if ($next_step !== 'done'):
 <?php endif; ?>
 
 <!-- 4. Keywords -->
-<div class="section" id="sec-keywords">
+<div class="section <?= $has_keywords ? 'open' : '' ?>" id="sec-keywords">
     <div class="section-header" onclick="toggleSection('keywords')">
         <div class="section-status">
             <div class="dot <?= $has_keywords ? 'done' : 'not-done' ?>"></div>
@@ -460,27 +460,35 @@ if ($next_step !== 'done'):
 </div>
 
 <!-- 5. Content -->
-<div class="section" id="sec-content">
+<div class="section <?= $has_content ? 'open' : '' ?>" id="sec-content">
     <div class="section-header" onclick="toggleSection('content')">
         <div class="section-status">
             <div class="dot <?= $has_content ? 'done' : 'not-done' ?>"></div>
             <div>
-                <div class="section-title">📝 Content</div>
+                <div class="section-title">Content</div>
                 <div class="section-subtitle"><?= $has_content ? (($pc['published'] ?? 0) . ' published, ' . ($pc['draft'] ?? 0) . ' drafts') : 'No content yet' ?></div>
             </div>
         </div>
-        <a href="<?= url('/dashboard/write.php?site=' . $site_id . '&step=propose') ?>" class="edit-link" onclick="event.stopPropagation()">AI Writer →</a>
+        <div style="display:flex;gap:6px;" onclick="event.stopPropagation()">
+            <a href="<?= url('/dashboard/write.php?site=' . $site_id . '&step=propose') ?>" class="edit-link" style="color:var(--accent);">Write New →</a>
+            <?php if ($has_content): ?>
+                <a href="<?= url('/dashboard/posts.php?site=' . $site_id) ?>" class="edit-link">View All →</a>
+            <?php endif; ?>
+        </div>
     </div>
     <div class="section-body">
         <?php if (!empty($recent_posts)): ?>
             <?php foreach ($recent_posts as $rp): ?>
             <div style="padding:6px 0;border-bottom:1px solid #f1f5f9;display:flex;justify-content:space-between;align-items:center;">
-                <a href="<?= url('/dashboard/posts.php?action=edit&id=' . $rp['id']) ?>" style="font-size:13px;color:var(--text);text-decoration:none;"><?= e(truncate($rp['title'], 50)) ?></a>
-                <span class="badge badge-<?= $rp['status'] ?>" style="font-size:10px;"><?= $rp['status'] ?></span>
+                <a href="<?= url('/dashboard/posts.php?action=edit&id=' . $rp['id'] . '&site=' . $site_id) ?>" style="font-size:13px;color:var(--text);text-decoration:none;"><?= e(truncate($rp['title'], 50)) ?></a>
+                <div style="display:flex;gap:4px;align-items:center;">
+                    <span class="badge badge-<?= $rp['status'] ?>" style="font-size:10px;"><?= $rp['status'] ?></span>
+                    <span style="font-size:10px;color:#94a3b8;"><?= format_date($rp['created_at'], 'd M') ?></span>
+                </div>
             </div>
             <?php endforeach; ?>
         <?php else: ?>
-            <p class="text-sm text-muted">Click "AI Writer" above to create your first blog post.</p>
+            <p class="text-sm text-muted">Click "Write New" above to create your first blog post.</p>
         <?php endif; ?>
     </div>
 </div>
