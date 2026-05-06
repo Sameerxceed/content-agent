@@ -112,10 +112,22 @@ if (!empty($deployed)) {
         'message'  => 'Deployed: ' . implode(', ', $deployed),
     ]);
 } else {
+    $error_detail = !empty($errors) ? implode('; ', $errors) : 'Unknown error';
+    $message = 'Deploy failed: ' . $error_detail;
+
+    // Add helpful context
+    if (strpos($error_detail, '404') !== false) {
+        $message .= '. The deploy endpoint was not found at ' . $deploy_url . ' — check if the CMS API is set up correctly.';
+    } elseif (strpos($error_detail, 'Could not resolve') !== false || strpos($error_detail, 'connect') !== false) {
+        $message .= '. Cannot reach the CMS server — check if the CMS URL is correct and the server is online.';
+    } elseif (strpos($error_detail, '401') !== false || strpos($error_detail, '403') !== false) {
+        $message .= '. Authentication failed — check if the API key is correct in Site Settings.';
+    }
+
     json_response([
         'success' => false,
         'errors'  => $errors,
-        'message' => 'Failed to deploy any files',
+        'message' => $message,
     ], 500);
 }
 

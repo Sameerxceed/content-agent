@@ -138,6 +138,18 @@ if ($action === 'audit') {
     $site = $stmt->fetch();
     if (!$site) json_response(['error' => 'Site not found'], 404);
 
+    // Cooldown: prevent running audit more than once per 2 minutes
+    $stmt = $db->prepare('SELECT run_at FROM seo_audits WHERE site_id = ? ORDER BY run_at DESC LIMIT 1');
+    $stmt->execute([$site_id]);
+    $last_audit = $stmt->fetch();
+    if ($last_audit) {
+        $seconds_since = time() - strtotime($last_audit['run_at']);
+        if ($seconds_since < 120) {
+            $wait = 120 - $seconds_since;
+            json_response(['error' => "Please wait {$wait} seconds before running another audit. Last audit was " . round($seconds_since) . " seconds ago."], 429);
+        }
+    }
+
     // Run auditor via CLI (captures output)
     $php = PHP_OS_FAMILY === 'Windows' ? 'C:\\xampp\\php\\php.exe' : '/usr/bin/php8.3';
     $script = realpath(__DIR__ . '/../../agent/seo-auditor.php');
