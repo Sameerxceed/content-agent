@@ -141,6 +141,19 @@ Output ONLY valid JSON array:
         </form>
     </div>
 
+    <script>
+    document.querySelectorAll('form').forEach(function(form) {
+        form.addEventListener('submit', function() {
+            const btn = form.querySelector('button[type="submit"]');
+            if (btn) {
+                btn.disabled = true;
+                btn.innerHTML = '<span style="display:inline-flex;align-items:center;gap:6px;"><svg width="16" height="16" viewBox="0 0 24 24" style="animation:spin 1s linear infinite;"><circle cx="12" cy="12" r="10" stroke="currentColor" stroke-width="3" fill="none" stroke-dasharray="31" stroke-linecap="round"/></svg> Writing with AI... (30-60 seconds)</span>';
+            }
+        });
+    });
+    </script>
+    <style>@keyframes spin { to { transform: rotate(360deg); } }</style>
+
     <?php } ?>
 
 <?php elseif ($step === 'write'): ?>
@@ -324,9 +337,12 @@ Output ONLY valid JSON array:
     <?php endif; ?>
 
     <div class="flex gap-2 mt-4">
-        <a href="<?= url('/dashboard/write.php?site=' . $site_id . '&step=propose') ?>" class="btn btn-accent">Write another →</a>
-        <a href="<?= url('/dashboard/posts.php?action=edit&id=' . $post_id) ?>" class="btn btn-outline">Edit Post</a>
-        <a href="<?= url('/dashboard/sites.php') ?>" class="btn btn-outline">Back to Sites</a>
+        <?php if ($status === 'published'): ?>
+            <a href="<?= url('/blog/post.php?site=' . $site_id . '&slug=' . urlencode($slug)) ?>" class="btn btn-primary" style="text-decoration:none;" target="_blank">Preview on Blog →</a>
+        <?php endif; ?>
+        <a href="<?= url('/dashboard/write.php?site=' . $site_id . '&step=propose') ?>" class="btn btn-accent" style="text-decoration:none;">Write another →</a>
+        <a href="<?= url('/dashboard/posts.php?action=edit&id=' . $post_id . '&site=' . $site_id) ?>" class="btn btn-outline" style="text-decoration:none;">Edit Post</a>
+        <a href="<?= url('/dashboard/site.php?id=' . $site_id) ?>" class="btn btn-outline" style="text-decoration:none;">Back to Site</a>
     </div>
 
     <?php } ?>
