@@ -170,9 +170,44 @@ if (empty($site_id)): ?>
 
         if ($share_post):
             $colors = json_decode($site['brand_colors'] ?? '[]', true) ?: [];
-            $bg_color = $colors[0] ?? '#1B3A6B';
-            $accent = $colors[1] ?? '#CC3300';
-
+            $bg_color = $_GET['bg'] ?? $colors[0] ?? '#1B3A6B';
+            $accent = $_GET['accent'] ?? $colors[1] ?? '#CC3300';
+            $text_color = $_GET['text'] ?? '#ffffff';
+            $content_bg = $_GET['content_bg'] ?? '#ffffff';
+            $content_text = $_GET['content_text'] ?? $bg_color;
+    ?>
+    <!-- Color Customizer -->
+    <div class="card" style="margin-bottom:14px;padding:12px 16px;">
+        <div style="font-weight:600;font-size:13px;margin-bottom:8px;">Customize Colors</div>
+        <form method="GET" class="flex gap-4 items-center" style="flex-wrap:wrap;">
+            <input type="hidden" name="site" value="<?= $site_id ?>">
+            <input type="hidden" name="post" value="<?= $post_id ?>">
+            <input type="hidden" name="action" value="carousel">
+            <div style="display:flex;align-items:center;gap:4px;">
+                <label style="font-size:11px;color:#64748b;">Title BG</label>
+                <input type="color" name="bg" value="<?= e($bg_color) ?>" style="width:32px;height:32px;border:1px solid #ddd;border-radius:4px;cursor:pointer;padding:0;">
+            </div>
+            <div style="display:flex;align-items:center;gap:4px;">
+                <label style="font-size:11px;color:#64748b;">CTA BG</label>
+                <input type="color" name="accent" value="<?= e($accent) ?>" style="width:32px;height:32px;border:1px solid #ddd;border-radius:4px;cursor:pointer;padding:0;">
+            </div>
+            <div style="display:flex;align-items:center;gap:4px;">
+                <label style="font-size:11px;color:#64748b;">Title Text</label>
+                <input type="color" name="text" value="<?= e($text_color) ?>" style="width:32px;height:32px;border:1px solid #ddd;border-radius:4px;cursor:pointer;padding:0;">
+            </div>
+            <div style="display:flex;align-items:center;gap:4px;">
+                <label style="font-size:11px;color:#64748b;">Slide BG</label>
+                <input type="color" name="content_bg" value="<?= e($content_bg) ?>" style="width:32px;height:32px;border:1px solid #ddd;border-radius:4px;cursor:pointer;padding:0;">
+            </div>
+            <div style="display:flex;align-items:center;gap:4px;">
+                <label style="font-size:11px;color:#64748b;">Slide Text</label>
+                <input type="color" name="content_text" value="<?= e($content_text) ?>" style="width:32px;height:32px;border:1px solid #ddd;border-radius:4px;cursor:pointer;padding:0;">
+            </div>
+            <button type="submit" class="btn btn-primary btn-sm">Apply</button>
+            <a href="<?= url('/dashboard/social.php?site=' . $site_id . '&post=' . $post_id . '&action=carousel') ?>" class="text-sm text-muted" style="text-decoration:none;">Reset to brand</a>
+        </form>
+    </div>
+    <?php
             // Generate carousel slides from post content
             $post_body = strip_tags($share_post['body']);
             $sentences = preg_split('/(?<=[.!?])\s+/', $post_body, -1, PREG_SPLIT_NO_EMPTY);
@@ -217,11 +252,11 @@ if (empty($site_id)): ?>
                 <?php foreach ($slides as $i => $slide): ?>
                 <div style="width:300px;height:300px;flex-shrink:0;border-radius:8px;display:flex;align-items:center;justify-content:center;padding:24px;text-align:center;position:relative;
                     <?php if ($slide['type'] === 'title'): ?>
-                        background:<?= e($bg_color) ?>;color:#fff;
+                        background:<?= e($bg_color) ?>;color:<?= e($text_color) ?>;
                     <?php elseif ($slide['type'] === 'cta'): ?>
-                        background:<?= e($accent) ?>;color:#fff;
+                        background:<?= e($accent) ?>;color:<?= e($text_color) ?>;
                     <?php else: ?>
-                        background:#fff;border:2px solid <?= e($bg_color) ?>;color:<?= e($bg_color) ?>;
+                        background:<?= e($content_bg) ?>;border:2px solid <?= e($bg_color) ?>;color:<?= e($content_text) ?>;
                     <?php endif; ?>
                 ">
                     <div style="position:absolute;top:8px;left:12px;font-size:10px;opacity:0.5;"><?= $i + 1 ?>/<?= count($slides) ?></div>
