@@ -502,6 +502,20 @@ if ($next_step !== 'done'):
     </div>
 </div>
 
+<!-- 6b. AI Presence -->
+<div class="section" id="sec-presence">
+    <div class="section-header" onclick="toggleSection('presence')">
+        <div class="section-status">
+            <div class="dot not-done"></div>
+            <div>
+                <div class="section-title">AI Presence Builder</div>
+                <div class="section-subtitle">Find conversations on Reddit, Quora, LinkedIn & more — join with AI-powered replies</div>
+            </div>
+        </div>
+        <a href="<?= url('/dashboard/ai-presence.php?site=' . $site_id) ?>" class="edit-link" onclick="event.stopPropagation()" style="color:var(--accent);">Build Presence →</a>
+    </div>
+</div>
+
 <!-- 7. Social Media -->
 <div class="section" id="sec-social">
     <div class="section-header" onclick="toggleSection('social')">
