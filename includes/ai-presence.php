@@ -181,24 +181,49 @@ function presence_scan_platform(string $platform_key, array $search_terms): arra
 function presence_build_search_terms(array $site, PDO $db): array
 {
     $topics = json_decode($site['topics'] ?? '[]', true) ?: [];
-    $stmt = $db->prepare('SELECT keyword FROM keywords WHERE site_id = ? ORDER BY priority DESC LIMIT 5');
+    $stmt = $db->prepare('SELECT keyword FROM keywords WHERE site_id = ? ORDER BY priority DESC LIMIT 10');
     $stmt->execute([$site['id']]);
     $keywords = $stmt->fetchAll(PDO::FETCH_COLUMN);
 
-    $terms = [];
-    // Top 2 keywords
-    if (!empty($keywords)) {
-        $terms[] = $keywords[0];
-        if (isset($keywords[1])) $terms[] = $keywords[1];
-    }
-    // Top topic
-    if (!empty($topics)) {
-        $terms[] = $topics[0];
-    }
-    // Brand name
-    $terms[] = $site['name'];
+    // Use AI to generate short, broad search terms that will actually find conversations
+    $site_label = $site['name'] . ' (' . $site['domain'] . ')';
+    $context = "Topics: " . implode(', ', $topics) . "\nKeywords: " . implode(', ', array_slice($keywords, 0, 8));
 
-    return array_unique($terms);
+    $ai = haiku_chat(
+        "Given this business, generate 5 short search terms (2-4 words each) that people would discuss on Reddit, Quora, or forums. "
+        . "Focus on the INDUSTRY and PROBLEMS the business solves, not the brand name. "
+        . "Output ONLY a JSON array of strings. Example: [\"web development trends\", \"best CRM software\", \"ecommerce platform comparison\"]",
+        "Business: {$site_label}\n{$context}",
+        256
+    );
+
+    $terms = [];
+    if ($ai['success']) {
+        $content = preg_replace('/^```(?:json)?\s*/m', '', $ai['content']);
+        $content = preg_replace('/\s*```\s*$/m', '', $content);
+        $parsed = json_decode(trim($content), true);
+        if (is_array($parsed)) {
+            $terms = array_slice($parsed, 0, 5);
+        }
+    }
+
+    // Fallback: use short versions of topics/keywords
+    if (empty($terms)) {
+        foreach ($topics as $t) {
+            $terms[] = $t;
+        }
+        // Extract short (2-4 word) keywords only
+        foreach ($keywords as $kw) {
+            if (str_word_count($kw) <= 4) {
+                $terms[] = $kw;
+            }
+        }
+        if (empty($terms)) {
+            $terms[] = $site['name'];
+        }
+    }
+
+    return array_unique(array_slice($terms, 0, 5));
 }
 
 /**
