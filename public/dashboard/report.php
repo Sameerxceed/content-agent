@@ -47,7 +47,7 @@ $info_issues = array_filter($open_issues, fn($i) => $i['severity'] === 'info');
 $fixed_issues = array_filter($seo_issues, fn($i) => in_array($i['status'], ['fix_applied', 'resolved', 'fixed_by_snippet']));
 
 // AI SEO audit (live check)
-$ai_results = run_ai_seo_audit($site, $db);
+$ai_results = audit_ai_discoverability($site['domain']);
 $ai_score = 0;
 $ai_total = count($ai_results);
 $ai_passed = count(array_filter($ai_results, fn($r) => $r['status'] === 'pass'));
