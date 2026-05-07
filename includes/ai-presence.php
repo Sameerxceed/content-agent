@@ -274,13 +274,131 @@ function _presence_filter_recent(array $conversations, string $platform = ''): a
     }));
 }
 
+// ── Shared search engines ────────────────────────────────
+
+/**
+ * Google Custom Search Engine — works for any platform via site: filter.
+ * Free: 100 queries/day. Returns real search results with dates.
+ */
+function _presence_google_cse_search(string $query, string $site_domain = ''): array
+{
+    $api_key = config('google_cse_api_key');
+    $cx = config('google_cse_cx');
+    if (!$api_key || !$cx) return [];
+
+    $params = [
+        'key' => $api_key,
+        'cx' => $cx,
+        'q' => $query . ($site_domain ? ' site:' . $site_domain : ''),
+        'num' => 8,
+        'dateRestrict' => 'm3', // last 3 months
+    ];
+    $url = 'https://www.googleapis.com/customsearch/v1?' . http_build_query($params);
+    $result = scraper_fetch($url, 10);
+    if ($result['status'] !== 200) return [];
+
+    $data = json_decode($result['body'], true);
+    if (empty($data['items'])) return [];
+
+    $conversations = [];
+    foreach ($data['items'] as $item) {
+        // Extract date from snippet or metadata
+        $created = '';
+        if (!empty($item['pagemap']['metatags'][0]['article:published_time'])) {
+            $created = date('Y-m-d', strtotime($item['pagemap']['metatags'][0]['article:published_time']));
+        } elseif (preg_match('/(\d{1,2}\s+\w+\s+\d{4}|\w+\s+\d{1,2},?\s+\d{4})/', $item['snippet'] ?? '', $m)) {
+            $ts = strtotime($m[1]);
+            if ($ts) $created = date('Y-m-d', $ts);
+        }
+
+        $conversations[] = [
+            'url' => $item['link'],
+            'title' => $item['title'] ?? '',
+            'snippet' => mb_substr(strip_tags($item['snippet'] ?? ''), 0, 150),
+            'created' => $created,
+        ];
+    }
+    return $conversations;
+}
+
+/**
+ * Reddit OAuth search — authenticated, reliable, not blocked.
+ */
+function _presence_reddit_oauth_search(string $query, string $client_id, string $client_secret): array
+{
+    // Get application-only OAuth token
+    $ch = curl_init('https://www.reddit.com/api/v1/access_token');
+    curl_setopt_array($ch, [
+        CURLOPT_RETURNTRANSFER => true,
+        CURLOPT_POST => true,
+        CURLOPT_POSTFIELDS => 'grant_type=client_credentials',
+        CURLOPT_USERPWD => $client_id . ':' . $client_secret,
+        CURLOPT_USERAGENT => 'linux:contentagent:v1.0 (by /u/contentagent_bot)',
+        CURLOPT_TIMEOUT => 10,
+    ]);
+    $body = curl_exec($ch);
+    $status = curl_getinfo($ch, CURLINFO_HTTP_CODE);
+    curl_close($ch);
+    if ($status !== 200) return [];
+
+    $auth = json_decode($body, true);
+    $token = $auth['access_token'] ?? '';
+    if (!$token) return [];
+
+    // Search using OAuth token
+    $url = 'https://oauth.reddit.com/search?q=' . urlencode($query) . '&sort=new&limit=10&t=month&type=link';
+    $ch = curl_init($url);
+    curl_setopt_array($ch, [
+        CURLOPT_RETURNTRANSFER => true,
+        CURLOPT_TIMEOUT => 10,
+        CURLOPT_USERAGENT => 'linux:contentagent:v1.0 (by /u/contentagent_bot)',
+        CURLOPT_HTTPHEADER => ['Authorization: Bearer ' . $token],
+    ]);
+    $body = curl_exec($ch);
+    $status = curl_getinfo($ch, CURLINFO_HTTP_CODE);
+    curl_close($ch);
+    if ($status !== 200) return [];
+
+    $data = json_decode($body, true);
+    if (empty($data['data']['children'])) return [];
+
+    $conversations = [];
+    foreach ($data['data']['children'] as $child) {
+        $post = $child['data'];
+        $conversations[] = [
+            'url' => 'https://www.reddit.com' . $post['permalink'],
+            'title' => $post['title'],
+            'snippet' => mb_substr(strip_tags(html_entity_decode($post['selftext'] ?? '', ENT_QUOTES, 'UTF-8')), 0, 150),
+            'subreddit' => $post['subreddit'] ?? '',
+            'score' => $post['score'] ?? 0,
+            'num_comments' => $post['num_comments'] ?? 0,
+            'created' => date('Y-m-d', $post['created_utc'] ?? time()),
+        ];
+    }
+    return $conversations;
+}
+
 // ── Direct API searches ──────────────────────────────────
 
 /**
- * Reddit JSON API (no auth needed for search).
+ * Reddit search — uses OAuth if configured, falls back to Google CSE.
  */
 function _presence_reddit_search(string $query): array
 {
+    // Try OAuth first
+    $client_id = config('reddit_client_id');
+    $client_secret = config('reddit_client_secret');
+
+    if ($client_id && $client_secret) {
+        $results = _presence_reddit_oauth_search($query, $client_id, $client_secret);
+        if (!empty($results)) return $results;
+    }
+
+    // Fall back to Google CSE if available
+    $results = _presence_google_cse_search($query, 'reddit.com');
+    if (!empty($results)) return $results;
+
+    // Last resort: direct API (may be blocked on some servers)
     $url = 'https://www.reddit.com/search.json?q=' . urlencode($query) . '&sort=new&limit=10&t=month&type=link';
     $result = scraper_fetch($url, 10);
     if ($result['status'] !== 200) return [];
@@ -445,7 +563,11 @@ function _presence_github_search(string $query): array
  */
 function _presence_web_search(string $query, string $site_domain): array
 {
-    // Use DuckDuckGo HTML (more reliable than Google scraping)
+    // Try Google CSE first (most reliable)
+    $cse_results = _presence_google_cse_search($query, $site_domain);
+    if (!empty($cse_results)) return $cse_results;
+
+    // Fall back to DuckDuckGo HTML
     $search_url = 'https://html.duckduckgo.com/html/?q=' . urlencode($query . ' site:' . $site_domain);
     $result = scraper_fetch($search_url, 10);
     if ($result['status'] !== 200 || empty($result['body'])) return [];

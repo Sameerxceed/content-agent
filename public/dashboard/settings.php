@@ -78,6 +78,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
         $keys_to_update = [
             'haiku_api_key', 'haiku_model',
+            'google_cse_api_key', 'google_cse_cx',
+            'reddit_client_id', 'reddit_client_secret',
             'google_client_id', 'google_client_secret',
             'linkedin_client_id', 'linkedin_client_secret',
             'twitter_client_id', 'twitter_client_secret',
@@ -189,7 +191,63 @@ ob_start();
             </div>
         </div>
 
-        <!-- Google -->
+        <!-- Google CSE (for AI Presence) -->
+        <div class="card">
+            <div class="card-header">🔍 Google Search (for AI Presence Builder)</div>
+            <p class="text-sm text-muted mb-2">Finds Reddit, Quora, LinkedIn conversations about your industry. Free: 100 searches/day.</p>
+            <details style="margin-bottom:10px;">
+                <summary style="cursor:pointer;font-size:12px;color:var(--accent);font-weight:600;">Setup Guide (2 minutes)</summary>
+                <ol style="font-size:12px;color:#64748b;padding-left:18px;margin-top:6px;line-height:1.8;">
+                    <li>Go to <a href="https://programmablesearchengine.google.com/controlpanel/create" target="_blank" style="color:var(--accent);">Google Programmable Search Engine</a></li>
+                    <li>Name: <strong>ContentAgent</strong>, select "Search the entire web", click Create</li>
+                    <li>Copy the <strong>Search Engine ID</strong> (starts with something like <code>a1b2c3...</code>)</li>
+                    <li>Go to <a href="https://developers.google.com/custom-search/v1/introduction" target="_blank" style="color:var(--accent);">Custom Search API</a> and click <strong>"Get a Key"</strong></li>
+                    <li>Select your project, copy the <strong>API Key</strong></li>
+                    <li>Paste both below and save</li>
+                </ol>
+            </details>
+            <div class="grid-2">
+                <div class="form-group">
+                    <label>API Key</label>
+                    <input type="password" name="google_cse_api_key" class="form-control" value="<?= e($current_config['google_cse_api_key'] ?? '') ?>" placeholder="AIzaSy...">
+                </div>
+                <div class="form-group">
+                    <label>Search Engine ID (cx)</label>
+                    <input type="text" name="google_cse_cx" class="form-control" value="<?= e($current_config['google_cse_cx'] ?? '') ?>" placeholder="a1b2c3d4e5f6...">
+                </div>
+            </div>
+            <div class="text-sm mt-2"><?= !empty($current_config['google_cse_api_key']) && !empty($current_config['google_cse_cx']) ? '<span style="color:var(--success)">✓ Configured — AI Presence Builder can find conversations</span>' : '<span style="color:#94a3b8">✗ Not set — AI Presence Builder will have limited results</span>' ?></div>
+        </div>
+
+        <!-- Reddit OAuth -->
+        <div class="card">
+            <div class="card-header">🔴 Reddit (for AI Presence Builder)</div>
+            <p class="text-sm text-muted mb-2">Searches Reddit discussions and lets you auto-reply. Free and unlimited.</p>
+            <details style="margin-bottom:10px;">
+                <summary style="cursor:pointer;font-size:12px;color:var(--accent);font-weight:600;">Setup Guide (1 minute)</summary>
+                <ol style="font-size:12px;color:#64748b;padding-left:18px;margin-top:6px;line-height:1.8;">
+                    <li>Go to <a href="https://www.reddit.com/prefs/apps" target="_blank" style="color:var(--accent);">Reddit App Preferences</a> (login first)</li>
+                    <li>Scroll down, click <strong>"create another app..."</strong></li>
+                    <li>Name: <strong>ContentAgent</strong>, Type: <strong>script</strong></li>
+                    <li>Redirect URI: <code>http://localhost</code></li>
+                    <li>Click Create — copy the <strong>ID</strong> (under app name) and <strong>secret</strong></li>
+                    <li>Paste both below and save</li>
+                </ol>
+            </details>
+            <div class="grid-2">
+                <div class="form-group">
+                    <label>Client ID</label>
+                    <input type="text" name="reddit_client_id" class="form-control" value="<?= e($current_config['reddit_client_id'] ?? '') ?>" placeholder="abc123def456">
+                </div>
+                <div class="form-group">
+                    <label>Client Secret</label>
+                    <input type="password" name="reddit_client_secret" class="form-control" value="<?= e($current_config['reddit_client_secret'] ?? '') ?>" placeholder="xyz789...">
+                </div>
+            </div>
+            <div class="text-sm mt-2"><?= !empty($current_config['reddit_client_id']) ? '<span style="color:var(--success)">✓ Configured — Reddit search enabled</span>' : '<span style="color:#94a3b8">✗ Not set — Reddit results won\'t show</span>' ?></div>
+        </div>
+
+        <!-- Google Search Console -->
         <div class="card">
             <div class="card-header">📊 Google Search Console</div>
             <p class="text-sm text-muted mb-2">Shows real keyword rankings, clicks, impressions. Setup: <a href="https://console.cloud.google.com" target="_blank">console.cloud.google.com</a> → Create project → Enable "Search Console API" → OAuth2 credentials.</p>

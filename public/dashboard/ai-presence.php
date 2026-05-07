@@ -150,6 +150,13 @@ ob_start();
 </div>
 <?php endif; ?>
 
+<?php if (empty(config('google_cse_api_key')) && empty(config('reddit_client_id'))): ?>
+<div style="background:#fef3c7;border:1px solid #fcd34d;border-radius:8px;padding:10px 14px;margin-bottom:14px;font-size:12px;color:#92400e;display:flex;justify-content:space-between;align-items:center;">
+    <span>For best results, connect Google Search or Reddit API in Settings. Without it, some platforms may show no results.</span>
+    <a href="<?= url('/dashboard/settings.php?tab=api') ?>" class="btn btn-sm" style="background:#92400e;color:#fff;border:none;font-size:11px;text-decoration:none;white-space:nowrap;">Setup API Keys →</a>
+</div>
+<?php endif; ?>
+
 <!-- Scan Progress Log -->
 <div id="scan-log" class="scan-progress"></div>
 
