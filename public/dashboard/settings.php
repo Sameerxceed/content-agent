@@ -171,9 +171,30 @@ ob_start();
     <input type="hidden" name="action" value="api_keys">
 
     <div style="max-width:700px;">
+
+    <?php
+    $missing_required = [];
+    if (empty($current_config['haiku_api_key'] ?? '')) $missing_required[] = 'AI Engine (Claude)';
+    if (empty($current_config['google_cse_api_key'] ?? '') || empty($current_config['google_cse_cx'] ?? '')) $missing_required[] = 'Google Search';
+    ?>
+    <?php if (!empty($missing_required)): ?>
+    <div style="background:#fef2f2;border:1px solid #fca5a5;border-radius:8px;padding:12px 16px;margin-bottom:14px;">
+        <div style="font-weight:600;font-size:13px;color:#991b1b;margin-bottom:4px;">Setup Required</div>
+        <div style="font-size:12px;color:#b91c1c;">The following are needed for the platform to work properly:</div>
+        <ul style="font-size:12px;color:#b91c1c;margin:6px 0 0;padding-left:18px;">
+            <?php foreach ($missing_required as $m): ?>
+                <li><?= $m ?></li>
+            <?php endforeach; ?>
+        </ul>
+    </div>
+    <?php endif; ?>
+
         <!-- AI -->
-        <div class="card">
-            <div class="card-header">🤖 AI Engine (Claude Haiku)</div>
+        <div class="card" <?= empty($current_config['haiku_api_key'] ?? '') ? 'style="border:2px solid #ef4444;"' : '' ?>>
+            <div class="card-header" style="display:flex;justify-content:space-between;align-items:center;">
+                <span>🤖 AI Engine (Claude Haiku)</span>
+                <?= empty($current_config['haiku_api_key'] ?? '') ? '<span style="background:#ef4444;color:#fff;font-size:10px;padding:2px 8px;border-radius:10px;font-weight:600;">Required</span>' : '<span style="background:#10b981;color:#fff;font-size:10px;padding:2px 8px;border-radius:10px;font-weight:600;">Connected</span>' ?>
+            </div>
             <p class="text-sm text-muted mb-2">Powers blog writing, meta generation, alt text, content planning. Get your key at <a href="https://console.anthropic.com" target="_blank">console.anthropic.com</a></p>
             <div class="grid-2">
                 <div class="form-group">
@@ -192,8 +213,11 @@ ob_start();
         </div>
 
         <!-- Google CSE (for AI Presence) -->
-        <div class="card">
-            <div class="card-header">🔍 Google Search (for AI Presence Builder)</div>
+        <div class="card" <?= (empty($current_config['google_cse_api_key'] ?? '') || empty($current_config['google_cse_cx'] ?? '')) ? 'style="border:2px solid #ef4444;"' : '' ?>>
+            <div class="card-header" style="display:flex;justify-content:space-between;align-items:center;">
+                <span>🔍 Google Search (for AI Presence Builder)</span>
+                <?= (!empty($current_config['google_cse_api_key'] ?? '') && !empty($current_config['google_cse_cx'] ?? '')) ? '<span style="background:#10b981;color:#fff;font-size:10px;padding:2px 8px;border-radius:10px;font-weight:600;">Connected</span>' : '<span style="background:#ef4444;color:#fff;font-size:10px;padding:2px 8px;border-radius:10px;font-weight:600;">Required</span>' ?>
+            </div>
             <p class="text-sm text-muted mb-2">Finds Reddit, Quora, LinkedIn conversations about your industry. Free: 100 searches/day.</p>
             <details style="margin-bottom:10px;">
                 <summary style="cursor:pointer;font-size:12px;color:var(--accent);font-weight:600;">Setup Guide (2 minutes)</summary>
@@ -221,7 +245,10 @@ ob_start();
 
         <!-- Reddit OAuth -->
         <div class="card">
-            <div class="card-header">🔴 Reddit (for AI Presence Builder)</div>
+            <div class="card-header" style="display:flex;justify-content:space-between;align-items:center;">
+                <span>🔴 Reddit (for AI Presence Builder)</span>
+                <?= !empty($current_config['reddit_client_id'] ?? '') ? '<span style="background:#10b981;color:#fff;font-size:10px;padding:2px 8px;border-radius:10px;font-weight:600;">Connected</span>' : '<span style="background:#f59e0b;color:#fff;font-size:10px;padding:2px 8px;border-radius:10px;font-weight:600;">Recommended</span>' ?>
+            </div>
             <p class="text-sm text-muted mb-2">Searches Reddit discussions and lets you auto-reply. Free and unlimited.</p>
             <details style="margin-bottom:10px;">
                 <summary style="cursor:pointer;font-size:12px;color:var(--accent);font-weight:600;">Setup Guide (1 minute)</summary>
@@ -249,7 +276,7 @@ ob_start();
 
         <!-- Google Search Console -->
         <div class="card">
-            <div class="card-header">📊 Google Search Console</div>
+            <div class="card-header" style="display:flex;justify-content:space-between;align-items:center;"><span>📊 Google Search Console</span><span style="background:#94a3b8;color:#fff;font-size:10px;padding:2px 8px;border-radius:10px;font-weight:600;">Optional</span></div>
             <p class="text-sm text-muted mb-2">Shows real keyword rankings, clicks, impressions. Setup: <a href="https://console.cloud.google.com" target="_blank">console.cloud.google.com</a> → Create project → Enable "Search Console API" → OAuth2 credentials.</p>
             <div class="grid-2">
                 <div class="form-group">
@@ -267,7 +294,7 @@ ob_start();
 
         <!-- LinkedIn -->
         <div class="card">
-            <div class="card-header">💼 LinkedIn</div>
+            <div class="card-header" style="display:flex;justify-content:space-between;align-items:center;"><span>💼 LinkedIn</span><span style="background:#94a3b8;color:#fff;font-size:10px;padding:2px 8px;border-radius:10px;font-weight:600;">Optional</span></div>
             <p class="text-sm text-muted mb-2">Auto-post articles to LinkedIn. Setup: <a href="https://www.linkedin.com/developers/" target="_blank">linkedin.com/developers</a> → Create app → Request "Share on LinkedIn" product.</p>
             <div class="grid-2">
                 <div class="form-group">
@@ -285,7 +312,7 @@ ob_start();
 
         <!-- Twitter -->
         <div class="card">
-            <div class="card-header">🐦 Twitter / X</div>
+            <div class="card-header" style="display:flex;justify-content:space-between;align-items:center;"><span>🐦 Twitter / X</span><span style="background:#94a3b8;color:#fff;font-size:10px;padding:2px 8px;border-radius:10px;font-weight:600;">Optional</span></div>
             <p class="text-sm text-muted mb-2">Auto-post tweets. Setup: <a href="https://developer.x.com" target="_blank">developer.x.com</a> → Create project + app → OAuth2 settings.</p>
             <div class="grid-2">
                 <div class="form-group">
@@ -303,7 +330,7 @@ ob_start();
 
         <!-- Facebook + Instagram -->
         <div class="card">
-            <div class="card-header">📘 Facebook + Instagram</div>
+            <div class="card-header" style="display:flex;justify-content:space-between;align-items:center;"><span>📘 Facebook + Instagram</span><span style="background:#94a3b8;color:#fff;font-size:10px;padding:2px 8px;border-radius:10px;font-weight:600;">Optional</span></div>
             <p class="text-sm text-muted mb-2">Auto-post to Facebook Pages + Instagram Business. Setup: <a href="https://developers.facebook.com" target="_blank">developers.facebook.com</a> → Create app (Business type) → Add "Facebook Login".</p>
             <div class="grid-2">
                 <div class="form-group">
@@ -321,7 +348,7 @@ ob_start();
 
         <!-- Stripe -->
         <div class="card">
-            <div class="card-header">💳 Stripe Billing</div>
+            <div class="card-header" style="display:flex;justify-content:space-between;align-items:center;"><span>💳 Stripe Billing</span><span style="background:#94a3b8;color:#fff;font-size:10px;padding:2px 8px;border-radius:10px;font-weight:600;">Optional</span></div>
             <p class="text-sm text-muted mb-2">For SaaS billing (when ready to charge customers). Setup: <a href="https://dashboard.stripe.com" target="_blank">dashboard.stripe.com</a> → Developers → API Keys.</p>
             <div class="grid-2">
                 <div class="form-group">
