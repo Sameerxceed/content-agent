@@ -77,25 +77,34 @@ function x($v) { return htmlspecialchars((string)$v, ENT_XML1 | ENT_QUOTES, 'UTF
 
 // ── Build XML Spreadsheet ──
 $filename = 'health-report-' . $site['domain'] . '-' . date('Y-m-d') . '.xls';
+
+// Buffer to prevent any stray output
+ob_start();
+
 header('Content-Type: application/vnd.ms-excel');
 header('Content-Disposition: attachment; filename="' . $filename . '"');
 header('Cache-Control: max-age=0');
+header('Pragma: public');
+
+ob_end_clean();
 
 echo '<?xml version="1.0" encoding="UTF-8"?>' . "\n";
 echo '<?mso-application progid="Excel.Sheet"?>' . "\n";
 ?>
 <Workbook xmlns="urn:schemas-microsoft-com:office:spreadsheet"
- xmlns:ss="urn:schemas-microsoft-com:office:spreadsheet">
+ xmlns:o="urn:schemas-microsoft-com:office:office"
+ xmlns:x="urn:schemas-microsoft-com:office:excel"
+ xmlns:ss="urn:schemas-microsoft-com:office:spreadsheet"
+ xmlns:html="http://www.w3.org/TR/REC-html40">
 <Styles>
- <Style ss:ID="header"><Font ss:Bold="1" ss:Size="11"/><Interior ss:Color="#1e3a5f" ss:Pattern="Solid"/><Font ss:Color="#FFFFFF" ss:Bold="1" ss:Size="11"/></Style>
+ <Style ss:ID="Default" ss:Name="Normal"><Font ss:Size="11"/></Style>
+ <Style ss:ID="header"><Font ss:Color="#FFFFFF" ss:Bold="1" ss:Size="11"/><Interior ss:Color="#1e3a5f" ss:Pattern="Solid"/></Style>
  <Style ss:ID="title"><Font ss:Bold="1" ss:Size="14" ss:Color="#1e3a5f"/></Style>
  <Style ss:ID="subtitle"><Font ss:Size="11" ss:Color="#64748b"/></Style>
- <Style ss:ID="pass"><Interior ss:Color="#d1fae5" ss:Pattern="Solid"/><Font ss:Color="#065f46" ss:Bold="1"/></Style>
- <Style ss:ID="fail"><Interior ss:Color="#fecaca" ss:Pattern="Solid"/><Font ss:Color="#991b1b" ss:Bold="1"/></Style>
- <Style ss:ID="warn"><Interior ss:Color="#fef3c7" ss:Pattern="Solid"/><Font ss:Color="#92400e" ss:Bold="1"/></Style>
+ <Style ss:ID="pass"><Font ss:Color="#065f46" ss:Bold="1"/><Interior ss:Color="#d1fae5" ss:Pattern="Solid"/></Style>
+ <Style ss:ID="fail"><Font ss:Color="#991b1b" ss:Bold="1"/><Interior ss:Color="#fecaca" ss:Pattern="Solid"/></Style>
+ <Style ss:ID="warn"><Font ss:Color="#92400e" ss:Bold="1"/><Interior ss:Color="#fef3c7" ss:Pattern="Solid"/></Style>
  <Style ss:ID="bold"><Font ss:Bold="1"/></Style>
- <Style ss:ID="num"><NumberFormat ss:Format="0"/></Style>
- <Style ss:ID="date"><NumberFormat ss:Format="dd\ mmm\ yyyy"/></Style>
 </Styles>
 
 <!-- Sheet 1: Overview -->
