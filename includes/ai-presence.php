@@ -242,7 +242,7 @@ function _presence_reddit_search(string $query): array
         $conversations[] = [
             'url' => 'https://www.reddit.com' . $post['permalink'],
             'title' => $post['title'],
-            'snippet' => mb_substr($post['selftext'] ?? '', 0, 300),
+            'snippet' => mb_substr(strip_tags(html_entity_decode($post['selftext'] ?? '', ENT_QUOTES, 'UTF-8')), 0, 150),
             'subreddit' => $post['subreddit'] ?? '',
             'score' => $post['score'] ?? 0,
             'num_comments' => $post['num_comments'] ?? 0,
@@ -269,7 +269,7 @@ function _presence_hn_search(string $query): array
         $conversations[] = [
             'url' => 'https://news.ycombinator.com/item?id=' . $hit['objectID'],
             'title' => $hit['title'] ?? '',
-            'snippet' => mb_substr($hit['story_text'] ?? $hit['comment_text'] ?? '', 0, 300),
+            'snippet' => mb_substr(strip_tags(html_entity_decode($hit['story_text'] ?? $hit['comment_text'] ?? '', ENT_QUOTES, 'UTF-8')), 0, 150),
             'score' => $hit['points'] ?? 0,
             'num_comments' => $hit['num_comments'] ?? 0,
             'created' => date('Y-m-d', strtotime($hit['created_at'] ?? 'now')),
@@ -297,7 +297,7 @@ function _presence_stackexchange_search(string $query): array
         $conversations[] = [
             'url' => $item['link'] ?? '',
             'title' => html_entity_decode($item['title'] ?? '', ENT_QUOTES, 'UTF-8'),
-            'snippet' => mb_substr(strip_tags(html_entity_decode($item['body_markdown'] ?? $item['body'] ?? '', ENT_QUOTES, 'UTF-8')), 0, 300),
+            'snippet' => mb_substr(strip_tags(html_entity_decode($item['body_markdown'] ?? $item['body'] ?? '', ENT_QUOTES, 'UTF-8')), 0, 150),
             'score' => $item['score'] ?? 0,
             'num_comments' => $item['answer_count'] ?? 0,
             'created' => date('Y-m-d', $item['creation_date'] ?? time()),
@@ -335,7 +335,7 @@ function _presence_youtube_search(string $query): array
             $conversations[] = [
                 'url' => 'https://www.youtube.com/watch?v=' . $video['videoId'],
                 'title' => $title,
-                'snippet' => mb_substr($snippet, 0, 300),
+                'snippet' => mb_substr($snippet, 0, 150),
                 'score' => $video['viewCountText']['simpleText'] ?? '',
                 'created' => $video['publishedTimeText']['simpleText'] ?? '',
                 'author' => $video['ownerText']['runs'][0]['text'] ?? '',
@@ -376,7 +376,7 @@ function _presence_github_search(string $query): array
         $conversations[] = [
             'url' => $repo['html_url'] ?? '',
             'title' => $repo['full_name'] ?? '',
-            'snippet' => mb_substr($repo['description'] ?? '', 0, 300),
+            'snippet' => mb_substr($repo['description'] ?? '', 0, 150),
             'score' => ($repo['stargazers_count'] ?? 0) . ' stars',
             'num_comments' => $repo['open_issues_count'] ?? 0,
             'created' => date('Y-m-d', strtotime($repo['updated_at'] ?? 'now')),
@@ -425,7 +425,7 @@ function _presence_web_search(string $query, string $site_domain): array
     if (preg_match_all('/<a class="result__snippet"[^>]*>(.*?)<\/a>/s', $html, $snip_matches)) {
         foreach ($snip_matches[1] as $i => $snip) {
             if (isset($conversations[$i])) {
-                $conversations[$i]['snippet'] = mb_substr(strip_tags($snip), 0, 300);
+                $conversations[$i]['snippet'] = mb_substr(strip_tags($snip), 0, 150);
             }
         }
     }

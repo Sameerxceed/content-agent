@@ -104,17 +104,15 @@ ob_start();
 .platform-card.scanning { opacity:0.7; pointer-events:none; }
 .platform-card.scanned { border-color:#10b981; }
 
-.conv-card { background:#fff; border:1px solid var(--border); border-radius:8px; margin-bottom:8px; overflow:hidden; }
-.conv-header { padding:10px 14px; display:flex; justify-content:space-between; align-items:flex-start; gap:10px; border-bottom:1px solid #f1f5f9; }
+.conv-card { background:#fff; border:1px solid var(--border); border-radius:8px; margin-bottom:6px; overflow:hidden; }
+.conv-card:hover { border-color:#cbd5e1; }
 .conv-platform { display:inline-flex; align-items:center; gap:4px; font-size:11px; font-weight:600; padding:2px 8px; border-radius:10px; color:#fff; flex-shrink:0; }
-.conv-title { font-size:13px; font-weight:600; color:var(--primary); }
+.conv-title { font-size:13px; font-weight:600; color:var(--primary); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
 .conv-title a { color:inherit; text-decoration:none; }
 .conv-title a:hover { text-decoration:underline; }
-.conv-meta { font-size:11px; color:#94a3b8; margin-top:2px; }
-.conv-body { padding:10px 14px; }
-.conv-snippet { font-size:12px; color:#64748b; line-height:1.5; }
-.conv-actions { padding:8px 14px; background:#f8fafc; display:flex; gap:6px; align-items:center; flex-wrap:wrap; }
-.conv-reply { width:calc(100% - 28px); padding:10px; border:1px solid var(--border); border-radius:6px; font-size:13px; font-family:inherit; resize:vertical; min-height:80px; margin:8px 14px; display:none; }
+.conv-meta { font-size:10px; color:#94a3b8; margin-top:1px; }
+.conv-actions { padding:6px 14px; background:#f8fafc; display:flex; gap:6px; align-items:center; }
+.conv-reply { width:calc(100% - 28px); padding:8px; border:1px solid var(--border); border-radius:6px; font-size:12px; font-family:inherit; resize:vertical; min-height:60px; margin:6px 14px; display:none; }
 .conv-reply.show { display:block; }
 
 .status-badge { font-size:10px; padding:2px 8px; border-radius:10px; font-weight:600; }
@@ -319,39 +317,58 @@ function renderConversations(platformKey, platformInfo, conversations) {
         const id = 'c-' + Math.random().toString(36).substr(2, 9);
         const meta = [];
         if (conv.subreddit) meta.push('r/' + conv.subreddit);
-        if (conv.score) meta.push(conv.score + (typeof conv.score === 'number' ? ' pts' : ''));
+        if (conv.score) meta.push(typeof conv.score === 'number' ? conv.score + ' pts' : conv.score);
         if (conv.num_comments) meta.push(conv.num_comments + ' comments');
-        if (conv.author) meta.push('by ' + conv.author);
-        if (conv.tags) meta.push(conv.tags);
+        if (conv.author) meta.push(conv.author);
         if (conv.created) meta.push(conv.created);
 
+        const snippet = cleanSnippet(conv.snippet);
+        const titleClean = escHtml(conv.title || 'View conversation');
+        const convTitle = conv.title || '';
+        const convSnippet = (conv.snippet || '').substring(0, 500);
+
         const html = '<div class="conv-card" id="' + id + '">'
-            + '<div class="conv-header"><div style="flex:1;min-width:0;">'
-            + '<div class="conv-title"><a href="' + escHtml(conv.url || '#') + '" target="_blank">' + escHtml(conv.title || 'View conversation') + '</a></div>'
-            + '<div class="conv-meta">' + escHtml(meta.join(' · ')) + '</div>'
-            + '</div></div>'
-            + (conv.snippet ? '<div class="conv-body"><div class="conv-snippet">' + escHtml(conv.snippet.substring(0, 300)) + '</div></div>' : '')
+            + '<div style="padding:10px 14px;display:flex;justify-content:space-between;align-items:center;gap:10px;">'
+            + '<div style="flex:1;min-width:0;">'
+            + '<div class="conv-title"><a href="' + escHtml(conv.url || '#') + '" target="_blank">' + titleClean + '</a></div>'
+            + (meta.length ? '<div class="conv-meta">' + escHtml(meta.join(' · ')) + '</div>' : '')
+            + (snippet ? '<div style="font-size:12px;color:#94a3b8;margin-top:4px;line-height:1.4;">' + escHtml(snippet) + '</div>' : '')
+            + '</div>'
+            + '<div style="display:flex;gap:4px;flex-shrink:0;">'
+            + '<button onclick="draftReply(this, \'' + platformKey + '\', ' + JSON.stringify(convTitle) + ', ' + JSON.stringify(convSnippet) + ')" class="btn btn-accent btn-sm" style="font-size:11px;padding:4px 10px;">Reply with AI</button>'
+            + (conv.url ? '<a href="' + escHtml(conv.url) + '" target="_blank" class="btn btn-outline btn-sm" style="text-decoration:none;font-size:11px;padding:4px 8px;">Open</a>' : '')
+            + '<button onclick="saveConversation(this, \'' + platformKey + '\', ' + JSON.stringify(conv.url || '') + ', ' + JSON.stringify(convTitle) + ', ' + JSON.stringify(convSnippet) + ')" class="btn btn-outline btn-sm" style="font-size:11px;padding:4px 8px;">Save</button>'
+            + '</div>'
+            + '</div>'
             + '<textarea class="conv-reply" placeholder="AI-generated reply will appear here..."></textarea>'
-            + '<div class="conv-actions">'
-            + '<button onclick="draftReply(this, \'' + platformKey + '\', ' + JSON.stringify(conv.title || '') + ', ' + JSON.stringify((conv.snippet || '').substring(0, 500)) + ')" class="btn btn-accent btn-sm">Reply with AI</button>'
-            + '<button onclick="copyReply(this)" class="btn btn-outline btn-sm" style="display:none;">Copy Reply</button>'
-            + (conv.url ? '<a href="' + escHtml(conv.url) + '" target="_blank" class="btn btn-outline btn-sm" style="text-decoration:none;">Open →</a>' : '')
-            + '<button onclick="saveConversation(this, \'' + platformKey + '\', ' + JSON.stringify(conv.url || '') + ', ' + JSON.stringify(conv.title || '') + ', ' + JSON.stringify((conv.snippet || '').substring(0, 500)) + ')" class="btn btn-outline btn-sm" style="font-size:11px;">Save</button>'
-            + '</div></div>';
+            + '<div class="conv-actions" style="display:none;">'
+            + '<button onclick="copyReply(this)" class="btn btn-outline btn-sm">Copy Reply</button>'
+            + '</div>'
+            + '</div>';
         body.insertAdjacentHTML('beforeend', html);
     });
 }
 
 function escHtml(str) {
     const d = document.createElement('div');
-    d.textContent = str;
+    // First decode HTML entities (&#x27; etc) then re-escape for safe display
+    const tmp = document.createElement('textarea');
+    tmp.innerHTML = str;
+    d.textContent = tmp.value.replace(/<[^>]*>/g, ' ').replace(/\s+/g, ' ').trim();
     return d.innerHTML;
+}
+
+function cleanSnippet(str) {
+    if (!str) return '';
+    const tmp = document.createElement('textarea');
+    tmp.innerHTML = str;
+    return tmp.value.replace(/<[^>]*>/g, ' ').replace(/\s+/g, ' ').trim().substring(0, 150);
 }
 
 async function draftReply(btn, platform, title, content) {
     const card = btn.closest('.conv-card');
     const textarea = card.querySelector('.conv-reply');
-    const copyBtn = card.querySelector('[onclick^="copyReply"]');
+    const actionsBar = card.querySelector('.conv-actions');
 
     btn.disabled = true;
     btn.textContent = 'Generating...';
@@ -369,7 +386,7 @@ async function draftReply(btn, platform, title, content) {
             textarea.value = data.reply;
             btn.textContent = 'Regenerate';
             btn.disabled = false;
-            if (copyBtn) copyBtn.style.display = 'inline-flex';
+            if (actionsBar) actionsBar.style.display = 'flex';
         } else {
             textarea.value = 'Error: ' + (data.error || 'Failed to generate');
             btn.textContent = 'Retry';
