@@ -47,11 +47,11 @@ $info_issues = array_filter($open_issues, fn($i) => $i['severity'] === 'info');
 $fixed_issues = array_filter($seo_issues, fn($i) => in_array($i['status'], ['fix_applied', 'resolved', 'fixed_by_snippet']));
 
 // AI SEO audit (live check)
-$ai_results = audit_ai_discoverability($site['domain']);
-$ai_score = 0;
-$ai_total = count($ai_results);
-$ai_passed = count(array_filter($ai_results, fn($r) => $r['status'] === 'pass'));
-$ai_score = $ai_total > 0 ? round(($ai_passed / $ai_total) * 100) : 0;
+$ai_audit = audit_ai_discoverability($site['domain']);
+$ai_results = $ai_audit['results'] ?? [];
+$ai_score = $ai_audit['score'] ?? 0;
+$ai_total = $ai_audit['total'] ?? 0;
+$ai_passed = $ai_audit['passed'] ?? 0;
 
 // Post counts
 $stmt = $db->prepare('SELECT status, COUNT(*) as cnt FROM posts WHERE site_id = ? GROUP BY status');
@@ -140,6 +140,7 @@ ob_start();
 
 <div class="no-print" style="margin-bottom:10px; display:flex; justify-content:space-between; align-items:center;">
     <a href="<?= url('/dashboard/site.php?id=' . $site_id) ?>" style="font-size:13px;color:var(--primary);text-decoration:none;">&larr; Back to <?= e($site['name']) ?></a>
+    <a href="<?= url('/api/export-report.php?site=' . $site_id) ?>" class="btn btn-accent btn-sm" style="text-decoration:none;">Download Excel</a>
     <button onclick="window.print()" class="btn btn-outline btn-sm">Print / Save PDF</button>
 </div>
 
