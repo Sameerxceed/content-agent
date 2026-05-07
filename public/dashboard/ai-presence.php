@@ -36,6 +36,20 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $input = json_decode(file_get_contents('php://input'), true) ?: $_POST;
     $post_action = $input['action'] ?? '';
 
+    if ($post_action === 'scan_platform') {
+        $platform_key = $input['platform'] ?? '';
+        $search_terms = presence_build_search_terms($site, $db);
+        $conversations = presence_scan_platform($platform_key, $search_terms);
+        $platform_info = PRESENCE_PLATFORMS[$platform_key] ?? [];
+        json_response([
+            'success' => true,
+            'platform' => $platform_key,
+            'platform_info' => $platform_info,
+            'conversations' => $conversations,
+            'count' => count($conversations),
+        ]);
+    }
+
     if ($post_action === 'draft_reply') {
         $conv = [
             'platform' => $input['platform'] ?? '',
@@ -66,12 +80,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     json_response(['error' => 'Unknown action'], 400);
 }
 
-// ── Scan for conversations ─────────────────────────────────
-$scan_results = null;
-if ($action === 'scan') {
-    $platforms_to_scan = $filter_platform ? [$filter_platform] : ['reddit', 'quora', 'linkedin', 'twitter', 'hackernews'];
-    $scan_results = presence_scan_conversations($site, $db, $platforms_to_scan);
-}
+// No more server-side scan — all done via AJAX now
+$auto_scan = ($action === 'scan');
 
 // Get stored content
 $stored = presence_get_all($db, $site_id, $filter_platform ?: null);
@@ -83,13 +93,16 @@ ob_start();
 
 <style>
 .platform-grid { display:grid; grid-template-columns:repeat(auto-fill, minmax(220px, 1fr)); gap:10px; margin-bottom:14px; }
-.platform-card { background:#fff; border:1px solid var(--border); border-radius:8px; padding:14px; cursor:pointer; transition:box-shadow 0.15s, transform 0.15s; }
+.platform-card { background:#fff; border:1px solid var(--border); border-radius:8px; padding:14px; cursor:pointer; transition:box-shadow 0.15s, transform 0.15s; position:relative; }
 .platform-card:hover { box-shadow:0 4px 12px rgba(0,0,0,0.08); transform:translateY(-1px); }
 .platform-card .icon { width:36px; height:36px; border-radius:8px; display:flex; align-items:center; justify-content:center; color:#fff; font-weight:800; font-size:13px; margin-bottom:8px; }
 .platform-card .name { font-weight:600; font-size:14px; color:var(--primary); }
 .platform-card .desc { font-size:11px; color:#94a3b8; margin-top:2px; line-height:1.4; }
 .platform-card .impact { font-size:10px; font-weight:600; margin-top:6px; }
 .platform-card .auto-badge { font-size:9px; background:#d1fae5; color:#065f46; padding:1px 6px; border-radius:8px; }
+.platform-card .scan-status { position:absolute; top:8px; right:8px; font-size:10px; }
+.platform-card.scanning { opacity:0.7; pointer-events:none; }
+.platform-card.scanned { border-color:#10b981; }
 
 .conv-card { background:#fff; border:1px solid var(--border); border-radius:8px; margin-bottom:8px; overflow:hidden; }
 .conv-header { padding:10px 14px; display:flex; justify-content:space-between; align-items:flex-start; gap:10px; border-bottom:1px solid #f1f5f9; }
@@ -101,16 +114,23 @@ ob_start();
 .conv-body { padding:10px 14px; }
 .conv-snippet { font-size:12px; color:#64748b; line-height:1.5; }
 .conv-actions { padding:8px 14px; background:#f8fafc; display:flex; gap:6px; align-items:center; flex-wrap:wrap; }
-.conv-reply { width:100%; padding:10px; border:1px solid var(--border); border-radius:6px; font-size:13px; font-family:inherit; resize:vertical; min-height:80px; margin:8px 14px; display:none; }
+.conv-reply { width:calc(100% - 28px); padding:10px; border:1px solid var(--border); border-radius:6px; font-size:13px; font-family:inherit; resize:vertical; min-height:80px; margin:8px 14px; display:none; }
 .conv-reply.show { display:block; }
 
 .status-badge { font-size:10px; padding:2px 8px; border-radius:10px; font-weight:600; }
 .status-found { background:#dbeafe; color:#1e40af; }
 .status-reply_drafted { background:#fef3c7; color:#92400e; }
 .status-posted { background:#d1fae5; color:#065f46; }
-.status-skipped { background:#f1f5f9; color:#64748b; }
 
-.scan-btn { display:inline-flex; align-items:center; gap:4px; }
+.scan-progress { background:#0f172a; color:#a3e635; padding:12px 16px; border-radius:8px; font-family:monospace; font-size:12px; margin-bottom:14px; max-height:200px; overflow-y:auto; display:none; }
+.scan-progress.show { display:block; }
+.scan-progress .line { margin:2px 0; }
+.scan-progress .success { color:#4ade80; }
+.scan-progress .error { color:#f87171; }
+.scan-progress .info { color:#60a5fa; }
+
+@keyframes spin { to { transform:rotate(360deg); } }
+.spinner { display:inline-block; width:12px; height:12px; border:2px solid #94a3b8; border-top-color:transparent; border-radius:50%; animation:spin 0.6s linear infinite; }
 </style>
 
 <div style="margin-bottom:10px;">
@@ -132,15 +152,19 @@ ob_start();
 </div>
 <?php endif; ?>
 
+<!-- Scan Progress Log -->
+<div id="scan-log" class="scan-progress"></div>
+
 <!-- All Platforms -->
 <div class="card" style="margin-bottom:14px;">
     <div class="card-header" style="display:flex;justify-content:space-between;align-items:center;">
         <span style="font-weight:600;">Platforms Where You Should Be Present</span>
-        <a href="<?= url('/dashboard/ai-presence.php?site=' . $site_id . '&action=scan') ?>" class="btn btn-accent btn-sm scan-btn" style="text-decoration:none;">Scan All Platforms</a>
+        <button onclick="scanAllPlatforms()" id="scan-all-btn" class="btn btn-accent btn-sm" style="display:inline-flex;align-items:center;gap:4px;">Scan All Platforms</button>
     </div>
     <div class="platform-grid" style="padding:14px;">
         <?php foreach (PRESENCE_PLATFORMS as $key => $p): ?>
-        <a href="<?= url('/dashboard/ai-presence.php?site=' . $site_id . '&action=scan&platform=' . $key) ?>" class="platform-card" style="text-decoration:none;color:inherit;">
+        <div class="platform-card" id="platform-<?= $key ?>" onclick="scanPlatform('<?= $key ?>')">
+            <div class="scan-status" id="status-<?= $key ?>"></div>
             <div class="icon" style="background:<?= $p['color'] ?>;"><?= $p['icon'] ?></div>
             <div class="name"><?= $p['name'] ?></div>
             <div class="desc"><?= $p['description'] ?></div>
@@ -153,72 +177,13 @@ ob_start();
             <?php if (isset($stats['platforms'][$key])): ?>
                 <div style="font-size:10px;color:#94a3b8;margin-top:4px;"><?= $stats['platforms'][$key] ?> conversations tracked</div>
             <?php endif; ?>
-        </a>
+        </div>
         <?php endforeach; ?>
     </div>
 </div>
 
-<!-- Scan Results -->
-<?php if ($scan_results): ?>
-<div class="card" style="margin-bottom:14px;">
-    <div class="card-header">
-        <span style="font-weight:600;">Conversations Found</span>
-        <span class="text-sm text-muted" style="margin-left:8px;">Click "Reply with AI" to generate a response you can copy and post</span>
-    </div>
-    <div style="padding:10px;">
-    <?php
-    $has_results = false;
-    foreach ($scan_results as $pk => $platform_data):
-        if (empty($platform_data['conversations'])) continue;
-        $has_results = true;
-        $p = $platform_data['platform'];
-    ?>
-        <?php foreach ($platform_data['conversations'] as $conv): ?>
-        <div class="conv-card" id="conv-<?= md5($conv['url'] ?? rand()) ?>">
-            <div class="conv-header">
-                <div style="flex:1;min-width:0;">
-                    <span class="conv-platform" style="background:<?= $p['color'] ?>;"><?= $p['icon'] ?> <?= $p['name'] ?></span>
-                    <div class="conv-title" style="margin-top:4px;">
-                        <?php if (!empty($conv['url'])): ?>
-                            <a href="<?= e($conv['url']) ?>" target="_blank"><?= e($conv['title'] ?: 'View conversation') ?></a>
-                        <?php else: ?>
-                            <?= e($conv['title'] ?: 'Conversation') ?>
-                        <?php endif; ?>
-                    </div>
-                    <div class="conv-meta">
-                        <?php if (!empty($conv['subreddit'])): ?>r/<?= e($conv['subreddit']) ?> &bull; <?php endif; ?>
-                        <?php if (!empty($conv['score'])): ?><?= $conv['score'] ?> upvotes &bull; <?php endif; ?>
-                        <?php if (!empty($conv['num_comments'])): ?><?= $conv['num_comments'] ?> comments &bull; <?php endif; ?>
-                        <?php if (!empty($conv['created'])): ?><?= $conv['created'] ?><?php endif; ?>
-                    </div>
-                </div>
-            </div>
-            <?php if (!empty($conv['snippet'])): ?>
-            <div class="conv-body">
-                <div class="conv-snippet"><?= e(truncate($conv['snippet'], 300)) ?></div>
-            </div>
-            <?php endif; ?>
-            <textarea class="conv-reply" id="reply-<?= md5($conv['url'] ?? rand()) ?>" placeholder="AI-generated reply will appear here..."></textarea>
-            <div class="conv-actions">
-                <button onclick="draftReply(this, '<?= e($pk) ?>', <?= e(json_encode($conv['title'] ?? '')) ?>, <?= e(json_encode(substr($conv['snippet'] ?? '', 0, 500))) ?>)" class="btn btn-accent btn-sm">Reply with AI</button>
-                <button onclick="copyReply(this)" class="btn btn-outline btn-sm" style="display:none;">Copy Reply</button>
-                <?php if (!empty($conv['url'])): ?>
-                    <a href="<?= e($conv['url']) ?>" target="_blank" class="btn btn-outline btn-sm" style="text-decoration:none;">Open &rarr;</a>
-                <?php endif; ?>
-                <button onclick="saveConversation(this, '<?= e($pk) ?>', <?= e(json_encode($conv['url'] ?? '')) ?>, <?= e(json_encode($conv['title'] ?? '')) ?>, <?= e(json_encode(substr($conv['snippet'] ?? '', 0, 500))) ?>)" class="btn btn-outline btn-sm" style="font-size:11px;">Save</button>
-            </div>
-        </div>
-        <?php endforeach; ?>
-    <?php endforeach; ?>
-
-    <?php if (!$has_results): ?>
-        <div style="text-align:center;padding:20px;color:#94a3b8;">
-            <p>No conversations found for your keywords. Try adding more topics/keywords in Site Settings.</p>
-        </div>
-    <?php endif; ?>
-    </div>
-</div>
-<?php endif; ?>
+<!-- Live Results (populated by JS) -->
+<div id="results-container"></div>
 
 <!-- Saved / Previously Found -->
 <?php if (!empty($stored)): ?>
@@ -267,8 +232,121 @@ ob_start();
 <?php endif; ?>
 
 <script>
-const API = window.location.pathname;
-const siteId = <?= $site_id ?>;
+const API = window.location.pathname + '?site=<?= $site_id ?>';
+const PLATFORMS = <?= json_encode(PRESENCE_PLATFORMS) ?>;
+// Platforms with direct APIs — scan these first (most reliable)
+const SCAN_ORDER = ['reddit', 'hackernews', 'stackoverflow', 'github', 'youtube', 'quora', 'linkedin', 'twitter', 'medium', 'producthunt', 'facebook', 'wikipedia'];
+
+function log(msg, type = '') {
+    const el = document.getElementById('scan-log');
+    el.classList.add('show');
+    el.innerHTML += '<div class="line ' + type + '">' + (type === 'info' ? '→ ' : type === 'success' ? '✓ ' : type === 'error' ? '✗ ' : '') + msg + '</div>';
+    el.scrollTop = el.scrollHeight;
+}
+
+async function scanPlatform(key) {
+    const card = document.getElementById('platform-' + key);
+    const statusEl = document.getElementById('status-' + key);
+    if (!card || card.classList.contains('scanning')) return;
+
+    card.classList.add('scanning');
+    statusEl.innerHTML = '<span class="spinner"></span>';
+    log('Scanning ' + (PLATFORMS[key]?.name || key) + '...', 'info');
+
+    try {
+        const res = await fetch(API, {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({action: 'scan_platform', platform: key})
+        });
+        const data = await res.json();
+
+        card.classList.remove('scanning');
+        card.classList.add('scanned');
+
+        if (data.conversations && data.conversations.length > 0) {
+            statusEl.innerHTML = '<span style="color:#10b981;font-weight:700;">' + data.conversations.length + ' found</span>';
+            log(PLATFORMS[key].name + ': ' + data.conversations.length + ' conversations found', 'success');
+            renderConversations(key, data.platform_info, data.conversations);
+        } else {
+            statusEl.innerHTML = '<span style="color:#94a3b8;">0 found</span>';
+            log(PLATFORMS[key].name + ': No conversations found', 'error');
+        }
+    } catch(e) {
+        card.classList.remove('scanning');
+        statusEl.innerHTML = '<span style="color:#ef4444;">Error</span>';
+        log(PLATFORMS[key].name + ': ' + e.message, 'error');
+    }
+}
+
+async function scanAllPlatforms() {
+    const btn = document.getElementById('scan-all-btn');
+    btn.disabled = true;
+    btn.innerHTML = '<span class="spinner"></span> Scanning...';
+    document.getElementById('scan-log').innerHTML = '';
+    document.getElementById('results-container').innerHTML = '';
+
+    log('Starting scan across all platforms...', 'info');
+
+    for (const key of SCAN_ORDER) {
+        await scanPlatform(key);
+    }
+
+    log('Scan complete!', 'success');
+    btn.disabled = false;
+    btn.textContent = 'Scan All Platforms';
+}
+
+function renderConversations(platformKey, platformInfo, conversations) {
+    const container = document.getElementById('results-container');
+    // Check if section for this platform already exists
+    let section = document.getElementById('results-' + platformKey);
+    if (!section) {
+        section = document.createElement('div');
+        section.id = 'results-' + platformKey;
+        section.className = 'card';
+        section.style.marginBottom = '14px';
+        section.innerHTML = '<div class="card-header" style="display:flex;align-items:center;gap:8px;">'
+            + '<span class="conv-platform" style="background:' + (platformInfo.color || '#94a3b8') + ';">' + (platformInfo.icon || '') + '</span>'
+            + '<span style="font-weight:600;">' + (platformInfo.name || platformKey) + '</span>'
+            + '<span class="text-sm text-muted">(' + conversations.length + ' conversations)</span>'
+            + '</div><div class="results-body" style="padding:10px;"></div>';
+        container.appendChild(section);
+    }
+
+    const body = section.querySelector('.results-body');
+    conversations.forEach(conv => {
+        const id = 'c-' + Math.random().toString(36).substr(2, 9);
+        const meta = [];
+        if (conv.subreddit) meta.push('r/' + conv.subreddit);
+        if (conv.score) meta.push(conv.score + (typeof conv.score === 'number' ? ' pts' : ''));
+        if (conv.num_comments) meta.push(conv.num_comments + ' comments');
+        if (conv.author) meta.push('by ' + conv.author);
+        if (conv.tags) meta.push(conv.tags);
+        if (conv.created) meta.push(conv.created);
+
+        const html = '<div class="conv-card" id="' + id + '">'
+            + '<div class="conv-header"><div style="flex:1;min-width:0;">'
+            + '<div class="conv-title"><a href="' + escHtml(conv.url || '#') + '" target="_blank">' + escHtml(conv.title || 'View conversation') + '</a></div>'
+            + '<div class="conv-meta">' + escHtml(meta.join(' · ')) + '</div>'
+            + '</div></div>'
+            + (conv.snippet ? '<div class="conv-body"><div class="conv-snippet">' + escHtml(conv.snippet.substring(0, 300)) + '</div></div>' : '')
+            + '<textarea class="conv-reply" placeholder="AI-generated reply will appear here..."></textarea>'
+            + '<div class="conv-actions">'
+            + '<button onclick="draftReply(this, \'' + platformKey + '\', ' + JSON.stringify(conv.title || '') + ', ' + JSON.stringify((conv.snippet || '').substring(0, 500)) + ')" class="btn btn-accent btn-sm">Reply with AI</button>'
+            + '<button onclick="copyReply(this)" class="btn btn-outline btn-sm" style="display:none;">Copy Reply</button>'
+            + (conv.url ? '<a href="' + escHtml(conv.url) + '" target="_blank" class="btn btn-outline btn-sm" style="text-decoration:none;">Open →</a>' : '')
+            + '<button onclick="saveConversation(this, \'' + platformKey + '\', ' + JSON.stringify(conv.url || '') + ', ' + JSON.stringify(conv.title || '') + ', ' + JSON.stringify((conv.snippet || '').substring(0, 500)) + ')" class="btn btn-outline btn-sm" style="font-size:11px;">Save</button>'
+            + '</div></div>';
+        body.insertAdjacentHTML('beforeend', html);
+    });
+}
+
+function escHtml(str) {
+    const d = document.createElement('div');
+    d.textContent = str;
+    return d.innerHTML;
+}
 
 async function draftReply(btn, platform, title, content) {
     const card = btn.closest('.conv-card');
@@ -281,7 +359,7 @@ async function draftReply(btn, platform, title, content) {
     textarea.value = 'Thinking...';
 
     try {
-        const res = await fetch(API + '?site=<?= $site_id ?>', {
+        const res = await fetch(API, {
             method: 'POST',
             headers: {'Content-Type': 'application/json'},
             body: JSON.stringify({action: 'draft_reply', platform, title, content})
@@ -321,7 +399,7 @@ async function saveConversation(btn, platform, url, title, snippet) {
     const reply = textarea && textarea.value && textarea.value !== 'Thinking...' ? textarea.value : null;
 
     try {
-        const res = await fetch(API + '?site=<?= $site_id ?>', {
+        const res = await fetch(API, {
             method: 'POST',
             headers: {'Content-Type': 'application/json'},
             body: JSON.stringify({action: 'save', platform, url, title, snippet, reply})
@@ -341,7 +419,7 @@ async function markPosted(id, btn) {
     btn.disabled = true;
     btn.textContent = 'Updating...';
     try {
-        const res = await fetch(API + '?site=<?= $site_id ?>', {
+        const res = await fetch(API, {
             method: 'POST',
             headers: {'Content-Type': 'application/json'},
             body: JSON.stringify({action: 'update_status', id, status: 'posted'})
@@ -355,6 +433,11 @@ async function markPosted(id, btn) {
         btn.textContent = 'Error';
     }
 }
+
+// Auto-scan if URL has action=scan
+<?php if ($auto_scan): ?>
+document.addEventListener('DOMContentLoaded', () => scanAllPlatforms());
+<?php endif; ?>
 </script>
 
 <?php

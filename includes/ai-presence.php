@@ -3,9 +3,8 @@
  * AI Presence Builder — discover conversations across platforms
  * and generate ready-to-post responses.
  *
- * Platforms are organized into tiers:
- * - Tier 1: API-capable (Reddit, LinkedIn) — can auto-post later
- * - Tier 2: Web search (Quora, Twitter, forums, blogs) — copy-paste only
+ * Uses direct APIs where available (Reddit, HN, StackExchange, YouTube).
+ * Falls back to web search for others.
  */
 
 require_once __DIR__ . '/helpers.php';
@@ -125,122 +124,112 @@ define('PRESENCE_PLATFORMS', [
 ]);
 
 /**
- * Search for conversations across all platforms using web search.
- * Returns array of conversations found per platform.
+ * Scan a single platform for conversations.
+ * Uses direct APIs where available, falls back to web search.
  */
-function presence_scan_conversations(array $site, PDO $db, array $platforms = []): array
+function presence_scan_platform(string $platform_key, array $search_terms): array
 {
-    $name = $site['name'];
-    $domain = $site['domain'];
+    if (!isset(PRESENCE_PLATFORMS[$platform_key])) return [];
+
+    $conversations = [];
+
+    foreach ($search_terms as $term) {
+        switch ($platform_key) {
+            case 'reddit':
+                $found = _presence_reddit_search($term);
+                break;
+            case 'hackernews':
+                $found = _presence_hn_search($term);
+                break;
+            case 'stackoverflow':
+                $found = _presence_stackexchange_search($term);
+                break;
+            case 'youtube':
+                $found = _presence_youtube_search($term);
+                break;
+            case 'github':
+                $found = _presence_github_search($term);
+                break;
+            default:
+                $found = _presence_web_search($term, PRESENCE_PLATFORMS[$platform_key]['search_domain']);
+                break;
+        }
+        $conversations = array_merge($conversations, $found);
+    }
+
+    // Deduplicate by URL
+    $seen = [];
+    $unique = [];
+    foreach ($conversations as $c) {
+        $url = $c['url'] ?? '';
+        if (!empty($url) && !isset($seen[$url])) {
+            $seen[$url] = true;
+            $c['platform'] = $platform_key;
+            $unique[] = $c;
+        }
+    }
+
+    return array_slice($unique, 0, 8);
+}
+
+/**
+ * Build search terms from a site's data.
+ */
+function presence_build_search_terms(array $site, PDO $db): array
+{
     $topics = json_decode($site['topics'] ?? '[]', true) ?: [];
     $stmt = $db->prepare('SELECT keyword FROM keywords WHERE site_id = ? ORDER BY priority DESC LIMIT 5');
     $stmt->execute([$site['id']]);
     $keywords = $stmt->fetchAll(PDO::FETCH_COLUMN);
 
-    // Build search queries
-    $search_terms = [];
+    $terms = [];
+    // Top 2 keywords
     if (!empty($keywords)) {
-        $search_terms[] = $keywords[0]; // top keyword
+        $terms[] = $keywords[0];
+        if (isset($keywords[1])) $terms[] = $keywords[1];
     }
+    // Top topic
     if (!empty($topics)) {
-        $search_terms[] = $topics[0]; // top topic
+        $terms[] = $topics[0];
     }
-    $search_terms[] = $name; // brand name
+    // Brand name
+    $terms[] = $site['name'];
 
-    // If no platforms specified, scan all
+    return array_unique($terms);
+}
+
+/**
+ * Search all platforms (used for full scan).
+ */
+function presence_scan_conversations(array $site, PDO $db, array $platforms = []): array
+{
+    $search_terms = presence_build_search_terms($site, $db);
+
     if (empty($platforms)) {
         $platforms = array_keys(PRESENCE_PLATFORMS);
     }
 
     $results = [];
-
     foreach ($platforms as $platform_key) {
-        if (!isset(PRESENCE_PLATFORMS[$platform_key])) continue;
-        $platform = PRESENCE_PLATFORMS[$platform_key];
-
-        $conversations = [];
-
-        foreach ($search_terms as $term) {
-            $found = _presence_web_search($term, $platform['search_domain']);
-            $conversations = array_merge($conversations, $found);
-        }
-
-        // Deduplicate by URL
-        $seen = [];
-        $unique = [];
-        foreach ($conversations as $c) {
-            $url = $c['url'] ?? '';
-            if (!empty($url) && !isset($seen[$url])) {
-                $seen[$url] = true;
-                $c['platform'] = $platform_key;
-                $unique[] = $c;
-            }
-        }
-
+        $conversations = presence_scan_platform($platform_key, $search_terms);
         $results[$platform_key] = [
-            'platform' => $platform,
-            'conversations' => array_slice($unique, 0, 5), // max 5 per platform
-            'count' => count($unique),
+            'platform' => PRESENCE_PLATFORMS[$platform_key] ?? [],
+            'conversations' => $conversations,
+            'count' => count($conversations),
         ];
     }
 
     return $results;
 }
 
-/**
- * Web search for conversations on a specific platform.
- */
-function _presence_web_search(string $query, string $site_domain): array
-{
-    $search_url = 'https://www.google.com/search?q=' . urlencode($query . ' site:' . $site_domain) . '&num=5';
-
-    $result = scraper_fetch($search_url, 10);
-    if ($result['status'] !== 200 || empty($result['body'])) {
-        return [];
-    }
-
-    $conversations = [];
-    $html = $result['body'];
-
-    // Parse Google search results
-    if (preg_match_all('/<a[^>]+href="\/url\?q=([^"&]+)[^"]*"[^>]*>.*?<\/a>/s', $html, $matches)) {
-        foreach ($matches[1] as $url) {
-            $url = urldecode($url);
-            if (strpos($url, $site_domain) === false) continue;
-            if (strpos($url, 'google.com') !== false) continue;
-
-            $conversations[] = [
-                'url' => $url,
-                'title' => '',
-                'snippet' => '',
-            ];
-        }
-    }
-
-    // Alternative: parse h3 titles
-    if (preg_match_all('/<h3[^>]*>(.*?)<\/h3>/s', $html, $h3_matches)) {
-        foreach ($h3_matches[1] as $i => $title) {
-            if (isset($conversations[$i])) {
-                $conversations[$i]['title'] = strip_tags($title);
-            }
-        }
-    }
-
-    // If Google blocks us, try a simpler approach — fetch the platform directly
-    if (empty($conversations) && $site_domain === 'reddit.com') {
-        return _presence_reddit_search($query);
-    }
-
-    return $conversations;
-}
+// ── Direct API searches ──────────────────────────────────
 
 /**
- * Direct Reddit search via their JSON API (no auth needed for search).
+ * Reddit JSON API (no auth needed for search).
  */
 function _presence_reddit_search(string $query): array
 {
     $url = 'https://www.reddit.com/search.json?q=' . urlencode($query) . '&sort=relevance&limit=5&type=link';
-
     $result = scraper_fetch($url, 10);
     if ($result['status'] !== 200) return [];
 
@@ -253,16 +242,198 @@ function _presence_reddit_search(string $query): array
         $conversations[] = [
             'url' => 'https://www.reddit.com' . $post['permalink'],
             'title' => $post['title'],
-            'snippet' => substr($post['selftext'] ?? '', 0, 200),
-            'subreddit' => $post['subreddit'],
-            'score' => $post['score'],
-            'num_comments' => $post['num_comments'],
-            'created' => date('Y-m-d', $post['created_utc']),
+            'snippet' => mb_substr($post['selftext'] ?? '', 0, 300),
+            'subreddit' => $post['subreddit'] ?? '',
+            'score' => $post['score'] ?? 0,
+            'num_comments' => $post['num_comments'] ?? 0,
+            'created' => date('Y-m-d', $post['created_utc'] ?? time()),
         ];
+    }
+    return $conversations;
+}
+
+/**
+ * Hacker News via Algolia API (free, no auth).
+ */
+function _presence_hn_search(string $query): array
+{
+    $url = 'https://hn.algolia.com/api/v1/search?query=' . urlencode($query) . '&tags=story&hitsPerPage=5';
+    $result = scraper_fetch($url, 10);
+    if ($result['status'] !== 200) return [];
+
+    $data = json_decode($result['body'], true);
+    if (empty($data['hits'])) return [];
+
+    $conversations = [];
+    foreach ($data['hits'] as $hit) {
+        $conversations[] = [
+            'url' => 'https://news.ycombinator.com/item?id=' . $hit['objectID'],
+            'title' => $hit['title'] ?? '',
+            'snippet' => mb_substr($hit['story_text'] ?? $hit['comment_text'] ?? '', 0, 300),
+            'score' => $hit['points'] ?? 0,
+            'num_comments' => $hit['num_comments'] ?? 0,
+            'created' => date('Y-m-d', strtotime($hit['created_at'] ?? 'now')),
+            'author' => $hit['author'] ?? '',
+        ];
+    }
+    return $conversations;
+}
+
+/**
+ * Stack Exchange API (free, no auth for basic queries).
+ */
+function _presence_stackexchange_search(string $query): array
+{
+    $url = 'https://api.stackexchange.com/2.3/search/advanced?order=desc&sort=relevance&q='
+        . urlencode($query) . '&site=stackoverflow&pagesize=5&filter=!nNPvSNdWme';
+    $result = scraper_fetch($url, 10);
+    if ($result['status'] !== 200) return [];
+
+    $data = json_decode($result['body'], true);
+    if (empty($data['items'])) return [];
+
+    $conversations = [];
+    foreach ($data['items'] as $item) {
+        $conversations[] = [
+            'url' => $item['link'] ?? '',
+            'title' => html_entity_decode($item['title'] ?? '', ENT_QUOTES, 'UTF-8'),
+            'snippet' => mb_substr(strip_tags(html_entity_decode($item['body_markdown'] ?? $item['body'] ?? '', ENT_QUOTES, 'UTF-8')), 0, 300),
+            'score' => $item['score'] ?? 0,
+            'num_comments' => $item['answer_count'] ?? 0,
+            'created' => date('Y-m-d', $item['creation_date'] ?? time()),
+            'tags' => implode(', ', $item['tags'] ?? []),
+        ];
+    }
+    return $conversations;
+}
+
+/**
+ * YouTube search via page scraping (no API key needed).
+ */
+function _presence_youtube_search(string $query): array
+{
+    $url = 'https://www.youtube.com/results?search_query=' . urlencode($query);
+    $result = scraper_fetch($url, 10);
+    if ($result['status'] !== 200) return [];
+
+    $conversations = [];
+    // Extract video data from the initial page data
+    if (preg_match('/var ytInitialData = ({.*?});<\/script>/s', $result['body'], $m)) {
+        $data = json_decode($m[1], true);
+        $contents = $data['contents']['twoColumnSearchResultsRenderer']['primaryContents']['sectionListRenderer']['contents'][0]['itemSectionRenderer']['contents'] ?? [];
+
+        foreach (array_slice($contents, 0, 5) as $item) {
+            $video = $item['videoRenderer'] ?? null;
+            if (!$video) continue;
+
+            $title = '';
+            foreach (($video['title']['runs'] ?? []) as $run) $title .= $run['text'];
+
+            $snippet = '';
+            foreach (($video['detailedMetadataSnippets'][0]['snippetText']['runs'] ?? $video['descriptionSnippet']['runs'] ?? []) as $run) $snippet .= $run['text'];
+
+            $conversations[] = [
+                'url' => 'https://www.youtube.com/watch?v=' . $video['videoId'],
+                'title' => $title,
+                'snippet' => mb_substr($snippet, 0, 300),
+                'score' => $video['viewCountText']['simpleText'] ?? '',
+                'created' => $video['publishedTimeText']['simpleText'] ?? '',
+                'author' => $video['ownerText']['runs'][0]['text'] ?? '',
+            ];
+        }
+    }
+    return $conversations;
+}
+
+/**
+ * GitHub search via API (no auth for basic, rate limited).
+ */
+function _presence_github_search(string $query): array
+{
+    $url = 'https://api.github.com/search/repositories?q=' . urlencode($query) . '&sort=stars&per_page=5';
+    // GitHub API needs Accept header — use curl directly
+    $ch = curl_init($url);
+    curl_setopt_array($ch, [
+        CURLOPT_RETURNTRANSFER => true,
+        CURLOPT_TIMEOUT => 10,
+        CURLOPT_USERAGENT => 'ContentAgent/1.0',
+        CURLOPT_HTTPHEADER => ['Accept: application/vnd.github.v3+json'],
+        CURLOPT_SSL_VERIFYPEER => true,
+    ]);
+    $body = curl_exec($ch);
+    $status = curl_getinfo($ch, CURLINFO_HTTP_CODE);
+    curl_close($ch);
+    if ($status !== 200) return [];
+    $result = ['body' => $body];
+    $data = json_decode($result['body'], true);
+    if (empty($data['items'])) return [];
+
+    $data = json_decode($result['body'], true);
+    if (empty($data['items'])) return [];
+
+    $conversations = [];
+    foreach ($data['items'] as $repo) {
+        $conversations[] = [
+            'url' => $repo['html_url'] ?? '',
+            'title' => $repo['full_name'] ?? '',
+            'snippet' => mb_substr($repo['description'] ?? '', 0, 300),
+            'score' => ($repo['stargazers_count'] ?? 0) . ' stars',
+            'num_comments' => $repo['open_issues_count'] ?? 0,
+            'created' => date('Y-m-d', strtotime($repo['updated_at'] ?? 'now')),
+            'tags' => implode(', ', array_slice($repo['topics'] ?? [], 0, 5)),
+        ];
+    }
+    return $conversations;
+}
+
+/**
+ * Web search fallback for platforms without direct APIs.
+ */
+function _presence_web_search(string $query, string $site_domain): array
+{
+    // Use DuckDuckGo HTML (more reliable than Google scraping)
+    $search_url = 'https://html.duckduckgo.com/html/?q=' . urlencode($query . ' site:' . $site_domain);
+    $result = scraper_fetch($search_url, 10);
+    if ($result['status'] !== 200 || empty($result['body'])) return [];
+
+    $conversations = [];
+    $html = $result['body'];
+
+    // Parse DuckDuckGo results
+    if (preg_match_all('/<a[^>]+class="result__a"[^>]+href="([^"]+)"[^>]*>(.*?)<\/a>/s', $html, $matches, PREG_SET_ORDER)) {
+        foreach (array_slice($matches, 0, 5) as $match) {
+            $url = $match[1];
+            // DDG wraps URLs in a redirect — extract actual URL
+            if (preg_match('/uddg=([^&]+)/', $url, $u)) {
+                $url = urldecode($u[1]);
+            }
+            if (strpos($url, $site_domain) === false) continue;
+
+            $title = strip_tags($match[2]);
+
+            // Get snippet
+            $snippet = '';
+            $conversations[] = [
+                'url' => $url,
+                'title' => $title,
+                'snippet' => $snippet,
+            ];
+        }
+    }
+
+    // Also try DuckDuckGo snippet extraction
+    if (preg_match_all('/<a class="result__snippet"[^>]*>(.*?)<\/a>/s', $html, $snip_matches)) {
+        foreach ($snip_matches[1] as $i => $snip) {
+            if (isset($conversations[$i])) {
+                $conversations[$i]['snippet'] = mb_substr(strip_tags($snip), 0, 300);
+            }
+        }
     }
 
     return $conversations;
 }
+
+// ── Reply & Storage functions ────────────────────────────
 
 /**
  * Generate an AI reply for a specific conversation.
@@ -283,6 +454,7 @@ function presence_draft_reply(array $site, array $conversation, PDO $db): array
         'medium' => "Write a thoughtful comment on the article. Add to the discussion. Mention {$name} only if directly relevant.",
         'hackernews' => "Write a substantive comment. HN values technical depth and original thinking. Subtle mentions only, no marketing speak.",
         'youtube' => "Write a helpful comment adding to the video's topic. Keep it conversational.",
+        'github' => "Write a technically relevant comment or issue description. Mention {$name} only if it provides a solution.",
     ];
 
     $guide = $platform_guides[$platform] ?? "Write a helpful reply that adds value to the conversation. Mention {$name} naturally if relevant.";
