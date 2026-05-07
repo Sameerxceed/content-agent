@@ -169,6 +169,9 @@ function presence_scan_platform(string $platform_key, array $search_terms): arra
         }
     }
 
+    // Filter by recency (1 month for fast platforms, 3 months for others)
+    $unique = _presence_filter_recent($unique, $platform_key);
+
     return array_slice($unique, 0, 8);
 }
 
@@ -222,6 +225,30 @@ function presence_scan_conversations(array $site, PDO $db, array $platforms = []
     return $results;
 }
 
+// ── Helpers ──────────────────────────────────────────────
+
+// Fast-moving platforms: 1 month. Others: 3 months.
+const PLATFORM_RECENCY = [
+    'reddit' => '-1 month', 'hackernews' => '-1 month', 'twitter' => '-1 month',
+    'producthunt' => '-1 month', 'youtube' => '-3 months',
+    'stackoverflow' => '-3 months', 'quora' => '-3 months', 'linkedin' => '-3 months',
+    'medium' => '-3 months', 'github' => '-3 months', 'facebook' => '-3 months',
+    'wikipedia' => '-6 months',
+];
+
+/** Filter out old conversations based on platform recency */
+function _presence_filter_recent(array $conversations, string $platform = ''): array
+{
+    $window = PLATFORM_RECENCY[$platform] ?? '-3 months';
+    $cutoff = strtotime($window);
+    return array_values(array_filter($conversations, function($c) use ($cutoff) {
+        $date = $c['created'] ?? '';
+        if (!$date) return true; // keep if no date
+        $ts = strtotime($date);
+        return $ts && $ts >= $cutoff;
+    }));
+}
+
 // ── Direct API searches ──────────────────────────────────
 
 /**
@@ -229,7 +256,7 @@ function presence_scan_conversations(array $site, PDO $db, array $platforms = []
  */
 function _presence_reddit_search(string $query): array
 {
-    $url = 'https://www.reddit.com/search.json?q=' . urlencode($query) . '&sort=relevance&limit=5&type=link';
+    $url = 'https://www.reddit.com/search.json?q=' . urlencode($query) . '&sort=new&limit=10&t=month&type=link';
     $result = scraper_fetch($url, 10);
     if ($result['status'] !== 200) return [];
 
@@ -257,7 +284,8 @@ function _presence_reddit_search(string $query): array
  */
 function _presence_hn_search(string $query): array
 {
-    $url = 'https://hn.algolia.com/api/v1/search?query=' . urlencode($query) . '&tags=story&hitsPerPage=5';
+    $three_months_ago = strtotime('-3 months');
+    $url = 'https://hn.algolia.com/api/v1/search_by_date?query=' . urlencode($query) . '&tags=story&hitsPerPage=10&numericFilters=created_at_i>' . $three_months_ago;
     $result = scraper_fetch($url, 10);
     if ($result['status'] !== 200) return [];
 
@@ -284,8 +312,9 @@ function _presence_hn_search(string $query): array
  */
 function _presence_stackexchange_search(string $query): array
 {
-    $url = 'https://api.stackexchange.com/2.3/search/advanced?order=desc&sort=relevance&q='
-        . urlencode($query) . '&site=stackoverflow&pagesize=5&filter=!nNPvSNdWme';
+    $three_months_ago = strtotime('-3 months');
+    $url = 'https://api.stackexchange.com/2.3/search/advanced?order=desc&sort=activity&q='
+        . urlencode($query) . '&site=stackoverflow&pagesize=10&fromdate=' . $three_months_ago . '&filter=!nNPvSNdWme';
     $result = scraper_fetch($url, 10);
     if ($result['status'] !== 200) return [];
 
