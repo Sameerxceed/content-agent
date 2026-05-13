@@ -223,7 +223,10 @@ $has_description = !empty($site['business_description']);
             <div style="font-size:11px;color:#94a3b8;margin-top:4px;">3-6 short phrases work best (2-3 words each).</div>
         </div>
 
-        <button type="button" onclick="saveFocus()" class="btn btn-accent" style="padding:8px 18px;">Save & Confirm</button>
+        <div style="display:flex;gap:8px;flex-wrap:wrap;">
+            <button type="button" onclick="saveFocus(false)" class="btn btn-outline" style="padding:8px 18px;">Save & Stay</button>
+            <button type="button" onclick="saveFocus(true)" class="btn btn-accent" style="padding:8px 18px;">Save & Find Keywords →</button>
+        </div>
         <div id="bf-msg" style="margin-top:8px;font-size:12px;"></div>
     </div>
 </div>
@@ -255,7 +258,7 @@ async function suggestTopics() {
     btn.disabled = false; btn.textContent = 'Suggest from homepage';
 }
 
-async function saveFocus() {
+async function saveFocus(goToKeywords) {
     const description = document.getElementById('bf-description').value.trim();
     const topicsRaw = document.getElementById('bf-topics').value.trim();
     const topics = topicsRaw.split(',').map(s => s.trim()).filter(Boolean);
@@ -269,8 +272,16 @@ async function saveFocus() {
             body: JSON.stringify({action:'save', site_id: <?= $site_id ?>, business_description: description, topics})
         });
         const data = await res.json();
-        if (data.success) location.reload();
-        else document.getElementById('bf-msg').innerHTML = '<span style="color:#dc2626;">' + (data.error || 'Failed') + '</span>';
+        if (data.success) {
+            if (goToKeywords) {
+                document.getElementById('bf-msg').innerHTML = '<span style="color:#065f46;">✓ Saved. Opening Find Keywords...</span>';
+                window.location.href = '<?= url('/dashboard/agent-run.php?agent=keyword-research&site=' . $site_id) ?>';
+            } else {
+                location.reload();
+            }
+        } else {
+            document.getElementById('bf-msg').innerHTML = '<span style="color:#dc2626;">' + (data.error || 'Failed') + '</span>';
+        }
     } catch(e) {
         document.getElementById('bf-msg').innerHTML = '<span style="color:#dc2626;">Error: ' + e.message + '</span>';
     }
