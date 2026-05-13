@@ -222,7 +222,7 @@ $has_description = !empty($site['business_description']);
 
         <div class="form-group" style="margin-bottom:10px;">
             <label style="font-size:12px;font-weight:600;">What does your business sell or offer?</label>
-            <textarea id="bf-description" class="form-control" rows="2" placeholder="e.g. We sell handwoven silk scarves and shawls, made in London since 2010..." style="font-size:13px;"><?= e($site['business_description'] ?? '') ?></textarea>
+            <textarea id="bf-description" class="form-control" rows="2" placeholder="Describe what your business actually sells or offers, in your own words." style="font-size:13px;"><?= e($site['business_description'] ?? '') ?></textarea>
         </div>
 
         <div class="form-group" style="margin-bottom:10px;">
@@ -230,7 +230,7 @@ $has_description = !empty($site['business_description']);
                 <span>Main topics / products (comma-separated)</span>
                 <button type="button" onclick="suggestTopics()" id="suggest-btn" class="btn btn-sm" style="background:transparent;border:1px solid var(--primary);color:var(--primary);font-size:11px;padding:2px 8px;">Suggest from homepage</button>
             </label>
-            <input type="text" id="bf-topics" class="form-control" value="<?= e(implode(', ', $topics_arr)) ?>" placeholder="e.g. silk scarves, handwoven shawls, luxury accessories" style="font-size:13px;">
+            <input type="text" id="bf-topics" class="form-control" value="<?= e(implode(', ', $topics_arr)) ?>" placeholder="Comma-separated topics specific to your business" style="font-size:13px;">
             <div style="font-size:11px;color:#94a3b8;margin-top:4px;">3-6 short phrases work best (2-3 words each).</div>
         </div>
 
