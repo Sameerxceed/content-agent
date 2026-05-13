@@ -477,6 +477,22 @@ if ($next_step !== 'done'):
         </div>
     </div>
     <div class="section-body">
+        <!-- Publishing settings -->
+        <?php $cms_enabled = !empty($site['cms_url']) && !empty($site['cms_api_key']); ?>
+        <div style="padding:10px;background:<?= $cms_enabled ? '#fef3c7' : '#f8fafc' ?>;border:1px solid <?= $cms_enabled ? '#fcd34d' : 'var(--border)' ?>;border-radius:6px;margin-bottom:10px;display:flex;justify-content:space-between;align-items:center;gap:10px;">
+            <div style="flex:1;min-width:0;">
+                <div style="font-size:13px;font-weight:600;color:<?= $cms_enabled ? '#92400e' : '#475569' ?>;">
+                    <?= $cms_enabled ? '⚠ Auto-publish to ' . e($site['domain']) . ' is ENABLED' : '✓ Auto-publish to live site is DISABLED' ?>
+                </div>
+                <div style="font-size:11px;color:#64748b;margin-top:2px;">
+                    <?= $cms_enabled ? 'New posts can be pushed live via "Publish to CMS" option in the Writer.' : 'Posts will only save as drafts or publish locally on ContentAgent. Nothing goes live on ' . e($site['domain']) . '.' ?>
+                </div>
+            </div>
+            <button onclick="togglePublish(<?= $site_id ?>, <?= $cms_enabled ? 'false' : 'true' ?>)" class="btn btn-sm" style="background:<?= $cms_enabled ? '#dc2626' : '#10b981' ?>;color:#fff;border:none;font-size:11px;white-space:nowrap;flex-shrink:0;">
+                <?= $cms_enabled ? 'Disable CMS Push' : 'Enable CMS Push' ?>
+            </button>
+        </div>
+
         <?php if (!empty($recent_posts)): ?>
             <?php foreach ($recent_posts as $rp): ?>
             <div style="padding:6px 0;border-bottom:1px solid #f1f5f9;display:flex;justify-content:space-between;align-items:center;">
@@ -492,6 +508,38 @@ if ($next_step !== 'done'):
         <?php endif; ?>
     </div>
 </div>
+
+<script>
+async function togglePublish(siteId, enable) {
+    const action = enable ? 'enable CMS auto-publish' : 'DISABLE CMS auto-publish';
+    const msg = enable
+        ? 'This will allow new posts to go LIVE on the website when "Publish to CMS" is selected. You will need to enter CMS credentials. Continue?'
+        : 'This will clear CMS credentials. No new posts will go live on the website. Existing live posts are NOT affected. Continue?';
+    if (!confirm(msg)) return;
+
+    if (enable) {
+        // Redirect to site edit page to enter CMS credentials
+        window.location.href = '<?= url('/dashboard/sites.php?action=edit&id=') ?>' + siteId + '#cms';
+        return;
+    }
+
+    try {
+        const res = await fetch('<?= url('/api/toggle-publish.php') ?>', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({site_id: siteId, enable: false})
+        });
+        const data = await res.json();
+        if (data.success) {
+            location.reload();
+        } else {
+            alert('Failed: ' + (data.error || 'unknown error'));
+        }
+    } catch(e) {
+        alert('Error: ' + e.message);
+    }
+}
+</script>
 
 <!-- 6. AI SEO -->
 <div class="section" id="sec-aiseo">
