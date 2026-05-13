@@ -493,22 +493,48 @@ if ($next_step !== 'done'):
             </button>
         </div>
 
-        <!-- SEO Snippet safety mode -->
-        <?php $override_mode = ($site['snippet_mode'] ?? 'fill_only') === 'override'; ?>
-        <div style="padding:10px;background:<?= $override_mode ? '#fef2f2' : '#f0fdf4' ?>;border:1px solid <?= $override_mode ? '#fca5a5' : '#86efac' ?>;border-radius:6px;margin-bottom:10px;display:flex;justify-content:space-between;align-items:center;gap:10px;">
-            <div style="flex:1;min-width:0;">
-                <div style="font-size:13px;font-weight:600;color:<?= $override_mode ? '#991b1b' : '#065f46' ?>;">
-                    <?= $override_mode ? '⚠ SEO snippet OVERRIDE mode is ON' : '✓ SEO snippet is in SAFE mode (fill-only)' ?>
+        <!-- SEO Snippet master kill switch -->
+        <?php
+        $snippet_on = !empty($site['snippet_enabled']);
+        $override_mode = ($site['snippet_mode'] ?? 'fill_only') === 'override';
+        ?>
+        <div style="padding:10px;background:<?= $snippet_on ? ($override_mode ? '#fef2f2' : '#fef3c7') : '#f0fdf4' ?>;border:1px solid <?= $snippet_on ? ($override_mode ? '#fca5a5' : '#fcd34d') : '#86efac' ?>;border-radius:6px;margin-bottom:10px;">
+            <div style="display:flex;justify-content:space-between;align-items:center;gap:10px;">
+                <div style="flex:1;min-width:0;">
+                    <div style="font-size:13px;font-weight:600;color:<?= $snippet_on ? ($override_mode ? '#991b1b' : '#92400e') : '#065f46' ?>;">
+                        <?php if (!$snippet_on): ?>
+                            ✓ SEO snippet is OFF — nothing is injected on <?= e($site['domain']) ?>
+                        <?php elseif ($override_mode): ?>
+                            ⚠ SEO snippet is ON in OVERRIDE mode — DANGER: live site tags are being replaced
+                        <?php else: ?>
+                            ⚠ SEO snippet is ON in Safe mode — fills missing tags only
+                        <?php endif; ?>
+                    </div>
+                    <div style="font-size:11px;color:#64748b;margin-top:2px;">
+                        <?php if (!$snippet_on): ?>
+                            The ContentAgent script (if embedded) will NOT inject any titles, schema, OG tags, or descriptions. Your live site is fully under your own control.
+                        <?php elseif ($override_mode): ?>
+                            Snippet is replacing existing titles/descriptions on <?= e($site['domain']) ?>. Wrong data here changes how your site appears in Google.
+                        <?php else: ?>
+                            Snippet adds missing tags only on <?= e($site['domain']) ?>. Existing titles/descriptions are kept. Schema and OG data may still be added — review before enabling.
+                        <?php endif; ?>
+                    </div>
                 </div>
-                <div style="font-size:11px;color:#64748b;margin-top:2px;">
-                    <?= $override_mode
-                        ? 'Snippet REPLACES existing page titles and descriptions with ContentAgent versions. Risk: live site titles change automatically.'
-                        : 'Snippet only adds MISSING tags. Existing page titles and descriptions on ' . e($site['domain']) . ' are never changed.' ?>
-                </div>
+                <button onclick="toggleSnippetEnabled(<?= $site_id ?>, <?= $snippet_on ? 'false' : 'true' ?>)" class="btn btn-sm" style="background:<?= $snippet_on ? '#dc2626' : '#10b981' ?>;color:#fff;border:none;font-size:11px;white-space:nowrap;flex-shrink:0;">
+                    <?= $snippet_on ? 'Turn OFF Snippet' : 'Turn ON Snippet' ?>
+                </button>
             </div>
-            <button onclick="toggleSnippetMode(<?= $site_id ?>, <?= $override_mode ? "'fill_only'" : "'override'" ?>)" class="btn btn-sm" style="background:<?= $override_mode ? '#10b981' : '#dc2626' ?>;color:#fff;border:none;font-size:11px;white-space:nowrap;flex-shrink:0;">
-                <?= $override_mode ? 'Switch to Safe Mode' : 'Enable Override' ?>
-            </button>
+
+            <?php if ($snippet_on): ?>
+            <div style="margin-top:8px;padding-top:8px;border-top:1px solid rgba(0,0,0,0.06);display:flex;justify-content:space-between;align-items:center;gap:10px;">
+                <div style="font-size:11px;color:#64748b;">
+                    Mode: <strong><?= $override_mode ? 'Override (replaces existing tags)' : 'Safe (fills missing only)' ?></strong>
+                </div>
+                <button onclick="toggleSnippetMode(<?= $site_id ?>, <?= $override_mode ? "'fill_only'" : "'override'" ?>)" class="btn btn-sm" style="background:transparent;color:<?= $override_mode ? '#10b981' : '#dc2626' ?>;border:1px solid <?= $override_mode ? '#10b981' : '#dc2626' ?>;font-size:10px;white-space:nowrap;flex-shrink:0;">
+                    <?= $override_mode ? 'Switch to Safe Mode' : 'Switch to Override (risky)' ?>
+                </button>
+            </div>
+            <?php endif; ?>
         </div>
 
         <?php if (!empty($recent_posts)): ?>
@@ -540,6 +566,23 @@ async function togglePublish(siteId, enable) {
         return;
     }
 
+}
+
+async function toggleSnippetEnabled(siteId, enable) {
+    var msg = enable
+        ? '⚠ Turning ON the SEO snippet allows ContentAgent to inject tags into your LIVE website (where the script is embedded). Wrong data could mis-represent your business. Continue?'
+        : 'Turning OFF the SEO snippet. ContentAgent will inject NOTHING into your live website. Your existing tags stay as they are. Continue?';
+    if (!confirm(msg)) return;
+    try {
+        const res = await fetch('<?= url('/api/toggle-publish.php') ?>', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({site_id: siteId, snippet_enabled: enable})
+        });
+        const data = await res.json();
+        if (data.success) location.reload();
+        else alert('Failed: ' + (data.error || 'unknown error'));
+    } catch(e) { alert('Error: ' + e.message); }
 }
 
 async function toggleSnippetMode(siteId, newMode) {

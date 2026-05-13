@@ -31,6 +31,7 @@
         .then(function(res) { return res.json(); })
         .then(function(data) {
             if (!data || data.error) return;
+            if (data.disabled) return; // Kill switch — ContentAgent snippet is off for this site
 
             // Handle redirect
             if (data.redirect) {

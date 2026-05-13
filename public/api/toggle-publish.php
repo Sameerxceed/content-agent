@@ -21,6 +21,7 @@ $input = json_decode(file_get_contents('php://input'), true) ?: [];
 $site_id = (int)($input['site_id'] ?? 0);
 $enable = $input['enable'] ?? null;
 $snippet_mode = $input['snippet_mode'] ?? null;
+$snippet_enabled = $input['snippet_enabled'] ?? null;
 
 if (!$site_id) { http_response_code(400); echo json_encode(['error' => 'site_id required']); exit; }
 
@@ -28,6 +29,18 @@ if (!$site_id) { http_response_code(400); echo json_encode(['error' => 'site_id 
 $stmt = $db->prepare('SELECT id FROM sites WHERE id = ? AND user_id = ?');
 $stmt->execute([$site_id, $user_id]);
 if (!$stmt->fetch()) { http_response_code(404); echo json_encode(['error' => 'Site not found']); exit; }
+
+// Snippet master kill switch
+if ($snippet_enabled !== null) {
+    $val = $snippet_enabled ? 1 : 0;
+    $stmt = $db->prepare('UPDATE sites SET snippet_enabled = ? WHERE id = ?');
+    $stmt->execute([$val, $site_id]);
+    $db->prepare('INSERT INTO agent_log (site_id, action, details, status) VALUES (?, ?, ?, ?)')->execute([
+        $site_id, 'snippet_enabled_changed', json_encode(['enabled' => (bool)$val, 'by_user' => $user_id]), 'success'
+    ]);
+    echo json_encode(['success' => true, 'snippet_enabled' => (bool)$val]);
+    exit;
+}
 
 // Snippet mode toggle
 if ($snippet_mode !== null) {

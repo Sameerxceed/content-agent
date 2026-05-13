@@ -31,12 +31,19 @@ if (empty($domain)) {
 $domain = preg_replace('/^www\./', '', strtolower($domain));
 
 // Find site
-$stmt = $db->prepare('SELECT id, snippet_mode FROM sites WHERE domain = ? AND is_active = 1 LIMIT 1');
+$stmt = $db->prepare('SELECT id, snippet_mode, snippet_enabled FROM sites WHERE domain = ? AND is_active = 1 LIMIT 1');
 $stmt->execute([$domain]);
 $site = $stmt->fetch();
 
 if (!$site) {
     echo json_encode(['error' => 'site not found']);
+    exit;
+}
+
+// KILL SWITCH: if snippet not explicitly enabled, return empty response.
+// The snippet on the live site will fetch this, get nothing, and inject nothing.
+if (empty($site['snippet_enabled'])) {
+    echo json_encode(['disabled' => true]);
     exit;
 }
 
