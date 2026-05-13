@@ -276,7 +276,7 @@ ob_start();
 
         <!-- Google Search Console -->
         <div class="card">
-            <div class="card-header" style="display:flex;justify-content:space-between;align-items:center;"><span>📊 Google Search Console</span><span style="background:#94a3b8;color:#fff;font-size:10px;padding:2px 8px;border-radius:10px;font-weight:600;">Optional</span></div>
+            <div class="card-header" style="display:flex;justify-content:space-between;align-items:center;"><span>📊 Google Search Console (for real keyword data)</span><?= !empty($current_config['google_client_id'] ?? '') ? '<span style="background:#10b981;color:#fff;font-size:10px;padding:2px 8px;border-radius:10px;font-weight:600;">Connected</span>' : '<span style="background:#f59e0b;color:#fff;font-size:10px;padding:2px 8px;border-radius:10px;font-weight:600;">Recommended</span>' ?></div>
             <p class="text-sm text-muted mb-2">Shows real keyword rankings, clicks, impressions. Setup: <a href="https://console.cloud.google.com" target="_blank">console.cloud.google.com</a> → Create project → Enable "Search Console API" → OAuth2 credentials.</p>
             <div class="grid-2">
                 <div class="form-group">
