@@ -108,11 +108,24 @@ if ($filter_site) {
 
 <div class="card">
     <?php if (empty($keywords)): ?>
-        <p class="text-muted text-sm" style="padding: 20px; text-align: center;">No keywords yet. Run: <code>php agent/keyword-research.php --site=ID</code></p>
+        <p class="text-muted text-sm" style="padding: 20px; text-align: center;">No keywords yet. Use <strong>Find Keywords</strong> from your site page.</p>
     <?php else: ?>
+        <!-- Bulk action bar -->
+        <div id="kw-actions-bar" style="padding:8px 12px;border-bottom:1px solid var(--border);display:flex;justify-content:space-between;align-items:center;background:#f8fafc;">
+            <div style="font-size:12px;color:#64748b;">
+                <span id="kw-selected-count">0</span> selected
+            </div>
+            <div style="display:flex;gap:6px;">
+                <button onclick="deleteSelected()" id="kw-delete-btn" class="btn btn-sm" style="background:#dc2626;color:#fff;border:none;font-size:11px;" disabled>Delete Selected</button>
+                <?php if ($filter_site): ?>
+                <button onclick="deleteAll(<?= (int)$filter_site ?>)" class="btn btn-sm" style="background:transparent;border:1px solid #dc2626;color:#dc2626;font-size:11px;">Clear All for This Site</button>
+                <?php endif; ?>
+            </div>
+        </div>
         <table>
             <thead>
                 <tr>
+                    <th style="width:32px;"><input type="checkbox" id="kw-select-all" onchange="toggleAll(this)"></th>
                     <th>Keyword</th>
                     <th>Site</th>
                     <th>Cluster</th>
@@ -120,11 +133,13 @@ if ($filter_site) {
                     <th>Difficulty</th>
                     <th>Rank</th>
                     <th>Last Checked</th>
+                    <th style="width:60px;"></th>
                 </tr>
             </thead>
             <tbody>
                 <?php foreach ($keywords as $kw): ?>
-                <tr>
+                <tr id="kw-row-<?= (int)$kw['id'] ?>">
+                    <td><input type="checkbox" class="kw-check" data-id="<?= (int)$kw['id'] ?>" onchange="updateSelectedCount()"></td>
                     <td style="font-weight: 500;"><?= e($kw['keyword']) ?></td>
                     <td class="text-sm"><?= e($kw['domain']) ?></td>
                     <td class="text-sm"><?= e($kw['cluster'] ?? '—') ?></td>
@@ -150,12 +165,51 @@ if ($filter_site) {
                     </td>
                     <td class="text-sm"><?= $kw['current_rank'] ?? '—' ?></td>
                     <td class="text-sm text-muted"><?= $kw['last_checked'] ? format_date($kw['last_checked'], 'd M') : '—' ?></td>
+                    <td>
+                        <button onclick="deleteOne(<?= (int)$kw['id'] ?>)" title="Delete this keyword" style="background:transparent;border:none;color:#dc2626;cursor:pointer;font-size:14px;padding:2px 6px;">✕</button>
+                    </td>
                 </tr>
                 <?php endforeach; ?>
             </tbody>
         </table>
     <?php endif; ?>
 </div>
+
+<script>
+const KW_API = '<?= url('/api/keywords-delete.php') ?>';
+
+function toggleAll(cb) {
+    document.querySelectorAll('.kw-check').forEach(c => c.checked = cb.checked);
+    updateSelectedCount();
+}
+function updateSelectedCount() {
+    const n = document.querySelectorAll('.kw-check:checked').length;
+    document.getElementById('kw-selected-count').textContent = n;
+    document.getElementById('kw-delete-btn').disabled = n === 0;
+}
+async function callDelete(body, label) {
+    try {
+        const res = await fetch(KW_API, {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(body)});
+        const data = await res.json();
+        if (data.success) location.reload();
+        else alert('Failed: ' + (data.error || 'unknown'));
+    } catch(e) { alert('Error: ' + e.message); }
+}
+function deleteOne(id) {
+    if (!confirm('Delete this keyword?')) return;
+    callDelete({action:'delete', ids:[id]});
+}
+function deleteSelected() {
+    const ids = Array.from(document.querySelectorAll('.kw-check:checked')).map(c => parseInt(c.dataset.id));
+    if (!ids.length) return;
+    if (!confirm('Delete ' + ids.length + ' keyword' + (ids.length>1?'s':'') + '?')) return;
+    callDelete({action:'delete', ids});
+}
+function deleteAll(siteId) {
+    if (!confirm('Delete ALL keywords for this site? This cannot be undone. You can re-run Find Keywords any time.')) return;
+    callDelete({action:'delete_all', site_id: siteId});
+}
+</script>
 
 <?php
 $page_content = ob_get_clean();
