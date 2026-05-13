@@ -72,7 +72,7 @@ foreach ($sites as $site) {
     echo "  Feeds: " . count($site_feeds) . "\n";
 
     // ── Get site keywords for relevance filtering ───────
-    $kw_stmt = $db->prepare('SELECT keyword FROM keywords WHERE site_id = ? ORDER BY priority DESC LIMIT 20');
+    $kw_stmt = $db->prepare("SELECT keyword FROM keywords WHERE site_id = ? AND status = 'active' ORDER BY priority DESC LIMIT 20");
     $kw_stmt->execute([$site['id']]);
     $keywords = $kw_stmt->fetchAll(PDO::FETCH_COLUMN);
 

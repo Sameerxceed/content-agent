@@ -164,10 +164,11 @@ echo "\nDone! Created {$posts_created} posts in {$duration}ms\n";
 function pick_next_topic(PDO $db, int $site_id): ?array
 {
     // Get highest priority cluster that we haven't written about recently
-    $stmt = $db->prepare('
+    $stmt = $db->prepare("
         SELECT k.cluster, GROUP_CONCAT(k.keyword ORDER BY k.priority DESC) as keywords
         FROM keywords k
         WHERE k.site_id = ?
+          AND k.status = 'active'
           AND k.cluster IS NOT NULL
           AND k.keyword NOT IN (
               SELECT p.seo_keywords FROM posts p
@@ -176,13 +177,13 @@ function pick_next_topic(PDO $db, int $site_id): ?array
         GROUP BY k.cluster
         ORDER BY AVG(k.priority) DESC
         LIMIT 1
-    ');
+    ");
     $stmt->execute([$site_id, $site_id]);
     $row = $stmt->fetch();
 
     if (!$row) {
         // Fallback: pick single highest priority keyword
-        $stmt = $db->prepare('SELECT keyword FROM keywords WHERE site_id = ? ORDER BY priority DESC LIMIT 1');
+        $stmt = $db->prepare("SELECT keyword FROM keywords WHERE site_id = ? AND status = 'active' ORDER BY priority DESC LIMIT 1");
         $stmt->execute([$site_id]);
         $kw = $stmt->fetchColumn();
         if (!$kw) return null;

@@ -20,7 +20,7 @@ function check_ai_visibility(array $site, PDO $db): array
     $platform = $site['platform'] ?? 'custom';
 
     // Get keywords for context
-    $stmt = $db->prepare('SELECT keyword FROM keywords WHERE site_id = ? ORDER BY priority DESC LIMIT 10');
+    $stmt = $db->prepare("SELECT keyword FROM keywords WHERE site_id = ? AND status = 'active' ORDER BY priority DESC LIMIT 10");
     $stmt->execute([$site['id']]);
     $keywords = $stmt->fetchAll(PDO::FETCH_COLUMN);
 

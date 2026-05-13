@@ -49,7 +49,7 @@ echo str_repeat('=', 60) . "\n";
 echo "\n[1/5] Gathering signals...\n";
 
 // Signal 1: Top keywords not yet covered by content
-$stmt = $db->prepare('SELECT keyword, priority, difficulty, cluster FROM keywords WHERE site_id = ? ORDER BY priority DESC LIMIT 30');
+$stmt = $db->prepare("SELECT keyword, priority, difficulty, cluster FROM keywords WHERE site_id = ? AND status = 'active' ORDER BY priority DESC LIMIT 30");
 $stmt->execute([$site_id]);
 $keywords = $stmt->fetchAll();
 

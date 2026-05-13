@@ -83,7 +83,7 @@ function generate_llms_full_txt(array $site, PDO $db): string
     $txt = generate_llms_txt($site, $db);
 
     // Add keywords context
-    $stmt = $db->prepare('SELECT keyword, cluster FROM keywords WHERE site_id = ? ORDER BY priority DESC LIMIT 30');
+    $stmt = $db->prepare("SELECT keyword, cluster FROM keywords WHERE site_id = ? AND status = 'active' ORDER BY priority DESC LIMIT 30");
     $stmt->execute([$site['id']]);
     $keywords = $stmt->fetchAll();
 

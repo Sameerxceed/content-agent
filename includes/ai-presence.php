@@ -181,7 +181,7 @@ function presence_scan_platform(string $platform_key, array $search_terms): arra
 function presence_build_search_terms(array $site, PDO $db): array
 {
     $topics = json_decode($site['topics'] ?? '[]', true) ?: [];
-    $stmt = $db->prepare('SELECT keyword FROM keywords WHERE site_id = ? ORDER BY priority DESC LIMIT 10');
+    $stmt = $db->prepare("SELECT keyword FROM keywords WHERE site_id = ? AND status = 'active' ORDER BY priority DESC LIMIT 10");
     $stmt->execute([$site['id']]);
     $keywords = $stmt->fetchAll(PDO::FETCH_COLUMN);
 

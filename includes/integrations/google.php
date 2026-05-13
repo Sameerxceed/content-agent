@@ -244,8 +244,8 @@ function google_update_rankings(PDO $db, int $site_id): array
         // Real priority based on real signals — clicks×3 + log(impressions)×5, capped 0-100
         $priority = (int)min(100, ($clicks * 3) + (log(max(1, $impressions)) * 8));
 
-        $stmt = $db->prepare('INSERT INTO keywords (site_id, keyword, current_rank, gsc_position, impressions, clicks, ctr, search_volume, priority, gsc_synced_at, last_checked)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, NOW(), NOW())
+        $stmt = $db->prepare('INSERT INTO keywords (site_id, keyword, current_rank, gsc_position, impressions, clicks, ctr, search_volume, priority, source, gsc_synced_at, last_checked)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, "gsc", NOW(), NOW())
             ON DUPLICATE KEY UPDATE
                 current_rank = VALUES(current_rank),
                 gsc_position = VALUES(gsc_position),
@@ -254,6 +254,7 @@ function google_update_rankings(PDO $db, int $site_id): array
                 ctr = VALUES(ctr),
                 search_volume = VALUES(search_volume),
                 priority = VALUES(priority),
+                source = IF(source = "manual", "manual", "gsc"),
                 gsc_synced_at = NOW(),
                 last_checked = NOW()');
         $stmt->execute([
@@ -264,7 +265,7 @@ function google_update_rankings(PDO $db, int $site_id): array
             $impressions,
             $clicks,
             $ctr,
-            $impressions, // keep search_volume in sync with impressions for legacy code paths
+            $impressions,
             $priority,
         ]);
         if ($stmt->rowCount() === 1) $inserted++;

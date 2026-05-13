@@ -202,7 +202,7 @@ if ($action === 'keywords') {
     $stmt->execute([$site_id]);
     $clusters = $stmt->fetchColumn();
 
-    $stmt = $db->prepare('SELECT keyword FROM keywords WHERE site_id = ? ORDER BY priority DESC LIMIT 8');
+    $stmt = $db->prepare("SELECT keyword FROM keywords WHERE site_id = ? AND status = 'active' ORDER BY priority DESC LIMIT 8");
     $stmt->execute([$site_id]);
     $samples = $stmt->fetchAll(PDO::FETCH_COLUMN);
 
@@ -226,7 +226,7 @@ if ($action === 'content_plan') {
     require_once __DIR__ . '/../../includes/haiku.php';
 
     // Get keywords
-    $stmt = $db->prepare('SELECT keyword FROM keywords WHERE site_id = ? ORDER BY priority DESC LIMIT 15');
+    $stmt = $db->prepare("SELECT keyword FROM keywords WHERE site_id = ? AND status = 'active' ORDER BY priority DESC LIMIT 15");
     $stmt->execute([$site_id]);
     $keywords = $stmt->fetchAll(PDO::FETCH_COLUMN);
 

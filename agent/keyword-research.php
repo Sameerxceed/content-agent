@@ -113,9 +113,13 @@ if ($clusters) {
 // ── Step 4: Estimate difficulty & save ──────────────────
 echo "\n[4/4] Estimating difficulty & saving...\n";
 
-$insert_stmt = $db->prepare('INSERT INTO keywords (site_id, keyword, cluster, priority, search_volume, difficulty, last_checked)
-    VALUES (?, ?, ?, ?, ?, ?, NOW())
-    ON DUPLICATE KEY UPDATE cluster = VALUES(cluster), priority = VALUES(priority), last_checked = NOW()');
+// Preserve manual entries and never demote GSC rows on re-research
+$insert_stmt = $db->prepare('INSERT INTO keywords (site_id, keyword, cluster, priority, search_volume, difficulty, source, last_checked)
+    VALUES (?, ?, ?, ?, ?, ?, ?, NOW())
+    ON DUPLICATE KEY UPDATE
+        cluster = COALESCE(VALUES(cluster), cluster),
+        priority = IF(source IN ("gsc", "manual"), priority, VALUES(priority)),
+        last_checked = NOW()');
 
 $saved = 0;
 foreach ($all_keywords as $keyword => $info) {
@@ -130,24 +134,25 @@ foreach ($all_keywords as $keyword => $info) {
         }
     }
 
-    // Estimate difficulty (basic: by word count heuristic)
     $word_count = str_word_count($keyword);
     $difficulty = estimate_difficulty($word_count);
 
-    // Priority: shorter = more competitive but valuable, questions = high intent
     $priority = 50;
-    if ($info['source'] === 'paa') $priority = 70; // Questions have high content potential
-    if ($word_count >= 4) $priority += 10; // Long-tail = easier to rank
-    if ($word_count <= 2) $priority -= 10; // Very competitive
+    if ($info['source'] === 'paa') $priority = 70;
+    if ($word_count >= 4) $priority += 10;
+    if ($word_count <= 2) $priority -= 10;
     $priority = max(0, min(100, $priority));
+
+    $source = $info['source'] === 'paa' ? 'paa' : 'autocomplete';
 
     $insert_stmt->execute([
         $site_id,
         mb_substr($keyword, 0, 255),
         $cluster_name,
         $priority,
-        null, // No volume data without paid API
+        null,
         $difficulty,
+        $source,
     ]);
 
     $saved++;

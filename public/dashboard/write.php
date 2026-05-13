@@ -68,7 +68,7 @@ ob_start();
     if (!$site) { echo '<div class="alert alert-error">Site not found.</div>'; } else {
 
     // Gather signals
-    $stmt = $db->prepare('SELECT keyword FROM keywords WHERE site_id = ? ORDER BY priority DESC LIMIT 15');
+    $stmt = $db->prepare("SELECT keyword FROM keywords WHERE site_id = ? AND status = 'active' ORDER BY priority DESC LIMIT 15");
     $stmt->execute([$site_id]);
     $keywords = $stmt->fetchAll(PDO::FETCH_COLUMN);
 
