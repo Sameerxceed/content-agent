@@ -188,7 +188,7 @@ $topics_confirmed = !empty($site['topics_confirmed']);
 $has_description = !empty($site['business_description']);
 ?>
 <div id="business-focus" class="card" style="margin-bottom:10px;border-left:4px solid <?= $topics_confirmed ? '#10b981' : '#f59e0b' ?>;">
-    <div class="card-header" style="display:flex;justify-content:space-between;align-items:center;cursor:pointer;" onclick="document.getElementById('bf-body').style.display = document.getElementById('bf-body').style.display === 'none' ? 'block' : 'none';">
+    <div class="card-header" style="display:flex;justify-content:space-between;align-items:center;<?= $topics_confirmed ? 'cursor:pointer;' : '' ?>" <?= $topics_confirmed ? "onclick=\"document.getElementById('bf-body').style.display = document.getElementById('bf-body').style.display === 'none' ? 'block' : 'none';\"" : '' ?>>
         <div>
             <div style="font-weight:600;font-size:14px;color:<?= $topics_confirmed ? '#065f46' : '#92400e' ?>;">
                 <?= $topics_confirmed ? '✓ Business Focus confirmed' : '⚠ Tell ContentAgent what your business sells' ?>
@@ -196,10 +196,12 @@ $has_description = !empty($site['business_description']);
             <div style="font-size:12px;color:#64748b;margin-top:2px;">
                 <?= $topics_confirmed
                     ? 'Topics: ' . e(implode(', ', $topics_arr))
-                    : 'Without this, AI will guess — and may write content for the wrong industry.' ?>
+                    : 'Fill in the form below so AI knows what your business actually does.' ?>
             </div>
         </div>
-        <span style="font-size:11px;color:var(--primary);"><?= $topics_confirmed ? 'Edit' : 'Set up now' ?> →</span>
+        <?php if ($topics_confirmed): ?>
+            <span style="font-size:11px;color:var(--primary);">Edit ▾</span>
+        <?php endif; ?>
     </div>
     <div id="bf-body" style="padding:14px;border-top:1px solid var(--border);display:<?= $topics_confirmed ? 'none' : 'block' ?>;">
         <p style="font-size:12px;color:#64748b;margin-bottom:10px;">
