@@ -263,25 +263,14 @@ async function saveFocus() {
         document.getElementById('bf-msg').innerHTML = '<span style="color:#dc2626;">Please add at least 1 topic so AI knows what to focus on.</span>';
         return;
     }
-    const wasConfirmed = <?= $topics_confirmed ? 'true' : 'false' ?>;
     try {
         const res = await fetch('<?= url('/api/business-focus.php') ?>', {
             method:'POST', headers:{'Content-Type':'application/json'},
             body: JSON.stringify({action:'save', site_id: <?= $site_id ?>, business_description: description, topics})
         });
         const data = await res.json();
-        if (data.success) {
-            // First-time confirmation → kick off the natural next step (find keywords)
-            if (!wasConfirmed) {
-                document.getElementById('bf-msg').innerHTML = '<span style="color:#065f46;">✓ Saved! Taking you to Find Keywords...</span>';
-                window.location.href = '<?= url('/dashboard/agent-run.php?agent=keyword-research&site=' . $site_id) ?>';
-            } else {
-                // Already confirmed before — just stay on the page after an edit
-                location.reload();
-            }
-        } else {
-            document.getElementById('bf-msg').innerHTML = '<span style="color:#dc2626;">' + (data.error || 'Failed') + '</span>';
-        }
+        if (data.success) location.reload();
+        else document.getElementById('bf-msg').innerHTML = '<span style="color:#dc2626;">' + (data.error || 'Failed') + '</span>';
     } catch(e) {
         document.getElementById('bf-msg').innerHTML = '<span style="color:#dc2626;">Error: ' + e.message + '</span>';
     }
