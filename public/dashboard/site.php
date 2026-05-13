@@ -65,6 +65,16 @@ $stmt = $db->prepare('SELECT MAX(gsc_synced_at) FROM keywords WHERE site_id = ?'
 $stmt->execute([$site_id]);
 $gsc_last_sync = $stmt->fetchColumn();
 
+// Competitor counts
+$competitors_active = 0;
+try {
+    $stmt = $db->prepare("SELECT COUNT(*) FROM competitors WHERE site_id = ? AND status = 'active'");
+    $stmt->execute([$site_id]);
+    $competitors_active = (int)$stmt->fetchColumn();
+} catch (PDOException $e) {
+    // table not yet migrated — leave at 0
+}
+
 // Fixed issues
 $stmt = $db->prepare('SELECT COUNT(*) FROM page_seo WHERE site_id = ?');
 $stmt->execute([$site_id]);
@@ -337,6 +347,9 @@ async function saveFocus(goToKeywords) {
     </a>
     <a href="<?= url('/dashboard/keywords.php?site=' . $site_id) ?>" class="stat-card" style="text-decoration:none;color:inherit;">
         <div class="stat-label">Keywords</div><div class="stat-value"><?= $kw_count ?></div>
+    </a>
+    <a href="<?= url('/dashboard/competitors.php?site=' . $site_id) ?>" class="stat-card" style="text-decoration:none;color:inherit;">
+        <div class="stat-label">Competitors</div><div class="stat-value"><?= $competitors_active ?></div>
     </a>
     <a href="<?= url('/dashboard/seo-audit.php?site=' . $site_id) ?>" class="stat-card" style="text-decoration:none;color:inherit;">
         <div class="stat-label">SEO Issues</div><div class="stat-value" style="color:<?= $open_issues > 0 ? 'var(--danger)' : 'var(--success)' ?>;"><?= $open_issues ?></div>
