@@ -94,9 +94,17 @@ if (empty($site_id)): ?>
         if ($action === 'sync' && $access_token) {
             $sync_result = google_update_rankings($db, $site_id);
             if ($sync_result['success']) {
-                echo '<div class="alert alert-success">Updated ' . $sync_result['updated'] . ' keyword rankings from Search Console.</div>';
+                $total = ($sync_result['updated'] ?? 0) + ($sync_result['inserted'] ?? 0);
+                echo '<div class="alert alert-success">Synced ' . $total . ' keywords from Search Console (matched property: <code>' . e($sync_result['matched_url'] ?? '') . '</code>)</div>';
             } else {
-                echo '<div class="alert alert-error">Sync failed: ' . e($sync_result['error'] ?? 'Unknown') . '</div>';
+                echo '<div class="alert alert-error" style="font-size:13px;">'
+                    . '<strong>Sync failed:</strong> ' . e($sync_result['error'] ?? 'Unknown')
+                    . '<div style="margin-top:8px;font-size:12px;color:#64748b;">'
+                    . 'Most common cause: the Google account you connected does not have access to this site in Search Console. '
+                    . 'Either connect a different Google account that owns the property, or add your current Google account as a user in '
+                    . '<a href="https://search.google.com/search-console" target="_blank">Search Console</a> &rarr; Settings &rarr; Users and permissions.'
+                    . '</div>'
+                    . '</div>';
             }
         }
 

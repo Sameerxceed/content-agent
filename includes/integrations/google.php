@@ -187,25 +187,46 @@ function google_update_rankings(PDO $db, int $site_id): array
         return ['success' => false, 'error' => 'Not connected to Google Search Console'];
     }
 
-    // Get site URL (try both formats)
+    // Get site URL — normalise so we don't get www.www.xxx
     $stmt = $db->prepare('SELECT domain FROM sites WHERE id = ?');
     $stmt->execute([$site_id]);
-    $domain = $stmt->fetchColumn();
-    $site_url = "sc-domain:{$domain}";
+    $raw = trim((string)$stmt->fetchColumn());
+    $bare = preg_replace('#^https?://#i', '', $raw);
+    $bare = preg_replace('#^www\.#i', '', $bare);
+    $bare = rtrim($bare, '/');
 
     $end_date = date('Y-m-d', strtotime('-2 days'));
     $start_date = date('Y-m-d', strtotime('-30 days'));
 
-    $data = google_search_analytics($access_token, $site_url, $start_date, $end_date, 'query', 500);
+    // Try multiple property formats — GSC verifies any of these independently
+    $candidates = [
+        'sc-domain:' . $bare,
+        'https://www.' . $bare . '/',
+        'https://' . $bare . '/',
+        'http://www.' . $bare . '/',
+        'http://' . $bare . '/',
+    ];
 
-    if (!$data) {
-        // Try with https:// format
-        $site_url = "https://www.{$domain}/";
-        $data = google_search_analytics($access_token, $site_url, $start_date, $end_date, 'query', 500);
+    $data = null;
+    $tried = [];
+    $matched_url = null;
+    foreach ($candidates as $candidate) {
+        $tried[] = $candidate;
+        $resp = google_search_analytics($access_token, $candidate, $start_date, $end_date, 'query', 500);
+        if ($resp && !empty($resp['rows'])) {
+            $data = $resp;
+            $matched_url = $candidate;
+            break;
+        }
     }
 
-    if (!$data || empty($data['rows'])) {
-        return ['success' => false, 'error' => 'No data returned from Search Console', 'updated' => 0];
+    if (!$data) {
+        return [
+            'success' => false,
+            'error'   => 'No data returned. Make sure the connected Google account has access to one of these properties in Search Console: ' . implode(', ', $tried),
+            'updated' => 0,
+            'tried'   => $tried,
+        ];
     }
 
     $updated = 0;
@@ -250,7 +271,7 @@ function google_update_rankings(PDO $db, int $site_id): array
         else $updated++;
     }
 
-    return ['success' => true, 'updated' => $updated, 'inserted' => $inserted, 'total_rows' => count($data['rows'])];
+    return ['success' => true, 'updated' => $updated, 'inserted' => $inserted, 'total_rows' => count($data['rows']), 'matched_url' => $matched_url];
 }
 
 /**
