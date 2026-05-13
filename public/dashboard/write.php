@@ -278,10 +278,11 @@ Output ONLY valid JSON array:
                     <div class="form-group">
                         <label>Action</label>
                         <select name="publish_action" class="form-control">
-                            <option value="draft">Save as Draft (review later)</option>
-                            <option value="publish_local">Publish locally only</option>
-                            <option value="publish_cms" selected>Publish to CMS (live on website)</option>
+                            <option value="draft" selected>Save as Draft (review later) — Recommended</option>
+                            <option value="publish_local">Publish locally only (on ContentAgent blog)</option>
+                            <option value="publish_cms">Publish to CMS (LIVE on your website)</option>
                         </select>
+                        <div class="text-sm text-muted mt-2" style="color:#b45309;">⚠ "Publish to CMS" pushes the post live immediately. Default is Draft so you can review first.</div>
                     </div>
                     <div class="flex gap-2">
                         <button type="submit" class="btn btn-accent" style="padding:10px 24px;">Publish →</button>
