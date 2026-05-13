@@ -19,6 +19,18 @@ $user_id = auth_user_id();
 $site_id = (int)($_GET['site'] ?? $_POST['site_id'] ?? 0);
 $step = $_POST['step'] ?? $_GET['step'] ?? 'pick-site';
 
+// If a specific site is in play and topics aren't confirmed, bounce to site page.
+if ($site_id) {
+    $chk = $db->prepare('SELECT topics_confirmed FROM sites WHERE id = ? AND user_id = ?');
+    $chk->execute([$site_id, $user_id]);
+    $row = $chk->fetch();
+    if ($row && empty($row['topics_confirmed'])) {
+        $_SESSION['flash_error'] = 'Please confirm your Business Focus first — without it, AI might write off-topic content.';
+        header('Location: ' . url('/dashboard/site.php?id=' . $site_id . '#business-focus'));
+        exit;
+    }
+}
+
 $page_title = '🧠 AI Content Writer';
 
 // Get user's sites

@@ -34,6 +34,14 @@ $agent_info = [
     'evaluator'        => ['name' => '📈 Strategy Evaluator', 'desc' => 'Reviewing performance and recommending next steps'],
 ];
 
+// Agents that depend on the customer having confirmed what their business sells.
+$needs_business_focus = ['keyword-research', 'content-planner'];
+if (in_array($agent, $needs_business_focus, true) && empty($site['topics_confirmed'])) {
+    $_SESSION['flash_error'] = 'Please confirm your Business Focus first — without it, AI guesses and may produce content for the wrong industry.';
+    header('Location: ' . url('/dashboard/site.php?id=' . $site_id . '#business-focus'));
+    exit;
+}
+
 $info = $agent_info[$agent] ?? ['name' => ucfirst($agent), 'desc' => 'Running agent...'];
 
 $page_title = $info['name'];

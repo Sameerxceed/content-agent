@@ -181,6 +181,100 @@ $sc_cls = $sc < 0 ? '' : ($sc >= 80 ? 'score-good' : ($sc >= 50 ? 'score-ok' : '
     </div>
 </div>
 
+<!-- Business Focus — source of truth for all AI work -->
+<?php
+$topics_arr = json_decode($site['topics'] ?? '[]', true) ?: [];
+$topics_confirmed = !empty($site['topics_confirmed']);
+$has_description = !empty($site['business_description']);
+?>
+<div id="business-focus" class="card" style="margin-bottom:10px;border-left:4px solid <?= $topics_confirmed ? '#10b981' : '#f59e0b' ?>;">
+    <div class="card-header" style="display:flex;justify-content:space-between;align-items:center;cursor:pointer;" onclick="document.getElementById('bf-body').style.display = document.getElementById('bf-body').style.display === 'none' ? 'block' : 'none';">
+        <div>
+            <div style="font-weight:600;font-size:14px;color:<?= $topics_confirmed ? '#065f46' : '#92400e' ?>;">
+                <?= $topics_confirmed ? '✓ Business Focus confirmed' : '⚠ Tell ContentAgent what your business sells' ?>
+            </div>
+            <div style="font-size:12px;color:#64748b;margin-top:2px;">
+                <?= $topics_confirmed
+                    ? 'Topics: ' . e(implode(', ', $topics_arr))
+                    : 'Without this, AI will guess — and may write content for the wrong industry.' ?>
+            </div>
+        </div>
+        <span style="font-size:11px;color:var(--primary);"><?= $topics_confirmed ? 'Edit' : 'Set up now' ?> →</span>
+    </div>
+    <div id="bf-body" style="padding:14px;border-top:1px solid var(--border);display:<?= $topics_confirmed ? 'none' : 'block' ?>;">
+        <p style="font-size:12px;color:#64748b;margin-bottom:10px;">
+            This tells the AI what you actually sell. Used for keyword research, content writing, and SEO suggestions.
+            <strong>If this is wrong, everything downstream will be wrong.</strong>
+        </p>
+
+        <div class="form-group" style="margin-bottom:10px;">
+            <label style="font-size:12px;font-weight:600;">What does your business sell or offer?</label>
+            <textarea id="bf-description" class="form-control" rows="2" placeholder="e.g. We sell handwoven silk scarves and shawls, made in London since 2010..." style="font-size:13px;"><?= e($site['business_description'] ?? '') ?></textarea>
+        </div>
+
+        <div class="form-group" style="margin-bottom:10px;">
+            <label style="font-size:12px;font-weight:600;display:flex;justify-content:space-between;align-items:center;">
+                <span>Main topics / products (comma-separated)</span>
+                <button type="button" onclick="suggestTopics()" id="suggest-btn" class="btn btn-sm" style="background:transparent;border:1px solid var(--primary);color:var(--primary);font-size:11px;padding:2px 8px;">Suggest from homepage</button>
+            </label>
+            <input type="text" id="bf-topics" class="form-control" value="<?= e(implode(', ', $topics_arr)) ?>" placeholder="e.g. silk scarves, handwoven shawls, luxury accessories" style="font-size:13px;">
+            <div style="font-size:11px;color:#94a3b8;margin-top:4px;">3-6 short phrases work best (2-3 words each).</div>
+        </div>
+
+        <button type="button" onclick="saveFocus()" class="btn btn-accent" style="padding:8px 18px;">Save & Confirm</button>
+        <div id="bf-msg" style="margin-top:8px;font-size:12px;"></div>
+    </div>
+</div>
+
+<script>
+async function suggestTopics() {
+    const btn = document.getElementById('suggest-btn');
+    btn.disabled = true; btn.textContent = 'Scanning homepage...';
+    try {
+        const res = await fetch('<?= url('/api/business-focus.php') ?>', {
+            method:'POST', headers:{'Content-Type':'application/json'},
+            body: JSON.stringify({action:'suggest', site_id: <?= $site_id ?>})
+        });
+        const data = await res.json();
+        if (data.success && data.suggestion) {
+            if (data.suggestion.description && !document.getElementById('bf-description').value.trim()) {
+                document.getElementById('bf-description').value = data.suggestion.description;
+            }
+            if (data.suggestion.topics && data.suggestion.topics.length) {
+                document.getElementById('bf-topics').value = data.suggestion.topics.join(', ');
+            }
+            document.getElementById('bf-msg').innerHTML = '<span style="color:#065f46;">✓ Suggestions filled in. Review and edit before saving.</span>';
+        } else {
+            document.getElementById('bf-msg').innerHTML = '<span style="color:#dc2626;">' + (data.error || 'Could not generate suggestions — please type your own.') + '</span>';
+        }
+    } catch(e) {
+        document.getElementById('bf-msg').innerHTML = '<span style="color:#dc2626;">Error: ' + e.message + '</span>';
+    }
+    btn.disabled = false; btn.textContent = 'Suggest from homepage';
+}
+
+async function saveFocus() {
+    const description = document.getElementById('bf-description').value.trim();
+    const topicsRaw = document.getElementById('bf-topics').value.trim();
+    const topics = topicsRaw.split(',').map(s => s.trim()).filter(Boolean);
+    if (!topics.length) {
+        document.getElementById('bf-msg').innerHTML = '<span style="color:#dc2626;">Please add at least 1 topic so AI knows what to focus on.</span>';
+        return;
+    }
+    try {
+        const res = await fetch('<?= url('/api/business-focus.php') ?>', {
+            method:'POST', headers:{'Content-Type':'application/json'},
+            body: JSON.stringify({action:'save', site_id: <?= $site_id ?>, business_description: description, topics})
+        });
+        const data = await res.json();
+        if (data.success) location.reload();
+        else document.getElementById('bf-msg').innerHTML = '<span style="color:#dc2626;">' + (data.error || 'Failed') + '</span>';
+    } catch(e) {
+        document.getElementById('bf-msg').innerHTML = '<span style="color:#dc2626;">Error: ' + e.message + '</span>';
+    }
+}
+</script>
+
 <!-- Stats -->
 <div class="stats-grid" style="margin-bottom:2px;">
     <a href="<?= url('/dashboard/posts.php?site=' . $site_id . '&status=published') ?>" class="stat-card" style="text-decoration:none;color:inherit;">

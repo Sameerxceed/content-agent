@@ -34,35 +34,20 @@ if (!$site) {
 
 $start_time = microtime(true);
 $topics = json_decode($site['topics'] ?? '[]', true) ?: [];
+$topics_confirmed = !empty($site['topics_confirmed']);
 
-// Use seed keyword or site topics
+// HARD STOP: AI cannot run without explicitly confirmed topics. Garbage in = garbage out.
+if (!$seed_kw && (empty($topics) || !$topics_confirmed)) {
+    echo "ERROR: Business Focus not confirmed for this site. AI refuses to guess.\n";
+    echo "Action: open the site in the dashboard and fill in the 'Business Focus' section (description + topics).\n";
+    exit(1);
+}
+
 $seeds = [];
 if ($seed_kw) {
     $seeds[] = $seed_kw;
-} elseif (!empty($topics)) {
-    $seeds = array_slice($topics, 0, 5);
 } else {
-    // No topics set — use AI to generate seed keywords from site name/domain
-    require_once __DIR__ . '/../includes/haiku.php';
-    $site_label = $site['name'] . ' (' . $site['domain'] . ')';
-    $ai = haiku_chat(
-        "Given this business: {$site_label}, suggest 5 short keyword phrases (2-3 words each) that potential customers would search for. Output ONLY a JSON array of strings, nothing else.",
-        $site_label,
-        256
-    );
-    if ($ai['success']) {
-        $content = preg_replace('/^```(?:json)?\s*/m', '', $ai['content']);
-        $content = preg_replace('/\s*```\s*$/m', '', $content);
-        $parsed = json_decode(trim($content), true);
-        if (is_array($parsed)) {
-            $seeds = array_slice($parsed, 0, 5);
-        }
-    }
-    // Fallback if AI also fails
-    if (empty($seeds)) {
-        $seeds[] = str_replace(['.com', '.co.uk', '.in', '.net', '.org', '-', '_'], ' ', $site['domain']);
-        $seeds[] = $site['name'];
-    }
+    $seeds = array_slice($topics, 0, 5);
 }
 
 echo "Keyword Research for: {$site['domain']}\n";

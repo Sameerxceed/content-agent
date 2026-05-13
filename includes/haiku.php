@@ -87,21 +87,24 @@ function haiku_write_blog(string $topic, string $brand_tone, array $keywords = [
     $current_year = date('Y');
     $current_date = date('d M Y');
 
-    // Site-aware system prompt
+    // Site-aware system prompt — ground in customer's own words
     $site_name = $site['name'] ?? 'our company';
     $site_domain = $site['domain'] ?? '';
     $topics = json_decode($site['topics'] ?? '[]', true) ?: [];
     $niche = !empty($topics) ? implode(', ', array_slice($topics, 0, 3)) : 'our industry';
+    $business_desc = trim($site['business_description'] ?? '');
+    $business_line = $business_desc ? "WHAT WE ACTUALLY DO (from owner): {$business_desc}\n\n" : '';
 
     $system = "You are the content writer for {$site_name}" . ($site_domain ? " ({$site_domain})" : "") . ".
 
-WRITING STYLE:
+{$business_line}WRITING STYLE:
 - Write as {$site_name}. Use \"we\", \"our team\" naturally.
 - Opinionated, direct, no fluff. Lead with the answer, not the question.
 - Tone: {$brand_tone}
 - Short paragraphs. No corporate jargon. Write like you're explaining to a smart reader.
 - Start posts with a bold statement or insight, not \"In today's fast-paced world...\"
 - Our niche: {$niche}
+- STAY STRICTLY within what we actually do. Do not invent products or services we don't offer.
 
 IMPORTANT: Today is {$current_date}. Current year is {$current_year}. NEVER use 2024 or 2025.
 
