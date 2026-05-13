@@ -32,9 +32,22 @@ if ($filter_cluster) { $where[] = 'k.cluster = ?'; $params[] = $filter_cluster; 
 
 $where_sql = implode(' AND ', $where);
 
-$stmt = $db->prepare("SELECT k.*, s.domain FROM keywords k JOIN sites s ON k.site_id = s.id WHERE {$where_sql} ORDER BY k.priority DESC, k.keyword LIMIT 200");
+$stmt = $db->prepare("SELECT k.*, s.domain FROM keywords k JOIN sites s ON k.site_id = s.id WHERE {$where_sql} ORDER BY k.impressions DESC, k.priority DESC, k.keyword LIMIT 200");
 $stmt->execute($params);
 $keywords = $stmt->fetchAll();
+
+// Check GSC integration when filtered to one site
+$gsc_connected = false;
+$gsc_last_sync = null;
+if ($filter_site) {
+    $stmt = $db->prepare('SELECT id FROM integrations WHERE site_id = ? AND platform = "google_search_console" AND is_active = 1');
+    $stmt->execute([(int)$filter_site]);
+    $gsc_connected = (bool)$stmt->fetch();
+
+    $stmt = $db->prepare('SELECT MAX(gsc_synced_at) FROM keywords WHERE site_id = ?');
+    $stmt->execute([(int)$filter_site]);
+    $gsc_last_sync = $stmt->fetchColumn();
+}
 
 // Get clusters for filter
 $cluster_stmt = $db->prepare("SELECT DISTINCT k.cluster FROM keywords k JOIN sites s ON k.site_id = s.id WHERE s.user_id = ? AND k.cluster IS NOT NULL ORDER BY k.cluster");
@@ -106,6 +119,36 @@ if ($filter_site) {
     </form>
 </div>
 
+<!-- GSC banner -->
+<?php if ($filter_site): ?>
+<div style="margin-bottom:10px;padding:10px 14px;background:<?= $gsc_connected ? '#f0fdf4' : '#fef3c7' ?>;border:1px solid <?= $gsc_connected ? '#86efac' : '#fcd34d' ?>;border-radius:6px;display:flex;justify-content:space-between;align-items:center;gap:10px;">
+    <div style="font-size:12px;color:<?= $gsc_connected ? '#065f46' : '#92400e' ?>;">
+        <?php if ($gsc_connected): ?>
+            <strong>Real data from Google Search Console</strong> · Last synced: <?= $gsc_last_sync ? format_date($gsc_last_sync) : 'never' ?>
+        <?php else: ?>
+            <strong>⚠ Showing AI estimates only.</strong> Connect Google Search Console for real impressions, clicks, position, and CTR.
+        <?php endif; ?>
+    </div>
+    <a href="<?= url('/dashboard/search-console.php?site=' . (int)$filter_site . ($gsc_connected ? '&action=sync' : '')) ?>" class="btn btn-sm btn-accent" style="text-decoration:none;white-space:nowrap;">
+        <?= $gsc_connected ? '🔄 Sync Now' : 'Connect Google →' ?>
+    </a>
+</div>
+<?php endif; ?>
+
+<!-- Column legend -->
+<details style="margin-bottom:10px;font-size:12px;color:#64748b;">
+    <summary style="cursor:pointer;color:var(--primary);font-weight:600;">What do these columns mean?</summary>
+    <div style="padding:8px 12px;background:#f8fafc;border:1px solid var(--border);border-radius:6px;margin-top:6px;line-height:1.6;">
+        <div><strong>Impressions:</strong> How many times this keyword showed your site in Google search results (last 30 days). Higher = more search demand.</div>
+        <div><strong>Clicks:</strong> How many people clicked through to your site. Higher = your snippet is compelling.</div>
+        <div><strong>CTR:</strong> Click-through rate (clicks ÷ impressions). Low CTR with high impressions = your title/description needs work.</div>
+        <div><strong>Position:</strong> Your average rank on Google. 1-10 = first page, 11-30 = page 2-3, 30+ = barely visible.</div>
+        <div><strong>Priority:</strong> Auto-calculated from clicks + impressions. Higher = focus here first when writing content.</div>
+        <div><strong>Cluster:</strong> Related keywords grouped together. One piece of content can target a whole cluster.</div>
+        <div style="margin-top:6px;font-style:italic;">Real data shown when Google Search Console is connected. Otherwise these are AI estimates.</div>
+    </div>
+</details>
+
 <div class="card">
     <?php if (empty($keywords)): ?>
         <p class="text-muted text-sm" style="padding: 20px; text-align: center;">No keywords yet. Use <strong>Find Keywords</strong> from your site page.</p>
@@ -127,22 +170,37 @@ if ($filter_site) {
                 <tr>
                     <th style="width:32px;"><input type="checkbox" id="kw-select-all" onchange="toggleAll(this)"></th>
                     <th>Keyword</th>
-                    <th>Site</th>
+                    <th title="How many times this keyword showed your site in Google">Impressions</th>
+                    <th title="How many people clicked through to your site">Clicks</th>
+                    <th title="Click-through rate (%)">CTR</th>
+                    <th title="Your average position on Google">Position</th>
+                    <th title="0-100, higher = focus first">Priority</th>
                     <th>Cluster</th>
-                    <th>Priority</th>
-                    <th>Difficulty</th>
-                    <th>Rank</th>
-                    <th>Last Checked</th>
+                    <th>Synced</th>
                     <th style="width:60px;"></th>
                 </tr>
             </thead>
             <tbody>
-                <?php foreach ($keywords as $kw): ?>
+                <?php foreach ($keywords as $kw):
+                    $has_gsc = !empty($kw['gsc_synced_at']);
+                ?>
                 <tr id="kw-row-<?= (int)$kw['id'] ?>">
                     <td><input type="checkbox" class="kw-check" data-id="<?= (int)$kw['id'] ?>" onchange="updateSelectedCount()"></td>
                     <td style="font-weight: 500;"><?= e($kw['keyword']) ?></td>
-                    <td class="text-sm"><?= e($kw['domain']) ?></td>
-                    <td class="text-sm"><?= e($kw['cluster'] ?? '—') ?></td>
+                    <td class="text-sm"><?= $kw['impressions'] !== null ? number_format($kw['impressions']) : '<span style="color:#cbd5e1;">—</span>' ?></td>
+                    <td class="text-sm"><?= $kw['clicks'] !== null ? number_format($kw['clicks']) : '<span style="color:#cbd5e1;">—</span>' ?></td>
+                    <td class="text-sm"><?= $kw['ctr'] !== null ? $kw['ctr'] . '%' : '<span style="color:#cbd5e1;">—</span>' ?></td>
+                    <td>
+                        <?php
+                        $pos = $kw['gsc_position'] ?? $kw['current_rank'] ?? null;
+                        if ($pos !== null && $pos > 0):
+                            $pc = $pos <= 10 ? 'var(--success)' : ($pos <= 30 ? 'var(--warning)' : 'var(--danger)');
+                        ?>
+                            <span style="font-weight:600;color:<?= $pc ?>;">#<?= is_numeric($pos) ? (floor($pos) == $pos ? (int)$pos : number_format($pos, 1)) : $pos ?></span>
+                        <?php else: ?>
+                            <span style="color:#cbd5e1;">—</span>
+                        <?php endif; ?>
+                    </td>
                     <td>
                         <?php
                         $p_color = '#64748b';
@@ -151,20 +209,8 @@ if ($filter_site) {
                         ?>
                         <span style="font-weight: 600; color: <?= $p_color ?>;"><?= $kw['priority'] ?></span>
                     </td>
-                    <td>
-                        <?php if ($kw['difficulty'] !== null): ?>
-                            <?php
-                            $d_color = 'var(--success)';
-                            if ($kw['difficulty'] >= 70) $d_color = 'var(--danger)';
-                            elseif ($kw['difficulty'] >= 40) $d_color = 'var(--warning)';
-                            ?>
-                            <span style="color: <?= $d_color ?>;"><?= $kw['difficulty'] ?></span>
-                        <?php else: ?>
-                            —
-                        <?php endif; ?>
-                    </td>
-                    <td class="text-sm"><?= $kw['current_rank'] ?? '—' ?></td>
-                    <td class="text-sm text-muted"><?= $kw['last_checked'] ? format_date($kw['last_checked'], 'd M') : '—' ?></td>
+                    <td class="text-sm text-muted"><?= e($kw['cluster'] ?? '—') ?></td>
+                    <td class="text-sm" style="<?= $has_gsc ? 'color:#10b981;' : 'color:#cbd5e1;' ?>"><?= $has_gsc ? format_date($kw['gsc_synced_at'], 'd M') : 'AI est.' ?></td>
                     <td>
                         <button onclick="deleteOne(<?= (int)$kw['id'] ?>)" title="Delete this keyword" style="background:transparent;border:none;color:#dc2626;cursor:pointer;font-size:14px;padding:2px 6px;">✕</button>
                     </td>

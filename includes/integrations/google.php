@@ -209,22 +209,48 @@ function google_update_rankings(PDO $db, int $site_id): array
     }
 
     $updated = 0;
+    $inserted = 0;
     foreach ($data['rows'] as $row) {
         $keyword = $row['keys'][0] ?? '';
-        $position = round($row['position'] ?? 0);
-        $clicks = $row['clicks'] ?? 0;
-        $impressions = $row['impressions'] ?? 0;
-
         if (empty($keyword)) continue;
 
-        $stmt = $db->prepare('INSERT INTO keywords (site_id, keyword, current_rank, search_volume, last_checked)
-            VALUES (?, ?, ?, ?, NOW())
-            ON DUPLICATE KEY UPDATE current_rank = VALUES(current_rank), search_volume = ?, last_checked = NOW()');
-        $stmt->execute([$site_id, mb_substr($keyword, 0, 255), $position, $impressions, $impressions]);
-        $updated++;
+        $position_precise = round($row['position'] ?? 0, 1);
+        $position = (int)round($position_precise);
+        $clicks = (int)($row['clicks'] ?? 0);
+        $impressions = (int)($row['impressions'] ?? 0);
+        $ctr = round(($row['ctr'] ?? 0) * 100, 2);
+
+        // Real priority based on real signals — clicks×3 + log(impressions)×5, capped 0-100
+        $priority = (int)min(100, ($clicks * 3) + (log(max(1, $impressions)) * 8));
+
+        $stmt = $db->prepare('INSERT INTO keywords (site_id, keyword, current_rank, gsc_position, impressions, clicks, ctr, search_volume, priority, gsc_synced_at, last_checked)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, NOW(), NOW())
+            ON DUPLICATE KEY UPDATE
+                current_rank = VALUES(current_rank),
+                gsc_position = VALUES(gsc_position),
+                impressions = VALUES(impressions),
+                clicks = VALUES(clicks),
+                ctr = VALUES(ctr),
+                search_volume = VALUES(search_volume),
+                priority = VALUES(priority),
+                gsc_synced_at = NOW(),
+                last_checked = NOW()');
+        $stmt->execute([
+            $site_id,
+            mb_substr($keyword, 0, 255),
+            $position,
+            $position_precise,
+            $impressions,
+            $clicks,
+            $ctr,
+            $impressions, // keep search_volume in sync with impressions for legacy code paths
+            $priority,
+        ]);
+        if ($stmt->rowCount() === 1) $inserted++;
+        else $updated++;
     }
 
-    return ['success' => true, 'updated' => $updated, 'total_rows' => count($data['rows'])];
+    return ['success' => true, 'updated' => $updated, 'inserted' => $inserted, 'total_rows' => count($data['rows'])];
 }
 
 /**

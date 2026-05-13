@@ -8,6 +8,7 @@
  */
 require_once __DIR__ . '/../../includes/helpers.php';
 require_once __DIR__ . '/../../includes/auth.php';
+require_once __DIR__ . '/../../includes/integrations/google.php';
 
 auth_start();
 auth_require();
@@ -53,6 +54,16 @@ if ($audit) {
 $stmt = $db->prepare('SELECT COUNT(*) FROM page_seo WHERE site_id = ? AND status = "pending"');
 $stmt->execute([$site_id]);
 $pending_approvals = (int)$stmt->fetchColumn();
+
+// GSC integration status
+$stmt = $db->prepare('SELECT * FROM integrations WHERE site_id = ? AND platform = "google_search_console" AND is_active = 1');
+$stmt->execute([$site_id]);
+$gsc_integration = $stmt->fetch();
+
+// Latest GSC sync time
+$stmt = $db->prepare('SELECT MAX(gsc_synced_at) FROM keywords WHERE site_id = ?');
+$stmt->execute([$site_id]);
+$gsc_last_sync = $stmt->fetchColumn();
 
 // Fixed issues
 $stmt = $db->prepare('SELECT COUNT(*) FROM page_seo WHERE site_id = ?');
@@ -287,6 +298,34 @@ async function saveFocus(goToKeywords) {
     }
 }
 </script>
+
+<!-- Google Search Console connection -->
+<?php $gsc_connected = !empty($gsc_integration); ?>
+<div class="card" style="margin-bottom:10px;border-left:4px solid <?= $gsc_connected ? '#10b981' : '#94a3b8' ?>;">
+    <div class="card-header" style="display:flex;justify-content:space-between;align-items:center;gap:10px;">
+        <div>
+            <div style="font-weight:600;font-size:14px;color:<?= $gsc_connected ? '#065f46' : '#475569' ?>;">
+                <?= $gsc_connected ? '✓ Google Search Console connected' : '📊 Connect Google Search Console for real keyword data' ?>
+            </div>
+            <div style="font-size:12px;color:#64748b;margin-top:2px;">
+                <?php if ($gsc_connected): ?>
+                    Last synced: <?= $gsc_last_sync ? format_date($gsc_last_sync) : 'never — click Sync below' ?>
+                <?php else: ?>
+                    Real impressions, clicks, position, and CTR from Google. Without this, keyword metrics are AI estimates.
+                <?php endif; ?>
+            </div>
+        </div>
+        <?php if ($gsc_connected): ?>
+            <a href="<?= url('/dashboard/search-console.php?site=' . $site_id . '&action=sync') ?>" class="btn btn-sm btn-accent" style="text-decoration:none;white-space:nowrap;">🔄 Sync from Google</a>
+        <?php else: ?>
+            <?php if (empty(config('google_client_id'))): ?>
+                <a href="<?= url('/dashboard/settings.php?tab=api') ?>" class="btn btn-sm btn-outline" style="text-decoration:none;white-space:nowrap;">Setup API Keys →</a>
+            <?php else: ?>
+                <a href="<?= e(function_exists('google_get_auth_url') ? google_get_auth_url($site_id) : url('/dashboard/search-console.php?site=' . $site_id)) ?>" class="btn btn-sm btn-accent" style="text-decoration:none;white-space:nowrap;">Connect Google →</a>
+            <?php endif; ?>
+        <?php endif; ?>
+    </div>
+</div>
 
 <!-- Stats -->
 <div class="stats-grid" style="margin-bottom:2px;">
