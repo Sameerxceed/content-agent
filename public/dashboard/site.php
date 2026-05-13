@@ -49,6 +49,11 @@ if ($audit) {
     $open_issues = $stmt->fetchColumn();
 }
 
+// Pending SEO approvals
+$stmt = $db->prepare('SELECT COUNT(*) FROM page_seo WHERE site_id = ? AND status = "pending"');
+$stmt->execute([$site_id]);
+$pending_approvals = (int)$stmt->fetchColumn();
+
 // Fixed issues
 $stmt = $db->prepare('SELECT COUNT(*) FROM page_seo WHERE site_id = ?');
 $stmt->execute([$site_id]);
@@ -492,6 +497,21 @@ if ($next_step !== 'done'):
                 <?= $cms_enabled ? 'Disable CMS Push' : 'Enable CMS Push' ?>
             </button>
         </div>
+
+        <!-- Pending SEO Approvals -->
+        <?php if ($pending_approvals > 0): ?>
+        <div style="padding:10px;background:#fef3c7;border:1px solid #fcd34d;border-radius:6px;margin-bottom:10px;display:flex;justify-content:space-between;align-items:center;gap:10px;">
+            <div style="flex:1;min-width:0;">
+                <div style="font-size:13px;font-weight:600;color:#92400e;">
+                    📝 <?= $pending_approvals ?> SEO change<?= $pending_approvals > 1 ? 's' : '' ?> waiting for your approval
+                </div>
+                <div style="font-size:11px;color:#64748b;margin-top:2px;">
+                    ContentAgent proposed new page titles and descriptions. Review and approve before they go live.
+                </div>
+            </div>
+            <a href="<?= url('/dashboard/seo-approvals.php?site=' . $site_id) ?>" class="btn btn-sm btn-accent" style="text-decoration:none;white-space:nowrap;flex-shrink:0;">Review →</a>
+        </div>
+        <?php endif; ?>
 
         <!-- SEO Snippet master kill switch -->
         <?php

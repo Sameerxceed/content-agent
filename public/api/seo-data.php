@@ -67,8 +67,8 @@ if ($redirect) {
     exit;
 }
 
-// Get page SEO data
-$stmt = $db->prepare('SELECT * FROM page_seo WHERE site_id = ? AND url_path = ?');
+// Get page SEO data — prefer approved, fall back to most recent for auto-tier fields
+$stmt = $db->prepare('SELECT * FROM page_seo WHERE site_id = ? AND url_path = ? ORDER BY FIELD(status, "approved", "pending", "rejected"), updated_at DESC LIMIT 1');
 $stmt->execute([$site_id, $path]);
 $seo = $stmt->fetch();
 
@@ -78,14 +78,21 @@ $response = [
 ];
 
 if ($seo) {
-    if ($seo['canonical'])        $response['canonical'] = $seo['canonical'];
-    if ($seo['meta_title'])       $response['meta_title'] = $seo['meta_title'];
-    if ($seo['meta_description']) $response['meta_description'] = $seo['meta_description'];
-    if ($seo['og_title'])         $response['og_title'] = $seo['og_title'];
-    if ($seo['og_description'])   $response['og_description'] = $seo['og_description'];
-    if ($seo['og_image'])         $response['og_image'] = $seo['og_image'];
-    if ($seo['schema_json'])      $response['schema'] = json_decode($seo['schema_json'], true);
-    if ($seo['extra_head'])       $response['extra_head'] = $seo['extra_head'];
+    $is_approved = ($seo['status'] ?? 'pending') === 'approved';
+
+    // Auto-tier (always served — additive, no brand-impact risk)
+    if ($seo['canonical'])    $response['canonical'] = $seo['canonical'];
+    if ($seo['schema_json'])  $response['schema'] = json_decode($seo['schema_json'], true);
+    if ($seo['extra_head'])   $response['extra_head'] = $seo['extra_head'];
+
+    // Approval-tier (brand-facing — only served when explicitly approved)
+    if ($is_approved) {
+        if ($seo['meta_title'])       $response['meta_title'] = $seo['meta_title'];
+        if ($seo['meta_description']) $response['meta_description'] = $seo['meta_description'];
+        if ($seo['og_title'])         $response['og_title'] = $seo['og_title'];
+        if ($seo['og_description'])   $response['og_description'] = $seo['og_description'];
+        if ($seo['og_image'])         $response['og_image'] = $seo['og_image'];
+    }
 }
 
 echo json_encode($response);
