@@ -80,7 +80,7 @@ function haiku_chat(string $system_prompt, string $user_message, int $max_tokens
 /**
  * Generate a blog post from a topic/keyword.
  */
-function haiku_write_blog(string $topic, string $brand_tone, array $keywords = [], int $word_count = 1000, ?array $site = null): array
+function haiku_write_blog(string $topic, string $brand_tone, array $keywords = [], int $word_count = 1000, ?array $site = null, ?array $serp_brief = null): array
 {
     $keyword_list = implode(', ', $keywords);
 
@@ -95,9 +95,31 @@ function haiku_write_blog(string $topic, string $brand_tone, array $keywords = [
     $business_desc = trim($site['business_description'] ?? '');
     $business_line = $business_desc ? "WHAT WE ACTUALLY DO (from owner): {$business_desc}\n\n" : '';
 
+    // SERP brief — model the post on what's actually ranking
+    $serp_lines = '';
+    if (is_array($serp_brief) && !empty($serp_brief)) {
+        $bits = [];
+        if (!empty($serp_brief['format']))           $bits[] = "Format: {$serp_brief['format']}";
+        if (!empty($serp_brief['intent']))           $bits[] = "Intent: {$serp_brief['intent']}";
+        if (!empty($serp_brief['avg_word_count']))   $bits[] = "Target length: ~{$serp_brief['avg_word_count']} words (this is what top results have)";
+        if (!empty($serp_brief['winning_pattern']))  $bits[] = "Winning pattern: {$serp_brief['winning_pattern']}";
+
+        $outline = $serp_brief['recommended_outline'] ?? [];
+        if (!empty($outline) && is_array($outline)) {
+            $bits[] = "Recommended H2 sections (model these): " . implode(' | ', array_slice($outline, 0, 7));
+        }
+        $themes = $serp_brief['common_themes'] ?? [];
+        if (!empty($themes) && is_array($themes)) {
+            $bits[] = "Common themes to cover: " . implode(', ', array_slice($themes, 0, 8));
+        }
+        if (!empty($bits)) {
+            $serp_lines = "WHAT'S RANKING ON GOOGLE FOR THIS TOPIC (use this to compete):\n- " . implode("\n- ", $bits) . "\n\n";
+        }
+    }
+
     $system = "You are the content writer for {$site_name}" . ($site_domain ? " ({$site_domain})" : "") . ".
 
-{$business_line}WRITING STYLE:
+{$business_line}{$serp_lines}WRITING STYLE:
 - Write as {$site_name}. Use \"we\", \"our team\" naturally.
 - Opinionated, direct, no fluff. Lead with the answer, not the question.
 - Tone: {$brand_tone}
@@ -112,7 +134,12 @@ Output ONLY valid JSON with keys: title, seo_title, seo_description, excerpt, bo
 Body = well-structured HTML with H2/H3 subheadings, <p>, <ul>/<li>, <strong>.
 Do not wrap in markdown code blocks.";
 
-    $prompt = "Write a {$word_count}-word SEO blog post about: {$topic}
+    // If brief had a target word count, use it; otherwise use the requested count
+    $target_words = (is_array($serp_brief) && !empty($serp_brief['avg_word_count']) && $serp_brief['avg_word_count'] > 300)
+        ? (int)$serp_brief['avg_word_count']
+        : $word_count;
+
+    $prompt = "Write a {$target_words}-word SEO blog post about: {$topic}
 Target keywords: {$keyword_list}
 Year: {$current_year}
 

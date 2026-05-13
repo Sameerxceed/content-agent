@@ -216,8 +216,23 @@ Output ONLY valid JSON array:
         $kw_array = array_filter(array_map('trim', explode(',', $keywords_str)));
         $prompt_topic = $description ? "{$topic}. {$description}" : $topic;
 
-        // Write the post (pass site context for brand-aware writing)
-        $result = haiku_write_blog($prompt_topic, $brand_tone, $kw_array, rand(config('agent_min_word_count'), config('agent_max_word_count')), $site);
+        // Look up SERP brief if any of the target keywords has one
+        $serp_brief = null;
+        $brief_keyword = null;
+        if (!empty($kw_array)) {
+            $placeholders = implode(',', array_fill(0, count($kw_array), '?'));
+            $params = array_merge([$site_id], array_values($kw_array));
+            $bstmt = $db->prepare("SELECT keyword, serp_brief FROM keywords WHERE site_id = ? AND keyword IN ({$placeholders}) AND serp_brief IS NOT NULL ORDER BY priority DESC LIMIT 1");
+            $bstmt->execute($params);
+            $brow = $bstmt->fetch();
+            if ($brow && !empty($brow['serp_brief'])) {
+                $serp_brief = json_decode($brow['serp_brief'], true);
+                $brief_keyword = $brow['keyword'];
+            }
+        }
+
+        // Write the post (pass site + optional SERP brief)
+        $result = haiku_write_blog($prompt_topic, $brand_tone, $kw_array, rand(config('agent_min_word_count'), config('agent_max_word_count')), $site, $serp_brief);
 
         $post = $result['parsed'] ?? null;
         $error = null;
@@ -232,6 +247,16 @@ Output ONLY valid JSON array:
     <div class="mb-4">
         <span class="text-muted">Writing for:</span> <strong><?= e($site['name']) ?></strong>
     </div>
+
+    <?php if ($serp_brief && !$error): ?>
+    <div style="background:#f0fdf4;border:1px solid #86efac;border-radius:6px;padding:10px 14px;margin-bottom:14px;font-size:12px;color:#065f46;">
+        <strong>📊 SERP brief used for "<?= e($brief_keyword) ?>".</strong>
+        The AI modelled this post on what's currently ranking on Google:
+        <?= !empty($serp_brief['format']) ? e($serp_brief['format']) . ', ' : '' ?>
+        <?= !empty($serp_brief['avg_word_count']) ? '~' . (int)$serp_brief['avg_word_count'] . ' words, ' : '' ?>
+        <?= !empty($serp_brief['intent']) ? e($serp_brief['intent']) . ' intent.' : '' ?>
+    </div>
+    <?php endif; ?>
 
     <?php if ($error): ?>
         <div class="alert alert-error">Error: <?= e($error) ?></div>

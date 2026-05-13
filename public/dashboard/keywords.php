@@ -243,6 +243,7 @@ $current_filters = ['site' => $filter_site, 'cluster' => $filter_cluster];
                     <th title="0-100 score">Priority</th>
                     <th>Source</th>
                     <th>Cluster</th>
+                    <th title="SERP content brief — what's ranking and how to compete">📊 Brief</th>
                     <th style="width:90px;text-align:right;">Actions</th>
                 </tr>
             </thead>
@@ -294,6 +295,14 @@ $current_filters = ['site' => $filter_site, 'cluster' => $filter_cluster];
                         <span style="font-size:10px;font-weight:600;padding:2px 8px;border-radius:10px;background:<?= $sbg ?>;color:<?= $sfg ?>;"><?= $slabel ?></span>
                     </td>
                     <td class="text-sm text-muted"><?= e($kw['cluster'] ?? '—') ?></td>
+                    <td>
+                        <?php $has_brief = !empty($kw['serp_brief']); ?>
+                        <?php if ($has_brief): ?>
+                            <button onclick="viewBrief(<?= (int)$kw['id'] ?>)" title="View SERP brief" style="background:#d1fae5;border:none;color:#065f46;cursor:pointer;font-size:11px;padding:3px 8px;border-radius:4px;font-weight:600;">✓ View</button>
+                        <?php else: ?>
+                            <button onclick="generateBrief(<?= (int)$kw['id'] ?>, this)" title="Generate SERP brief" style="background:transparent;border:1px solid var(--border);color:#64748b;cursor:pointer;font-size:11px;padding:3px 8px;border-radius:4px;">Generate</button>
+                        <?php endif; ?>
+                    </td>
                     <td style="text-align:right;white-space:nowrap;">
                         <?php if ($is_ignored): ?>
                             <button onclick="restoreOne(<?= (int)$kw['id'] ?>)" title="Restore (un-ignore)" style="background:transparent;border:none;color:#10b981;cursor:pointer;font-size:14px;padding:2px 4px;">↺</button>
@@ -387,7 +396,128 @@ function deleteAll(siteId) {
     if (!confirm('Delete all AI-estimate keywords for this site?\n\nManual entries (purple) and Google-synced data (green) will be preserved.')) return;
     call({action:'delete_all', site_id: siteId});
 }
+
+// ── SERP Brief ─────────────────────────────────────────────────
+const SERP_API = '<?= url('/api/serp-brief.php') ?>';
+
+async function generateBrief(keywordId, btn) {
+    btn.disabled = true;
+    btn.textContent = 'Analysing...';
+    try {
+        const res = await fetch(SERP_API, {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({keyword_id: keywordId})});
+        const data = await res.json();
+        if (data.success && data.brief) {
+            showBriefModal(data.brief, data.briefed_at);
+            // Update the button to "View" instead of reloading the whole page
+            btn.outerHTML = '<button onclick="viewBrief(' + keywordId + ')" style="background:#d1fae5;border:none;color:#065f46;cursor:pointer;font-size:11px;padding:3px 8px;border-radius:4px;font-weight:600;">✓ View</button>';
+        } else {
+            alert('Failed: ' + (data.error || 'unknown'));
+            btn.disabled = false;
+            btn.textContent = 'Generate';
+        }
+    } catch(e) {
+        alert('Error: ' + e.message);
+        btn.disabled = false;
+        btn.textContent = 'Generate';
+    }
+}
+
+async function viewBrief(keywordId) {
+    try {
+        const res = await fetch(SERP_API, {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({keyword_id: keywordId})});
+        const data = await res.json();
+        if (data.success && data.brief) {
+            showBriefModal(data.brief, data.briefed_at);
+        } else {
+            alert('Failed: ' + (data.error || 'unknown'));
+        }
+    } catch(e) { alert('Error: ' + e.message); }
+}
+
+function showBriefModal(brief, briefedAt) {
+    const m = document.getElementById('brief-modal');
+    const body = document.getElementById('brief-modal-body');
+
+    const formatBadge = (val) => '<span style="display:inline-block;padding:2px 8px;background:#dbeafe;color:#1e40af;border-radius:10px;font-size:11px;font-weight:600;">' + val + '</span>';
+    const intentBadge = (val) => '<span style="display:inline-block;padding:2px 8px;background:#fef3c7;color:#92400e;border-radius:10px;font-size:11px;font-weight:600;">' + val + '</span>';
+    const diffBadge = (val) => {
+        const colors = {easy:'#d1fae5,#065f46', medium:'#fef3c7,#92400e', hard:'#fecaca,#991b1b'};
+        const c = (colors[val] || colors.medium).split(',');
+        return '<span style="display:inline-block;padding:2px 8px;background:' + c[0] + ';color:' + c[1] + ';border-radius:10px;font-size:11px;font-weight:600;">' + val + '</span>';
+    };
+
+    let html = '<div style="padding:14px;">';
+    html += '<div style="display:flex;gap:6px;margin-bottom:10px;flex-wrap:wrap;">';
+    if (brief.format) html += formatBadge(brief.format);
+    if (brief.intent) html += intentBadge(brief.intent);
+    if (brief.competitive_difficulty) html += diffBadge(brief.competitive_difficulty);
+    if (brief.avg_word_count) html += '<span style="font-size:11px;color:#64748b;padding:2px 8px;">≈ ' + brief.avg_word_count + ' words</span>';
+    html += '</div>';
+
+    if (brief.winning_pattern) {
+        html += '<div style="background:#f0fdf4;border-left:3px solid #10b981;padding:8px 12px;font-size:13px;margin-bottom:10px;"><strong>Winning pattern:</strong> ' + escapeHtml(brief.winning_pattern) + '</div>';
+    }
+
+    if (brief.notes) {
+        html += '<div style="font-size:12px;color:#64748b;margin-bottom:12px;font-style:italic;">' + escapeHtml(brief.notes) + '</div>';
+    }
+
+    if (brief.recommended_outline && brief.recommended_outline.length) {
+        html += '<div style="font-weight:600;font-size:12px;margin-bottom:6px;color:#475569;">RECOMMENDED OUTLINE</div>';
+        html += '<ol style="font-size:13px;line-height:1.7;margin-bottom:14px;padding-left:18px;">';
+        brief.recommended_outline.forEach(h => html += '<li>' + escapeHtml(h) + '</li>');
+        html += '</ol>';
+    }
+
+    if (brief.common_themes && brief.common_themes.length) {
+        html += '<div style="font-weight:600;font-size:12px;margin-bottom:6px;color:#475569;">COMMON THEMES ACROSS TOP RESULTS</div>';
+        html += '<div style="margin-bottom:14px;">';
+        brief.common_themes.forEach(t => {
+            html += '<span style="display:inline-block;margin:2px 4px 2px 0;padding:2px 8px;background:#f1f5f9;border-radius:10px;font-size:11px;color:#475569;">' + escapeHtml(t) + '</span>';
+        });
+        html += '</div>';
+    }
+
+    if (brief.top_results && brief.top_results.length) {
+        html += '<div style="font-weight:600;font-size:12px;margin-bottom:6px;color:#475569;">TOP 10 RESULTS' + (brief.own_ranked ? ' · <span style="color:#10b981;">You rank #' + brief.own_position + '</span>' : ' · <span style="color:#dc2626;">You don\'t rank top 10</span>') + '</div>';
+        html += '<table style="width:100%;font-size:12px;border-collapse:collapse;">';
+        brief.top_results.forEach(r => {
+            html += '<tr style="border-bottom:1px solid #f1f5f9;">';
+            html += '<td style="padding:4px 8px;color:#94a3b8;font-weight:600;">#' + r.position + '</td>';
+            html += '<td style="padding:4px 8px;"><a href="' + escapeHtml(r.url) + '" target="_blank" style="color:var(--primary);text-decoration:none;">' + escapeHtml(r.title.substring(0, 80)) + '</a><div style="font-size:10px;color:#94a3b8;">' + escapeHtml(r.host) + (r.word_count ? ' · ' + r.word_count + ' words' : '') + '</div></td>';
+            html += '</tr>';
+        });
+        html += '</table>';
+    }
+
+    html += '<div style="margin-top:14px;padding-top:10px;border-top:1px solid var(--border);font-size:11px;color:#94a3b8;text-align:center;">Generated: ' + briefedAt + '</div>';
+    html += '</div>';
+
+    body.innerHTML = html;
+    m.style.display = 'flex';
+}
+
+function closeBrief() {
+    document.getElementById('brief-modal').style.display = 'none';
+}
+
+function escapeHtml(s) {
+    const d = document.createElement('div');
+    d.textContent = s == null ? '' : s;
+    return d.innerHTML;
+}
 </script>
+
+<!-- SERP Brief modal -->
+<div id="brief-modal" style="display:none;position:fixed;inset:0;background:rgba(15,23,42,0.5);z-index:1000;align-items:center;justify-content:center;" onclick="if(event.target.id==='brief-modal')closeBrief()">
+    <div style="background:#fff;border-radius:8px;width:90%;max-width:680px;max-height:90vh;overflow-y:auto;box-shadow:0 20px 60px rgba(0,0,0,0.3);">
+        <div style="display:flex;justify-content:space-between;align-items:center;padding:12px 14px;border-bottom:1px solid var(--border);">
+            <div style="font-weight:600;font-size:14px;color:var(--primary);">📊 SERP Brief</div>
+            <button onclick="closeBrief()" style="background:transparent;border:none;font-size:20px;cursor:pointer;color:#94a3b8;line-height:1;">×</button>
+        </div>
+        <div id="brief-modal-body"></div>
+    </div>
+</div>
 
 <?php
 $page_content = ob_get_clean();
