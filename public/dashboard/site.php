@@ -493,6 +493,24 @@ if ($next_step !== 'done'):
             </button>
         </div>
 
+        <!-- SEO Snippet safety mode -->
+        <?php $override_mode = ($site['snippet_mode'] ?? 'fill_only') === 'override'; ?>
+        <div style="padding:10px;background:<?= $override_mode ? '#fef2f2' : '#f0fdf4' ?>;border:1px solid <?= $override_mode ? '#fca5a5' : '#86efac' ?>;border-radius:6px;margin-bottom:10px;display:flex;justify-content:space-between;align-items:center;gap:10px;">
+            <div style="flex:1;min-width:0;">
+                <div style="font-size:13px;font-weight:600;color:<?= $override_mode ? '#991b1b' : '#065f46' ?>;">
+                    <?= $override_mode ? '⚠ SEO snippet OVERRIDE mode is ON' : '✓ SEO snippet is in SAFE mode (fill-only)' ?>
+                </div>
+                <div style="font-size:11px;color:#64748b;margin-top:2px;">
+                    <?= $override_mode
+                        ? 'Snippet REPLACES existing page titles and descriptions with ContentAgent versions. Risk: live site titles change automatically.'
+                        : 'Snippet only adds MISSING tags. Existing page titles and descriptions on ' . e($site['domain']) . ' are never changed.' ?>
+                </div>
+            </div>
+            <button onclick="toggleSnippetMode(<?= $site_id ?>, <?= $override_mode ? "'fill_only'" : "'override'" ?>)" class="btn btn-sm" style="background:<?= $override_mode ? '#10b981' : '#dc2626' ?>;color:#fff;border:none;font-size:11px;white-space:nowrap;flex-shrink:0;">
+                <?= $override_mode ? 'Switch to Safe Mode' : 'Enable Override' ?>
+            </button>
+        </div>
+
         <?php if (!empty($recent_posts)): ?>
             <?php foreach ($recent_posts as $rp): ?>
             <div style="padding:6px 0;border-bottom:1px solid #f1f5f9;display:flex;justify-content:space-between;align-items:center;">
@@ -518,9 +536,32 @@ async function togglePublish(siteId, enable) {
     if (!confirm(msg)) return;
 
     if (enable) {
-        // Redirect to site edit page to enter CMS credentials
         window.location.href = '<?= url('/dashboard/sites.php?action=edit&id=') ?>' + siteId + '#cms';
         return;
+    }
+
+}
+
+async function toggleSnippetMode(siteId, newMode) {
+    var msg = newMode === 'override'
+        ? '⚠ WARNING: Override mode will REPLACE the existing page titles and meta descriptions on the live site with ContentAgent versions. This affects how your site looks in Google. Are you sure?'
+        : 'Switching to Safe mode. The snippet will only add missing tags — existing titles and descriptions on the live site will be preserved. Continue?';
+    if (!confirm(msg)) return;
+
+    try {
+        const res = await fetch('<?= url('/api/toggle-publish.php') ?>', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({site_id: siteId, snippet_mode: newMode})
+        });
+        const data = await res.json();
+        if (data.success) {
+            location.reload();
+        } else {
+            alert('Failed: ' + (data.error || 'unknown error'));
+        }
+    } catch(e) {
+        alert('Error: ' + e.message);
     }
 
     try {

@@ -31,7 +31,7 @@ if (empty($domain)) {
 $domain = preg_replace('/^www\./', '', strtolower($domain));
 
 // Find site
-$stmt = $db->prepare('SELECT id FROM sites WHERE domain = ? AND is_active = 1 LIMIT 1');
+$stmt = $db->prepare('SELECT id, snippet_mode FROM sites WHERE domain = ? AND is_active = 1 LIMIT 1');
 $stmt->execute([$domain]);
 $site = $stmt->fetch();
 
@@ -41,6 +41,7 @@ if (!$site) {
 }
 
 $site_id = $site['id'];
+$snippet_mode = $site['snippet_mode'] ?? 'fill_only';
 
 // Check for redirect first
 $stmt = $db->prepare('SELECT to_url, type FROM redirects WHERE site_id = ? AND from_path = ?');
@@ -66,6 +67,7 @@ $seo = $stmt->fetch();
 
 $response = [
     'path' => $path,
+    'snippet_mode' => $snippet_mode,
 ];
 
 if ($seo) {

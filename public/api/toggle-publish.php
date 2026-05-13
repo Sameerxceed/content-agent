@@ -19,7 +19,8 @@ $user_id = auth_user_id();
 
 $input = json_decode(file_get_contents('php://input'), true) ?: [];
 $site_id = (int)($input['site_id'] ?? 0);
-$enable = (bool)($input['enable'] ?? false);
+$enable = $input['enable'] ?? null;
+$snippet_mode = $input['snippet_mode'] ?? null;
 
 if (!$site_id) { http_response_code(400); echo json_encode(['error' => 'site_id required']); exit; }
 
@@ -27,6 +28,20 @@ if (!$site_id) { http_response_code(400); echo json_encode(['error' => 'site_id 
 $stmt = $db->prepare('SELECT id FROM sites WHERE id = ? AND user_id = ?');
 $stmt->execute([$site_id, $user_id]);
 if (!$stmt->fetch()) { http_response_code(404); echo json_encode(['error' => 'Site not found']); exit; }
+
+// Snippet mode toggle
+if ($snippet_mode !== null) {
+    if (!in_array($snippet_mode, ['fill_only', 'override'])) {
+        http_response_code(400); echo json_encode(['error' => 'Invalid snippet_mode']); exit;
+    }
+    $stmt = $db->prepare('UPDATE sites SET snippet_mode = ? WHERE id = ?');
+    $stmt->execute([$snippet_mode, $site_id]);
+    $db->prepare('INSERT INTO agent_log (site_id, action, details, status) VALUES (?, ?, ?, ?)')->execute([
+        $site_id, 'snippet_mode_changed', json_encode(['new_mode' => $snippet_mode, 'by_user' => $user_id]), 'success'
+    ]);
+    echo json_encode(['success' => true, 'snippet_mode' => $snippet_mode]);
+    exit;
+}
 
 if (!$enable) {
     // Disable: clear CMS credentials
