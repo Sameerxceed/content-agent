@@ -75,6 +75,14 @@ try {
     // table not yet migrated — leave at 0
 }
 
+// Content gap counts
+$open_gaps = 0;
+try {
+    $stmt = $db->prepare("SELECT COUNT(*) FROM content_gaps WHERE site_id = ? AND status = 'open'");
+    $stmt->execute([$site_id]);
+    $open_gaps = (int)$stmt->fetchColumn();
+} catch (PDOException $e) {}
+
 // Fixed issues
 $stmt = $db->prepare('SELECT COUNT(*) FROM page_seo WHERE site_id = ?');
 $stmt->execute([$site_id]);
@@ -350,6 +358,9 @@ async function saveFocus(goToKeywords) {
     </a>
     <a href="<?= url('/dashboard/competitors.php?site=' . $site_id) ?>" class="stat-card" style="text-decoration:none;color:inherit;">
         <div class="stat-label">Competitors</div><div class="stat-value"><?= $competitors_active ?></div>
+    </a>
+    <a href="<?= url('/dashboard/content-gaps.php?site=' . $site_id) ?>" class="stat-card" style="text-decoration:none;color:inherit;">
+        <div class="stat-label">Content Gaps</div><div class="stat-value" style="color:<?= $open_gaps > 0 ? 'var(--warning)' : 'inherit' ?>;"><?= $open_gaps ?></div>
     </a>
     <a href="<?= url('/dashboard/seo-audit.php?site=' . $site_id) ?>" class="stat-card" style="text-decoration:none;color:inherit;">
         <div class="stat-label">SEO Issues</div><div class="stat-value" style="color:<?= $open_issues > 0 ? 'var(--danger)' : 'var(--success)' ?>;"><?= $open_issues ?></div>

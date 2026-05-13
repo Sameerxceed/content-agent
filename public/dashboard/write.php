@@ -108,6 +108,46 @@ Output ONLY valid JSON array:
     </div>
 
     <?php
+    // Top open content gaps (from competitor analysis)
+    $top_gaps = [];
+    try {
+        $g_stmt = $db->prepare("SELECT id, topic, competitor_count, estimated_demand, sample_titles
+            FROM content_gaps WHERE site_id = ? AND status = 'open'
+            ORDER BY competitor_count DESC, estimated_demand DESC LIMIT 5");
+        $g_stmt->execute([$site_id]);
+        $top_gaps = $g_stmt->fetchAll();
+    } catch (PDOException $e) {}
+    ?>
+    <?php if (!empty($top_gaps)): ?>
+    <div class="card mb-4" style="border-left:3px solid #f59e0b;">
+        <div class="card-header" style="display:flex;justify-content:space-between;align-items:center;">
+            <span>💡 Suggested from competitor gaps (<?= count($top_gaps) ?> shown)</span>
+            <a href="<?= url('/dashboard/content-gaps.php?site=' . $site_id) ?>" style="font-size:12px;color:var(--primary);text-decoration:none;">View all →</a>
+        </div>
+        <?php foreach ($top_gaps as $g): ?>
+        <div style="padding:10px 0;border-bottom:1px solid #f1f5f9;display:flex;justify-content:space-between;align-items:center;gap:10px;">
+            <div style="flex:1;min-width:0;">
+                <div style="font-weight:600;font-size:13px;color:var(--primary);"><?= e($g['topic']) ?></div>
+                <div style="font-size:11px;color:#64748b;margin-top:2px;">
+                    Covered by <strong><?= (int)$g['competitor_count'] ?> competitors</strong>
+                    <?php if (!empty($g['estimated_demand']) && $g['estimated_demand'] > 0): ?>
+                        · ~<?= number_format($g['estimated_demand']) ?> imp/mo demand
+                    <?php endif; ?>
+                </div>
+            </div>
+            <form method="POST" style="margin:0;">
+                <input type="hidden" name="step" value="write">
+                <input type="hidden" name="site_id" value="<?= $site_id ?>">
+                <input type="hidden" name="topic" value="<?= e($g['topic']) ?>">
+                <input type="hidden" name="gap_id" value="<?= (int)$g['id'] ?>">
+                <button type="submit" class="btn btn-accent btn-sm" style="font-size:11px;padding:4px 12px;">Write this →</button>
+            </form>
+        </div>
+        <?php endforeach; ?>
+    </div>
+    <?php endif; ?>
+
+    <?php
     // Previous posts for this site
     $prev_stmt = $db->prepare('SELECT id, title, slug, status, type, published_at, created_at FROM posts WHERE site_id = ? ORDER BY created_at DESC LIMIT 10');
     $prev_stmt->execute([$site_id]);
@@ -215,6 +255,14 @@ Output ONLY valid JSON array:
         $brand_tone = $site['brand_tone'] ?? 'professional';
         $kw_array = array_filter(array_map('trim', explode(',', $keywords_str)));
         $prompt_topic = $description ? "{$topic}. {$description}" : $topic;
+
+        // If user came from a content gap, mark it as planned now
+        $gap_id = (int)($_POST['gap_id'] ?? $_GET['gap_id'] ?? 0);
+        if ($gap_id) {
+            try {
+                $db->prepare("UPDATE content_gaps SET status = 'planned' WHERE id = ? AND site_id = ?")->execute([$gap_id, $site_id]);
+            } catch (PDOException $e) {}
+        }
 
         // Look up SERP brief if any of the target keywords has one
         $serp_brief = null;
