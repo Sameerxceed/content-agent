@@ -455,6 +455,9 @@ function sidebar_active(string $page, array $pages_or_query = []): string {
             </a>
 
             <div class="nav-section" style="margin-top:14px;">Global</div>
+            <a href="<?= url('/dashboard/integrations.php') ?>" class="<?= sidebar_active('integrations') ?>">
+                <span class="nav-icon">&#128268;</span> Integrations
+            </a>
             <a href="<?= url('/dashboard/settings.php') ?>" class="<?= sidebar_active('settings') ?>">
                 <span class="nav-icon">&#9881;</span> Settings
             </a>
@@ -466,6 +469,9 @@ function sidebar_active(string $page, array $pages_or_query = []): string {
             </a>
 
             <div class="nav-section">Settings</div>
+            <a href="<?= url('/dashboard/integrations.php') ?>" class="<?= sidebar_active('integrations') ?>">
+                <span class="nav-icon">&#128268;</span> Integrations
+            </a>
             <a href="<?= url('/dashboard/settings.php') ?>" class="<?= sidebar_active('settings') ?>">
                 <span class="nav-icon">&#9881;</span> Settings
             </a>

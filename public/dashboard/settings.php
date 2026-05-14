@@ -166,6 +166,15 @@ ob_start();
 </div>
 
 <?php elseif ($tab === 'api'): ?>
+
+<div style="background:linear-gradient(135deg, #1B3A6B 0%, #2c5282 100%); color:#fff; border-radius:8px; padding:14px 18px; margin-bottom:16px; display:flex; align-items:center; justify-content:space-between; gap:14px;">
+    <div>
+        <div style="font-weight:600; font-size:14px; margin-bottom:2px;">Prefer a guided setup?</div>
+        <div style="font-size:12px; opacity:0.85;">The Integrations Hub walks you through each service step-by-step with smart error fixes.</div>
+    </div>
+    <a href="<?= url('/dashboard/integrations.php') ?>" style="background:#fff; color:var(--primary); padding:8px 16px; border-radius:6px; font-weight:600; font-size:13px; text-decoration:none; white-space:nowrap;">Open Integrations Hub &rarr;</a>
+</div>
+
 <form method="POST">
     <?= csrf_field() ?>
     <input type="hidden" name="action" value="api_keys">
