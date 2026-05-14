@@ -65,6 +65,23 @@ exec("cd {$repo_path} && git pull 2>&1", $output, $return_code);
 
 $log = implode("\n", $output);
 
+// Run pending migrations if git pull succeeded
+$migration_summary = ['skipped' => 'git pull failed'];
+if ($return_code === 0) {
+    try {
+        require_once $repo_path . '/database/migrate.php';
+        $migration_summary = run_migrations();
+        $log .= "\nMigrations: applied=" . count($migration_summary['applied'])
+              . " skipped=" . count($migration_summary['skipped'])
+              . " errors=" . count($migration_summary['errors']);
+        foreach ($migration_summary['applied'] as $m) $log .= "\n  + {$m}";
+        foreach ($migration_summary['errors'] as $e) $log .= "\n  ! {$e['file']}: {$e['error']}";
+    } catch (Throwable $e) {
+        $log .= "\nMigration runner exception: " . $e->getMessage();
+        $migration_summary = ['error' => $e->getMessage()];
+    }
+}
+
 // Log deployment
 $log_file = $repo_path . '/storage/deploy.log';
 $log_entry = date('Y-m-d H:i:s') . " | Branch: {$branch} | Status: " . ($return_code === 0 ? 'OK' : 'FAIL') . "\n{$log}\n---\n";
@@ -76,4 +93,5 @@ echo json_encode([
     'success' => $return_code === 0,
     'branch' => $branch,
     'output' => $log,
+    'migrations' => $migration_summary,
 ]);
