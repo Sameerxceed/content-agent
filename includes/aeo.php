@@ -6,15 +6,109 @@
  * whether the site's domain appears + at what position. Snapshots over time.
  *
  * Engines:
- *   - perplexity : Perplexity Sonar API (clean citations array in response)
- *   - claude_web : (future) Claude with web_search tool
+ *   - claude_web : DEFAULT — Claude messages API with the web_search server tool
+ *   - perplexity : Perplexity Sonar API (optional, only if pplx- key set)
  *   - gpt_search : (future) GPT-4o with web search
  *
- * Configure perplexity_api_key in config.php (or via Integrations Hub wizard).
+ * Uses the existing haiku_api_key (already configured). No new key needed.
  */
 
 require_once __DIR__ . '/helpers.php';
 require_once __DIR__ . '/haiku.php';
+
+/** Default engine for AEO checks. */
+function aeo_default_engine(): string
+{
+    // Prefer Claude (already configured); fall back to Perplexity if Claude key missing
+    if (!empty(config('haiku_api_key'))) return 'claude_web';
+    if (!empty(config('perplexity_api_key'))) return 'perplexity';
+    return 'claude_web';
+}
+
+/**
+ * Call Claude with the web_search server tool and return { text, citations[], error? }.
+ *
+ * Claude returns a response with mixed content blocks:
+ *   - server_tool_use blocks (the search calls Claude made)
+ *   - web_search_tool_result blocks (the URL list Claude got back)
+ *   - text blocks (the answer, optionally with inline citation references)
+ *
+ * We extract every URL Claude actually looked at, in the order they appeared.
+ */
+function aeo_query_claude_web(string $query): array
+{
+    $api_key = config('haiku_api_key');
+    if (empty($api_key)) return ['success' => false, 'error' => 'Claude API key not set'];
+
+    // Use Sonnet for grounded web answers — Haiku doesn't support web_search yet.
+    $model = config('haiku_model') ?: 'claude-sonnet-4-6';
+    if (str_contains($model, 'haiku')) {
+        $model = 'claude-sonnet-4-6';
+    }
+
+    $payload = [
+        'model'      => $model,
+        'max_tokens' => 2000,
+        'system'     => 'You are an AI assistant answering search-style questions. Be concise. Use the web_search tool to look up current information and cite specific sources.',
+        'messages'   => [
+            ['role' => 'user', 'content' => $query],
+        ],
+        'tools' => [
+            ['type' => 'web_search_20250305', 'name' => 'web_search', 'max_uses' => 3],
+        ],
+    ];
+
+    $ch = curl_init('https://api.anthropic.com/v1/messages');
+    curl_setopt_array($ch, [
+        CURLOPT_RETURNTRANSFER => true,
+        CURLOPT_POST           => true,
+        CURLOPT_POSTFIELDS     => json_encode($payload),
+        CURLOPT_HTTPHEADER     => [
+            'x-api-key: ' . $api_key,
+            'anthropic-version: 2023-06-01',
+            'Content-Type: application/json',
+        ],
+        CURLOPT_TIMEOUT        => 120,
+    ]);
+    $body = curl_exec($ch);
+    $code = curl_getinfo($ch, CURLINFO_HTTP_CODE);
+    curl_close($ch);
+
+    if ($code < 200 || $code >= 300) {
+        return ['success' => false, 'error' => "Claude HTTP {$code}: " . substr((string)$body, 0, 300)];
+    }
+
+    $data = json_decode($body, true);
+    if (!is_array($data)) return ['success' => false, 'error' => 'Unparseable response'];
+
+    $text  = '';
+    $urls  = [];
+    $seen  = [];
+
+    foreach ($data['content'] ?? [] as $block) {
+        $type = $block['type'] ?? '';
+        if ($type === 'text') {
+            $text .= $block['text'] ?? '';
+            // Text blocks may include citations referring back to a specific URL
+            foreach ($block['citations'] ?? [] as $cite) {
+                $u = $cite['url'] ?? null;
+                if ($u && !isset($seen[$u])) { $urls[] = $u; $seen[$u] = true; }
+            }
+        } elseif ($type === 'web_search_tool_result') {
+            // Results array of pages Claude looked at
+            foreach ($block['content'] ?? [] as $r) {
+                $u = $r['url'] ?? null;
+                if ($u && !isset($seen[$u])) { $urls[] = $u; $seen[$u] = true; }
+            }
+        }
+    }
+
+    if ($text === '' && empty($urls)) {
+        return ['success' => false, 'error' => 'Claude returned no text or citations — web_search may have failed.'];
+    }
+
+    return ['success' => true, 'text' => $text, 'citations' => $urls];
+}
 
 /**
  * Call Perplexity Sonar and return { text, citations[], error? }.
@@ -91,8 +185,10 @@ function aeo_domain(string $url): string
  * Run one tracked query, store the result snapshot, update the query row.
  * Returns the row data + parsed signals.
  */
-function aeo_check_query(PDO $db, int $query_id, string $engine = 'perplexity'): array
+function aeo_check_query(PDO $db, int $query_id, ?string $engine = null): array
 {
+    $engine = $engine ?: aeo_default_engine();
+
     $stmt = $db->prepare('SELECT q.*, s.domain AS site_domain
                           FROM aeo_queries q JOIN sites s ON q.site_id = s.id
                           WHERE q.id = ?');
@@ -102,7 +198,9 @@ function aeo_check_query(PDO $db, int $query_id, string $engine = 'perplexity'):
 
     $site_domain = aeo_domain('https://' . $q['site_domain']);
 
-    if ($engine === 'perplexity') {
+    if ($engine === 'claude_web') {
+        $resp = aeo_query_claude_web($q['query_text']);
+    } elseif ($engine === 'perplexity') {
         $resp = aeo_query_perplexity($q['query_text']);
     } else {
         return ['success' => false, 'error' => 'Unsupported engine: ' . $engine];

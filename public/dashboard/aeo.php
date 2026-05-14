@@ -23,7 +23,11 @@ $stmt->execute([$site_id, $user_id]);
 $site = $stmt->fetch();
 if (!$site) { redirect('/dashboard/index.php'); }
 
+// AEO is ready if EITHER Claude (default) or Perplexity is configured.
+$claude_ok     = !empty(config('haiku_api_key'));
 $perplexity_ok = !empty(config('perplexity_api_key'));
+$engine_ok     = $claude_ok || $perplexity_ok;
+$engine_label  = $claude_ok ? 'Claude (web search)' : ($perplexity_ok ? 'Perplexity Sonar' : 'no engine');
 
 $summary = aeo_site_summary($db, $site_id);
 
@@ -76,14 +80,16 @@ ob_start();
         <h2 style="font-size:18px; font-weight:600; margin:2px 0 0; color:var(--primary);"><?= e($site['name']) ?></h2>
     </div>
     <div class="flex gap-2">
-        <button class="btn btn-outline btn-sm" onclick="suggestQueries(this)" <?= $perplexity_ok ? '' : 'disabled' ?>>💡 Suggest queries</button>
-        <button class="btn btn-accent btn-sm" onclick="checkAll(this)" <?= $perplexity_ok ? '' : 'disabled' ?>>🔭 Check all now</button>
+        <button class="btn btn-outline btn-sm" onclick="suggestQueries(this)" <?= $engine_ok ? '' : 'disabled' ?>>💡 Suggest queries</button>
+        <button class="btn btn-accent btn-sm" onclick="checkAll(this)" <?= $engine_ok ? '' : 'disabled' ?>>🔭 Check all now</button>
     </div>
 </div>
 
-<?php if (!$perplexity_ok): ?>
+<div style="font-size:11px; color:var(--text-light); margin-bottom:10px;">Engine: <strong><?= e($engine_label) ?></strong></div>
+
+<?php if (!$engine_ok): ?>
 <div class="alert alert-warning">
-    Perplexity API key not configured — AEO checks will fail. <a href="<?= url('/dashboard/integrations.php') ?>">Set it up in the Integrations Hub</a>.
+    No AI search engine configured. Set up Claude (recommended) or Perplexity in <a href="<?= url('/dashboard/integrations.php') ?>">Integrations</a>.
 </div>
 <?php endif; ?>
 
@@ -116,7 +122,7 @@ ob_start();
             <option value="comparison">Comparison</option>
             <option value="location">Location</option>
         </select>
-        <button class="btn btn-primary btn-sm" onclick="addQuery(this)" <?= $perplexity_ok ? '' : 'disabled' ?>>Add</button>
+        <button class="btn btn-primary btn-sm" onclick="addQuery(this)" <?= $engine_ok ? '' : 'disabled' ?>>Add</button>
     </div>
 </div>
 
@@ -163,7 +169,7 @@ ob_start();
                     <?php if ($citations): ?>
                     <button class="btn btn-outline" onclick="toggleDetails(this)">Details</button>
                     <?php endif; ?>
-                    <button class="btn btn-outline" onclick="checkQuery(<?= (int)$q['id'] ?>, this)" <?= $perplexity_ok ? '' : 'disabled' ?>>Check now</button>
+                    <button class="btn btn-outline" onclick="checkQuery(<?= (int)$q['id'] ?>, this)" <?= $engine_ok ? '' : 'disabled' ?>>Check now</button>
                     <button class="btn btn-outline" style="color:var(--danger);" onclick="deleteQuery(<?= (int)$q['id'] ?>, this)">×</button>
                 </div>
             </div>
