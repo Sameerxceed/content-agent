@@ -444,6 +444,9 @@ function sidebar_active(string $page, array $pages_or_query = []): string {
             <a href="<?= url('/dashboard/calendar.php?site=' . $ctx_site_id) ?>" class="<?= sidebar_active('calendar') ?>">
                 <span class="nav-icon">&#128197;</span> Calendar
             </a>
+            <a href="<?= url('/dashboard/performance.php?site=' . $ctx_site_id) ?>" class="<?= sidebar_active('performance') ?>">
+                <span class="nav-icon">&#128200;</span> Performance
+            </a>
             <a href="<?= url('/dashboard/ai-presence.php?site=' . $ctx_site_id) ?>" class="<?= sidebar_active('', ['ai-presence', 'ai-visibility', 'brand-mentions']) ?>">
                 <span class="nav-icon">&#128172;</span> AI Presence
             </a>
