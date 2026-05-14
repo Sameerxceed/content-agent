@@ -11,6 +11,81 @@
 
 require_once __DIR__ . '/../includes/helpers.php';
 
+/**
+ * Split a SQL file into individual statements, respecting:
+ *   - Line comments: -- to end of line, # to end of line
+ *   - Block comments: /* ... *‍/
+ *   - String literals: single-quoted and double-quoted with backslash escapes and '' doubling
+ */
+function sql_split(string $sql): array
+{
+    $stmts = [];
+    $buf = '';
+    $i = 0;
+    $len = strlen($sql);
+
+    while ($i < $len) {
+        $c = $sql[$i];
+        $next = $i + 1 < $len ? $sql[$i + 1] : '';
+
+        // Line comment -- or #
+        if (($c === '-' && $next === '-') || $c === '#') {
+            $nl = strpos($sql, "\n", $i);
+            if ($nl === false) break;
+            $i = $nl + 1;
+            continue;
+        }
+        // Block comment /* ... */
+        if ($c === '/' && $next === '*') {
+            $end = strpos($sql, '*/', $i + 2);
+            if ($end === false) break;
+            $i = $end + 2;
+            continue;
+        }
+        // String literal
+        if ($c === "'" || $c === '"') {
+            $quote = $c;
+            $buf .= $c;
+            $i++;
+            while ($i < $len) {
+                $ch = $sql[$i];
+                $buf .= $ch;
+                if ($ch === '\\' && $i + 1 < $len) {
+                    $buf .= $sql[$i + 1];
+                    $i += 2;
+                    continue;
+                }
+                if ($ch === $quote) {
+                    // Doubled quote means literal quote, stay in string
+                    if ($i + 1 < $len && $sql[$i + 1] === $quote) {
+                        $buf .= $sql[$i + 1];
+                        $i += 2;
+                        continue;
+                    }
+                    $i++;
+                    break;
+                }
+                $i++;
+            }
+            continue;
+        }
+        // Statement terminator
+        if ($c === ';') {
+            $t = trim($buf);
+            if ($t !== '') $stmts[] = $t;
+            $buf = '';
+            $i++;
+            continue;
+        }
+        $buf .= $c;
+        $i++;
+    }
+
+    $t = trim($buf);
+    if ($t !== '') $stmts[] = $t;
+    return $stmts;
+}
+
 function run_migrations(?PDO $db = null): array
 {
     if ($db === null) {
@@ -48,11 +123,9 @@ function run_migrations(?PDO $db = null): array
         }
 
         // Split into individual statements so duplicate-column / table-exists in one
-        // statement doesn't roll back the whole migration (handles re-running on a
-        // partially-deployed DB where some tables/columns from an old migration are
-        // already present). Naive split is fine — our migrations don't use semicolons
-        // inside string literals or stored procedures.
-        $statements = array_filter(array_map('trim', explode(';', preg_replace('#--[^\n]*#', '', $sql))));
+        // statement doesn't roll back the whole migration. String-aware so a
+        // semicolon inside a COMMENT string doesn't break the statement.
+        $statements = sql_split($sql);
         $had_real_error = false;
         $had_any_change = false;
         $stmt_errors = [];
