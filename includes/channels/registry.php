@@ -165,9 +165,11 @@ function channels_registry(): ChannelRegistry
     require_once __DIR__ . '/cms.php';
     $registry->register(new CmsChannel());
 
-    // Future adapters will register here:
+    require_once __DIR__ . '/linkedin.php';
+    $registry->register(new LinkedInChannel());
+
+    // Future adapters:
     // require_once __DIR__ . '/reddit.php';     $registry->register(new RedditChannel());
-    // require_once __DIR__ . '/linkedin.php';   $registry->register(new LinkedInChannel());
     // require_once __DIR__ . '/twitter.php';    $registry->register(new TwitterChannel());
 
     return $registry;

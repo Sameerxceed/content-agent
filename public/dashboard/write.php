@@ -360,20 +360,70 @@ Output ONLY valid JSON array:
 
                 <div class="card">
                     <div class="card-header">Publish</div>
+                    <?php
+                    require_once __DIR__ . '/../../includes/channels/registry.php';
+                    $registry = channels_registry();
+                    $available_channels = $registry->all();
+                    // Per-site default channel selection
+                    $default_channels = json_decode($site['default_channels'] ?? '[]', true) ?: [];
+                    ?>
                     <div class="form-group">
-                        <label>Action</label>
-                        <select name="publish_action" class="form-control">
-                            <option value="draft" selected>Save as Draft (review later) — Recommended</option>
-                            <option value="publish_local">Publish locally only (on ContentAgent blog)</option>
-                            <option value="publish_cms">Publish to CMS (LIVE on your website)</option>
-                        </select>
-                        <div class="text-sm text-muted mt-2" style="color:#b45309;">⚠ "Publish to CMS" pushes the post live immediately. Default is Draft so you can review first.</div>
+                        <label style="display:block;font-weight:600;font-size:13px;margin-bottom:6px;">Action</label>
+                        <label style="display:block;font-size:13px;cursor:pointer;padding:6px 0;">
+                            <input type="radio" name="publish_action" value="draft" checked> Save as Draft (review before going live) — Recommended
+                        </label>
+                        <label style="display:block;font-size:13px;cursor:pointer;padding:6px 0;">
+                            <input type="radio" name="publish_action" value="publish_local"> Publish locally only (on ContentAgent blog)
+                        </label>
+                        <label style="display:block;font-size:13px;cursor:pointer;padding:6px 0;">
+                            <input type="radio" name="publish_action" value="publish_channels"> Publish to selected channels →
+                        </label>
                     </div>
+
+                    <div class="form-group" id="channels-block" style="padding:10px 12px;background:#f8fafc;border-radius:6px;margin-bottom:10px;">
+                        <div style="font-size:11px;color:#64748b;font-weight:600;text-transform:uppercase;letter-spacing:0.5px;margin-bottom:6px;">Channels</div>
+                        <?php foreach ($available_channels as $adapter):
+                            $cid = $adapter->id();
+                            $configured = $adapter->is_configured($site);
+                            $checked = in_array($cid, $default_channels, true) || (empty($default_channels) && $cid === 'cms');
+                        ?>
+                        <label style="display:flex;align-items:flex-start;gap:8px;font-size:13px;cursor:<?= $configured ? 'pointer' : 'default' ?>;padding:6px 0;<?= $configured ? '' : 'opacity:0.55;' ?>">
+                            <input type="checkbox" name="channels[]" value="<?= e($cid) ?>" <?= $checked && $configured ? 'checked' : '' ?> <?= $configured ? '' : 'disabled' ?> style="margin-top:3px;">
+                            <span style="flex:1;">
+                                <span style="font-weight:600;">
+                                    <span style="display:inline-block;width:18px;height:18px;border-radius:3px;background:<?= $adapter->color() ?>;color:#fff;text-align:center;line-height:18px;font-size:10px;margin-right:4px;"><?= $adapter->icon() ?></span>
+                                    <?= e($adapter->display_name()) ?>
+                                </span>
+                                <?php if (!$configured): ?>
+                                    <div style="font-size:11px;color:#f59e0b;margin-top:2px;"><?= e($adapter->setup_hint($site) ?: 'Not connected for this site.') ?></div>
+                                <?php else: ?>
+                                    <div style="font-size:11px;color:#94a3b8;margin-top:2px;"><?= e($adapter->description()) ?></div>
+                                <?php endif; ?>
+                            </span>
+                        </label>
+                        <?php endforeach; ?>
+                        <div style="font-size:11px;color:#b45309;margin-top:6px;">⚠ Posts to selected channels immediately. Drafts skip channel publishing — you can publish per-channel from the post page.</div>
+                    </div>
+
                     <div class="flex gap-2">
                         <button type="submit" class="btn btn-accent" style="padding:10px 24px;">Publish →</button>
                         <a href="<?= url('/dashboard/write.php?site=' . $site_id . '&step=propose') ?>" class="btn btn-outline">← Back to topics</a>
                     </div>
                 </div>
+
+                <script>
+                // Hide channels block unless "publish_channels" is selected
+                (function() {
+                    const radios = document.querySelectorAll('input[name="publish_action"]');
+                    const block = document.getElementById('channels-block');
+                    function sync() {
+                        const val = document.querySelector('input[name="publish_action"]:checked').value;
+                        block.style.display = val === 'publish_channels' ? 'block' : 'none';
+                    }
+                    radios.forEach(r => r.addEventListener('change', sync));
+                    sync();
+                })();
+                </script>
             </div>
         </div>
     </form>
@@ -420,42 +470,65 @@ Output ONLY valid JSON array:
 
         $post_id = $db->lastInsertId();
 
-        // Publish via the new channels pipeline.
-        // For now, "publish_cms" queues + immediately runs the cms channel.
-        // Future: collect a multi-select of channels from the form.
+        // Publish via the new channels pipeline (multi-channel).
         $publish_results = [];
-        if ($action === 'publish_cms') {
+        $selected_channels = [];
+
+        if ($action === 'publish_channels') {
+            $selected_channels = is_array($_POST['channels'] ?? null) ? array_values($_POST['channels']) : [];
+            // Back-compat: old "publish_cms" callers
+        } elseif ($action === 'publish_cms') {
+            $selected_channels = ['cms'];
+        }
+
+        if (!empty($selected_channels)) {
             require_once __DIR__ . '/../../includes/channels/registry.php';
             $registry = channels_registry();
-            $created = $registry->queue_publish($db, (int)$post_id, ['cms']);
+            $created = $registry->queue_publish($db, (int)$post_id, $selected_channels);
 
             foreach ($created as $cid => $row_id) {
                 $publish_results[$cid] = $registry->publish_row($db, $row_id);
             }
 
-            $cms_ok = !empty($publish_results['cms']['success']);
+            $any_ok = false;
+            foreach ($publish_results as $r) { if (!empty($r['success'])) { $any_ok = true; break; } }
+
             $db->prepare('INSERT INTO agent_log (site_id, action, details, status) VALUES (?, ?, ?, ?)')->execute([
                 $site_id, 'publish_via_channels',
-                json_encode(['post_id' => $post_id, 'slug' => $slug, 'channels' => array_keys($publish_results), 'cms_ok' => $cms_ok]),
-                $cms_ok ? 'success' : 'fail',
+                json_encode(['post_id' => $post_id, 'slug' => $slug, 'channels' => array_keys($publish_results), 'any_ok' => $any_ok]),
+                $any_ok ? 'success' : 'fail',
             ]);
         }
     ?>
 
-    <?php if ($action === 'publish_cms' && !empty($publish_results['cms']['success'])): ?>
+    <?php if (!empty($publish_results)): ?>
+        <?php
+        $ok_channels   = array_keys(array_filter($publish_results, fn($r) => !empty($r['success'])));
+        $fail_channels = array_keys(array_filter($publish_results, fn($r) => empty($r['success'])));
+        ?>
+        <?php if (!empty($ok_channels)): ?>
         <div class="alert alert-success">
-            Published to <strong><?= e($site['domain']) ?></strong>!
-            <?php if (!empty($publish_results['cms']['external_url'])): ?>
-                <a href="<?= e($publish_results['cms']['external_url']) ?>" target="_blank" style="color:#065f46;font-weight:600;">View on site →</a>
-            <?php endif; ?>
+            ✓ Published to: <strong><?= e(implode(', ', $ok_channels)) ?></strong>
+            <ul style="margin:6px 0 0;padding-left:18px;font-size:13px;">
+            <?php foreach ($ok_channels as $cid): if (!empty($publish_results[$cid]['external_url'])): ?>
+                <li><?= e($cid) ?>: <a href="<?= e($publish_results[$cid]['external_url']) ?>" target="_blank" style="color:#065f46;font-weight:600;">View ↗</a></li>
+            <?php endif; endforeach; ?>
+            </ul>
         </div>
-    <?php elseif ($action === 'publish_cms' && !empty($publish_results['cms'])): ?>
+        <?php endif; ?>
+        <?php if (!empty($fail_channels)): ?>
         <div class="alert alert-error">
-            Saved locally but CMS push failed: <?= e($publish_results['cms']['error'] ?? 'Unknown error') ?>
+            ✗ Failed on: <strong><?= e(implode(', ', $fail_channels)) ?></strong>. You can retry from the post page.
+            <ul style="margin:6px 0 0;padding-left:18px;font-size:13px;">
+            <?php foreach ($fail_channels as $cid): ?>
+                <li><?= e($cid) ?>: <?= e($publish_results[$cid]['error'] ?? 'unknown error') ?></li>
+            <?php endforeach; ?>
+            </ul>
         </div>
-    <?php elseif ($action === 'publish_cms'): ?>
+        <?php endif; ?>
+    <?php elseif ($action === 'publish_channels' || $action === 'publish_cms'): ?>
         <div class="alert alert-warning">
-            Saved locally. CMS is not configured for this site — set <strong>cms_url</strong> + <strong>cms_api_key</strong> on the site to enable live publishing.
+            Saved locally. No configured channels were selected. Connect a channel and try again from the post page.
         </div>
     <?php elseif ($action === 'draft'): ?>
         <div class="alert alert-info">Saved as draft. Go to Posts to review and publish later.</div>

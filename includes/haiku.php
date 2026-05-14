@@ -242,3 +242,99 @@ Content: {$preview}";
 
     return haiku_chat($system, $prompt, 1024);
 }
+
+/**
+ * Repurpose a blog post for a specific channel.
+ * Returns the channel-formatted text ready to publish.
+ *
+ * @param array  $post    Post row (title, body, excerpt, slug, etc.)
+ * @param string $channel One of: linkedin, twitter, reddit, newsletter
+ * @param array  $site    Site row (name, domain, brand_tone, business_description, persona, usp)
+ * @return array ['success' => bool, 'content' => string, 'error' => ?string]
+ */
+function haiku_repurpose_for_channel(array $post, string $channel, array $site): array
+{
+    $title    = $post['title'] ?? '';
+    $excerpt  = $post['excerpt'] ?? '';
+    $body     = trim(strip_tags($post['body'] ?? ''));
+    $blog_url = !empty($site['domain']) && !empty($post['slug'])
+        ? 'https://' . ltrim($site['domain'], 'https://') . '/blog/' . $post['slug']
+        : '';
+
+    $site_name     = $site['name'] ?? 'we';
+    $brand_tone    = $site['brand_tone'] ?? 'professional';
+    $business_desc = trim($site['business_description'] ?? '');
+    $persona       = trim($site['persona'] ?? '');
+    $usp           = trim($site['usp'] ?? '');
+
+    $brand_block = '';
+    if ($business_desc) $brand_block .= "WE DO: {$business_desc}\n";
+    if ($persona)       $brand_block .= "OUR AUDIENCE: {$persona}\n";
+    if ($usp)           $brand_block .= "WHAT MAKES US DIFFERENT: {$usp}\n";
+
+    $body_excerpt = mb_substr($body, 0, 2000);
+
+    $templates = [
+        'linkedin' => [
+            'system' => "You write LinkedIn posts that get engagement.\n"
+                . "Constraints: 150-220 words. First line is a hook (1 short sentence) — punchy, contrarian, or curious. "
+                . "No corporate jargon. No emojis at start. 2-3 short paragraphs with line breaks. "
+                . "End with a soft question that invites discussion. Don't sell.\n"
+                . "Tone: {$brand_tone}. Voice: {$site_name} (first person plural 'we').\n"
+                . "{$brand_block}"
+                . "Output ONLY the post text — no labels, no quotes, no markdown.",
+            'prompt' => "Source blog post:\n\nTitle: {$title}\n\nKey points: {$body_excerpt}\n\n"
+                . ($blog_url ? "Link to the full post: {$blog_url}\n\n" : '')
+                . "Write a LinkedIn post that distills the most insightful point. End with: 'Full breakdown: " . ($blog_url ?: '[blog link]') . "' on its own line.",
+        ],
+        'twitter' => [
+            'system' => "You write Twitter/X threads.\n"
+                . "Constraints: 5-8 tweets. Each tweet <= 270 chars (leave room). Number them like '1/' '2/' ... '8/8'. "
+                . "Tweet 1 = the hook (no '1/' prefix — just a strong opening line). Tweet 2+ = numbered. "
+                . "Last tweet = soft CTA with the blog link.\n"
+                . "Tone: {$brand_tone}. Voice: {$site_name}.\n"
+                . "{$brand_block}"
+                . "Output ONLY the thread, one tweet per line, blank line between tweets.",
+            'prompt' => "Source blog post:\n\nTitle: {$title}\n\nContent: {$body_excerpt}\n\n"
+                . ($blog_url ? "Link: {$blog_url}\n\n" : '')
+                . "Turn this into a Twitter thread of 5-8 tweets.",
+        ],
+        'reddit' => [
+            'system' => "You write Reddit posts.\n"
+                . "Reddit hates promotional content. Frame as a discussion or genuinely useful observation, not as an ad.\n"
+                . "Constraints: 250-400 words. No marketing speak. No 'check out our blog'. "
+                . "If linking to source, do so as a footnote 'Source: ...' at the end, casually. "
+                . "Title separate from body — first line is the title, then a blank line, then the body.\n"
+                . "{$brand_block}"
+                . "Output ONLY the title + body. No labels.",
+            'prompt' => "Source blog post:\n\nTitle: {$title}\n\nContent: {$body_excerpt}\n\n"
+                . ($blog_url ? "Optional source link: {$blog_url}\n\n" : '')
+                . "Convert this into a Reddit-appropriate post that adds value to a community discussion. Pick a tighter angle than the original blog title.",
+        ],
+        'newsletter' => [
+            'system' => "You write the body of a weekly newsletter section featuring one new blog post.\n"
+                . "Constraints: 80-130 words. Friendly, conversational tone. "
+                . "Tease the post but don't repeat its full content. End with a 'Read more →' inviting the click.\n"
+                . "Tone: {$brand_tone}. Voice: {$site_name}.\n"
+                . "{$brand_block}"
+                . "Output ONLY the section text.",
+            'prompt' => "Source blog post:\n\nTitle: {$title}\n\n" . ($excerpt ? "Excerpt: {$excerpt}\n\n" : '')
+                . "Content: {$body_excerpt}\n\n"
+                . ($blog_url ? "Link: {$blog_url}\n\n" : '')
+                . "Write the newsletter section featuring this post.",
+        ],
+    ];
+
+    if (!isset($templates[$channel])) {
+        return ['success' => false, 'content' => '', 'error' => "No repurpose template for channel '{$channel}'"];
+    }
+
+    $tpl = $templates[$channel];
+    $result = haiku_chat($tpl['system'], $tpl['prompt'], 1024);
+
+    if (!$result['success']) {
+        return ['success' => false, 'content' => '', 'error' => $result['error']];
+    }
+
+    return ['success' => true, 'content' => trim($result['content']), 'error' => null];
+}
