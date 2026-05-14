@@ -359,71 +359,23 @@ Output ONLY valid JSON array:
                 </div>
 
                 <div class="card">
-                    <div class="card-header">Publish</div>
-                    <?php
-                    require_once __DIR__ . '/../../includes/channels/registry.php';
-                    $registry = channels_registry();
-                    $available_channels = $registry->all();
-                    // Per-site default channel selection
-                    $default_channels = json_decode($site['default_channels'] ?? '[]', true) ?: [];
-                    ?>
+                    <div class="card-header">Save</div>
                     <div class="form-group">
-                        <label style="display:block;font-weight:600;font-size:13px;margin-bottom:6px;">Action</label>
                         <label style="display:block;font-size:13px;cursor:pointer;padding:6px 0;">
-                            <input type="radio" name="publish_action" value="draft" checked> Save as Draft (review before going live) — Recommended
+                            <input type="radio" name="publish_action" value="draft" checked> Save as Draft — Recommended
                         </label>
                         <label style="display:block;font-size:13px;cursor:pointer;padding:6px 0;">
-                            <input type="radio" name="publish_action" value="publish_local"> Publish locally only (on ContentAgent blog)
+                            <input type="radio" name="publish_action" value="publish_cms"> Publish to Blog now
                         </label>
-                        <label style="display:block;font-size:13px;cursor:pointer;padding:6px 0;">
-                            <input type="radio" name="publish_action" value="publish_channels"> Publish to selected channels →
-                        </label>
+                        <div style="font-size:11px;color:#64748b;margin-top:8px;line-height:1.5;">
+                            After saving, you'll land on the post page where you can <strong>generate and publish each social channel separately</strong> (LinkedIn, Twitter, Reddit, Newsletter) — each with its own preview, edits, and schedule.
+                        </div>
                     </div>
-
-                    <div class="form-group" id="channels-block" style="padding:10px 12px;background:#f8fafc;border-radius:6px;margin-bottom:10px;">
-                        <div style="font-size:11px;color:#64748b;font-weight:600;text-transform:uppercase;letter-spacing:0.5px;margin-bottom:6px;">Channels</div>
-                        <?php foreach ($available_channels as $adapter):
-                            $cid = $adapter->id();
-                            $configured = $adapter->is_configured($site);
-                            $checked = in_array($cid, $default_channels, true) || (empty($default_channels) && $cid === 'cms');
-                        ?>
-                        <label style="display:flex;align-items:flex-start;gap:8px;font-size:13px;cursor:<?= $configured ? 'pointer' : 'default' ?>;padding:6px 0;<?= $configured ? '' : 'opacity:0.55;' ?>">
-                            <input type="checkbox" name="channels[]" value="<?= e($cid) ?>" <?= $checked && $configured ? 'checked' : '' ?> <?= $configured ? '' : 'disabled' ?> style="margin-top:3px;">
-                            <span style="flex:1;">
-                                <span style="font-weight:600;">
-                                    <span style="display:inline-block;width:18px;height:18px;border-radius:3px;background:<?= $adapter->color() ?>;color:#fff;text-align:center;line-height:18px;font-size:10px;margin-right:4px;"><?= $adapter->icon() ?></span>
-                                    <?= e($adapter->display_name()) ?>
-                                </span>
-                                <?php if (!$configured): ?>
-                                    <div style="font-size:11px;color:#f59e0b;margin-top:2px;"><?= e($adapter->setup_hint($site) ?: 'Not connected for this site.') ?></div>
-                                <?php else: ?>
-                                    <div style="font-size:11px;color:#94a3b8;margin-top:2px;"><?= e($adapter->description()) ?></div>
-                                <?php endif; ?>
-                            </span>
-                        </label>
-                        <?php endforeach; ?>
-                        <div style="font-size:11px;color:#b45309;margin-top:6px;">⚠ Posts to selected channels immediately. Drafts skip channel publishing — you can publish per-channel from the post page.</div>
-                    </div>
-
                     <div class="flex gap-2">
-                        <button type="submit" class="btn btn-accent" style="padding:10px 24px;">Publish →</button>
+                        <button type="submit" class="btn btn-accent" style="padding:10px 24px;">Save →</button>
                         <a href="<?= url('/dashboard/write.php?site=' . $site_id . '&step=propose') ?>" class="btn btn-outline">← Back to topics</a>
                     </div>
                 </div>
-
-                <script>
-                // Hide channels block unless "publish_channels" is selected
-                (function() {
-                    const radios = document.querySelectorAll('input[name="publish_action"]');
-                    const block = document.getElementById('channels-block');
-                    function sync() {
-                        const val = document.querySelector('input[name="publish_action"]:checked').value;
-                        block.style.display = val === 'publish_channels' ? 'block' : 'none';
-                    }
-                    radios.forEach(r => r.addEventListener('change', sync));
-                    sync();
-                })();
-                </script>
             </div>
         </div>
     </form>
@@ -536,12 +488,19 @@ Output ONLY valid JSON array:
         <div class="alert alert-success">Published locally.</div>
     <?php endif; ?>
 
+    <div style="background:#f0fdf4;border:1px solid #86efac;border-radius:6px;padding:12px 14px;margin-top:14px;">
+        <div style="font-weight:600;font-size:13px;color:#065f46;margin-bottom:4px;">📡 Distribute this post to social channels</div>
+        <div style="font-size:12px;color:#065f46;">From the post page, you can generate LinkedIn / Twitter / Reddit / Newsletter versions, edit them, and publish or schedule each one independently.</div>
+        <div style="margin-top:10px;">
+            <a href="<?= url('/dashboard/posts.php?action=edit&id=' . $post_id . '&site=' . $site_id) ?>" class="btn btn-accent" style="text-decoration:none;">Open post page →</a>
+        </div>
+    </div>
+
     <div class="flex gap-2 mt-4">
         <?php if ($status === 'published'): ?>
-            <a href="<?= url('/blog/post.php?site=' . $site_id . '&slug=' . urlencode($slug)) ?>" class="btn btn-primary" style="text-decoration:none;" target="_blank">Preview on Blog →</a>
+            <a href="<?= url('/blog/post.php?site=' . $site_id . '&slug=' . urlencode($slug)) ?>" class="btn btn-outline" style="text-decoration:none;" target="_blank">Preview on Blog →</a>
         <?php endif; ?>
-        <a href="<?= url('/dashboard/write.php?site=' . $site_id . '&step=propose') ?>" class="btn btn-accent" style="text-decoration:none;">Write another →</a>
-        <a href="<?= url('/dashboard/posts.php?action=edit&id=' . $post_id . '&site=' . $site_id) ?>" class="btn btn-outline" style="text-decoration:none;">Edit Post</a>
+        <a href="<?= url('/dashboard/write.php?site=' . $site_id . '&step=propose') ?>" class="btn btn-outline" style="text-decoration:none;">Write another</a>
         <a href="<?= url('/dashboard/site.php?id=' . $site_id) ?>" class="btn btn-outline" style="text-decoration:none;">Back to Site</a>
     </div>
 

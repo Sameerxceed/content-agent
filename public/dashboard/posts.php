@@ -195,46 +195,90 @@ if ($action === 'edit' && isset($_GET['id'])):
                 $channel_rows = $stmt->fetchAll(PDO::FETCH_ASSOC);
                 $by_channel = [];
                 foreach ($channel_rows as $r) $by_channel[$r['channel']] = $r;
+
+                // Site row (for is_configured checks — the post array doesn't have site fields)
+                $site_stmt = $db->prepare('SELECT * FROM sites WHERE id = ?');
+                $site_stmt->execute([$post['site_id']]);
+                $site_row = $site_stmt->fetch(PDO::FETCH_ASSOC);
                 ?>
-                <div class="card">
+                <div class="card" style="margin-top:14px;">
                     <div class="card-header">📡 Publishing Channels</div>
-                    <div style="padding:4px 0;font-size:12px;color:#64748b;">
-                        Status across each destination. Click a channel to publish/retry it.
+                    <div style="font-size:12px;color:#64748b;margin-bottom:10px;">
+                        Each channel works independently. Generate a variant → edit it → publish now or schedule for later.
                     </div>
+
                     <?php foreach ($registry->all() as $adapter):
                         $cid = $adapter->id();
                         $row = $by_channel[$cid] ?? null;
-                        $configured = $adapter->is_configured(['cms_url' => $post['cms_url'] ?? null, 'cms_api_key' => $post['cms_api_key'] ?? null] + (array)$post);
+                        $configured = $adapter->is_configured($site_row);
                         $status = $row['status'] ?? null;
-                        $status_colors = [
+                        $status_styles = [
                             'published'  => ['#d1fae5','#065f46','✓ Published'],
-                            'queued'     => ['#dbeafe','#1e40af','⏳ Queued'],
+                            'queued'     => [$row['scheduled_for'] ?? null ? '#dbeafe' : '#fef9c3', $row['scheduled_for'] ?? null ? '#1e40af' : '#854d0e', $row['scheduled_for'] ?? null ? '📅 Scheduled' : '⏳ Queued'],
                             'publishing' => ['#fef3c7','#92400e','… Publishing'],
                             'failed'     => ['#fecaca','#991b1b','✗ Failed'],
-                            'draft'      => ['#f1f5f9','#64748b','Draft'],
+                            'draft'      => ['#f1f5f9','#64748b','📝 Draft'],
                         ];
-                        [$bg, $fg, $label] = $status_colors[$status] ?? ['#f8fafc','#94a3b8','Not yet'];
+                        [$bg, $fg, $label] = $status_styles[$status] ?? ['#f8fafc','#94a3b8','— Not yet'];
+                        $variant = $row['variant_content'] ?? '';
+                        $is_cms = $cid === 'cms';
                     ?>
-                    <div style="display:flex;justify-content:space-between;align-items:center;padding:8px 0;border-bottom:1px solid #f1f5f9;">
-                        <div style="flex:1;min-width:0;">
-                            <div style="font-size:13px;font-weight:600;color:var(--primary);">
-                                <span style="display:inline-block;width:22px;height:22px;border-radius:4px;background:<?= $adapter->color() ?>;color:#fff;text-align:center;line-height:22px;font-size:13px;margin-right:4px;"><?= $adapter->icon() ?></span>
-                                <?= e($adapter->display_name()) ?>
+                    <div style="border:1px solid var(--border);border-radius:6px;padding:10px 12px;margin-bottom:8px;background:#fff;">
+                        <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:8px;margin-bottom:6px;">
+                            <div style="display:flex;align-items:center;gap:8px;flex:1;min-width:0;">
+                                <span style="display:inline-block;width:24px;height:24px;border-radius:4px;background:<?= $adapter->color() ?>;color:#fff;text-align:center;line-height:24px;font-size:12px;font-weight:600;flex-shrink:0;"><?= $adapter->icon() ?></span>
+                                <div style="flex:1;min-width:0;">
+                                    <div style="font-weight:600;font-size:13px;color:var(--primary);"><?= e($adapter->display_name()) ?></div>
+                                    <?php if (!$configured): ?>
+                                        <div style="font-size:11px;color:#f59e0b;margin-top:1px;"><?= e($adapter->setup_hint($site_row) ?: 'Not configured.') ?></div>
+                                    <?php elseif ($row && $row['scheduled_for']): ?>
+                                        <div style="font-size:11px;color:#1e40af;margin-top:1px;">Scheduled for <?= format_date($row['scheduled_for']) ?></div>
+                                    <?php elseif ($row && !empty($row['external_url'])): ?>
+                                        <a href="<?= e($row['external_url']) ?>" target="_blank" style="font-size:11px;color:#3b82f6;text-decoration:none;">View on <?= e(parse_url($row['external_url'], PHP_URL_HOST)) ?> ↗</a>
+                                    <?php endif; ?>
+                                </div>
                             </div>
-                            <?php if (!$configured): ?>
-                                <div style="font-size:11px;color:#f59e0b;margin-top:2px;"><?= e($adapter->setup_hint(['cms_url' => null, 'cms_api_key' => null]) ?: 'Not configured for this site.') ?></div>
-                            <?php elseif ($row && !empty($row['external_url'])): ?>
-                                <a href="<?= e($row['external_url']) ?>" target="_blank" style="font-size:11px;color:#3b82f6;text-decoration:none;"><?= e(parse_url($row['external_url'], PHP_URL_HOST) . parse_url($row['external_url'], PHP_URL_PATH)) ?> ↗</a>
-                            <?php elseif ($row && $status === 'failed' && !empty($row['error'])): ?>
-                                <div style="font-size:11px;color:#dc2626;margin-top:2px;"><?= e(mb_substr($row['error'], 0, 120)) ?></div>
-                            <?php endif; ?>
+                            <span style="font-size:10px;font-weight:600;padding:2px 8px;border-radius:10px;background:<?= $bg ?>;color:<?= $fg ?>;flex-shrink:0;"><?= $label ?></span>
                         </div>
-                        <div style="display:flex;gap:6px;align-items:center;flex-shrink:0;">
-                            <span style="font-size:10px;font-weight:600;padding:2px 8px;border-radius:10px;background:<?= $bg ?>;color:<?= $fg ?>;"><?= $label ?></span>
-                            <?php if ($configured && $post['status'] !== 'draft' && $status !== 'published'): ?>
-                                <button type="button" onclick="publishChannel(<?= $post['id'] ?>, '<?= $cid ?>', this)" style="background:transparent;border:1px solid var(--border);color:#64748b;font-size:11px;padding:3px 8px;border-radius:4px;cursor:pointer;"><?= $status === 'failed' ? 'Retry' : 'Publish' ?></button>
+
+                        <?php if ($configured): ?>
+                            <?php if ($is_cms): ?>
+                                <!-- CMS: no variant editing, just publish/schedule -->
+                                <div style="font-size:11px;color:#94a3b8;margin-bottom:6px;">CMS publishes the full post body. No variant needed.</div>
+                            <?php else: ?>
+                                <!-- Variant editor -->
+                                <div style="margin-top:6px;">
+                                    <?php if (empty($variant) && $status !== 'published'): ?>
+                                        <button type="button" onclick="channelAction(<?= $post['id'] ?>, '<?= $cid ?>', 'generate', null, this)" class="btn btn-outline btn-sm" style="font-size:11px;">✨ Generate <?= e($adapter->display_name()) ?> version</button>
+                                    <?php else: ?>
+                                        <textarea id="variant-<?= $cid ?>" rows="<?= $cid === 'twitter' ? 8 : 5 ?>" style="width:100%;border:1px solid var(--border);border-radius:4px;padding:8px;font-size:12px;font-family:inherit;line-height:1.5;" <?= $status === 'published' ? 'readonly' : '' ?>><?= e($variant) ?></textarea>
+                                        <div style="font-size:10px;color:#94a3b8;margin-top:2px;"><?= str_word_count($variant) ?> words · <?= mb_strlen($variant) ?> chars</div>
+                                    <?php endif; ?>
+                                </div>
                             <?php endif; ?>
-                        </div>
+
+                            <?php if ($status === 'failed' && !empty($row['error'])): ?>
+                                <div style="background:#fef2f2;border:1px solid #fca5a5;border-radius:4px;padding:6px 10px;margin-top:6px;font-size:11px;color:#991b1b;"><?= e(mb_substr($row['error'], 0, 200)) ?></div>
+                            <?php endif; ?>
+
+                            <!-- Action buttons -->
+                            <div style="display:flex;gap:6px;margin-top:8px;flex-wrap:wrap;">
+                                <?php if ($status === 'published'): ?>
+                                    <button type="button" onclick="if(confirm('Delete this channel record? You can re-generate it.')) channelAction(<?= $post['id'] ?>, '<?= $cid ?>', 'delete', null, this)" class="btn btn-outline btn-sm" style="font-size:11px;color:#dc2626;">Clear record</button>
+                                <?php elseif ($status === 'queued' && $row['scheduled_for']): ?>
+                                    <button type="button" onclick="channelAction(<?= $post['id'] ?>, '<?= $cid ?>', 'cancel', null, this)" class="btn btn-outline btn-sm" style="font-size:11px;">Cancel schedule</button>
+                                <?php else: ?>
+                                    <?php if (!$is_cms && !empty($variant)): ?>
+                                        <button type="button" onclick="channelAction(<?= $post['id'] ?>, '<?= $cid ?>', 'generate', null, this)" class="btn btn-outline btn-sm" style="font-size:11px;">🔄 Regenerate</button>
+                                        <button type="button" onclick="channelAction(<?= $post['id'] ?>, '<?= $cid ?>', 'save', document.getElementById('variant-<?= $cid ?>').value, this)" class="btn btn-outline btn-sm" style="font-size:11px;">💾 Save edits</button>
+                                    <?php endif; ?>
+                                    <?php if ($is_cms || !empty($variant)): ?>
+                                        <button type="button" onclick="publishChannelInline(<?= $post['id'] ?>, '<?= $cid ?>', '<?= $is_cms ? '' : 'variant-' . $cid ?>', this)" class="btn btn-accent btn-sm" style="font-size:11px;">▶ Publish now</button>
+                                        <button type="button" onclick="scheduleChannel(<?= $post['id'] ?>, '<?= $cid ?>', '<?= $is_cms ? '' : 'variant-' . $cid ?>', this)" class="btn btn-outline btn-sm" style="font-size:11px;">📅 Schedule…</button>
+                                    <?php endif; ?>
+                                <?php endif; ?>
+                            </div>
+                        <?php endif; ?>
                     </div>
                     <?php endforeach; ?>
                 </div>
@@ -361,29 +405,79 @@ if ($action === 'edit' && isset($_GET['id'])):
         }
     }
 
-    async function publishChannel(postId, channel, btn) {
-        const orig = btn.textContent;
-        btn.disabled = true;
-        btn.textContent = '…';
+    const CHANNEL_API = '<?= url('/api/channel-action.php') ?>';
+
+    // Generic dispatcher
+    async function channelAction(postId, channel, action, content, btn) {
+        const orig = btn ? btn.textContent : '';
+        if (btn) { btn.disabled = true; btn.textContent = '…'; }
         try {
-            const res = await fetch('<?= url('/api/publish-channel.php') ?>', {
+            const body = {action, post_id: postId, channel};
+            if (content !== null && content !== undefined) body.content = content;
+            const res = await fetch(CHANNEL_API, {
                 method: 'POST',
                 headers: {'Content-Type': 'application/json'},
-                body: JSON.stringify({post_id: postId, channel})
+                body: JSON.stringify(body)
             });
+            const data = await res.json();
+            if (data.success) {
+                if (action === 'save') {
+                    if (btn) { btn.textContent = '✓ Saved'; setTimeout(() => { btn.textContent = orig; btn.disabled = false; }, 1200); }
+                } else {
+                    location.reload();
+                }
+                return data;
+            }
+            alert('Failed: ' + (data.error || 'unknown'));
+            if (btn) { btn.textContent = orig; btn.disabled = false; }
+        } catch(e) {
+            alert('Error: ' + e.message);
+            if (btn) { btn.textContent = orig; btn.disabled = false; }
+        }
+    }
+
+    // Publish-now: if a variant textarea exists, save its current content first
+    async function publishChannelInline(postId, channel, variantElId, btn) {
+        if (!confirm('Publish to ' + channel + ' now?')) return;
+        if (variantElId) {
+            const ta = document.getElementById(variantElId);
+            if (ta) {
+                await channelAction(postId, channel, 'save', ta.value, null);
+            }
+        }
+        const body = {action: 'publish', post_id: postId, channel};
+        const orig = btn.textContent;
+        btn.disabled = true; btn.textContent = 'Publishing…';
+        try {
+            const res = await fetch(CHANNEL_API, {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(body)});
             const data = await res.json();
             if (data.success) {
                 location.reload();
             } else {
-                alert('Channel publish failed: ' + (data.error || 'unknown'));
-                btn.textContent = orig;
-                btn.disabled = false;
+                alert('Publish failed: ' + (data.error || 'unknown'));
+                btn.textContent = orig; btn.disabled = false;
             }
         } catch(e) {
-            alert('Error: ' + e.message);
-            btn.textContent = orig;
-            btn.disabled = false;
+            alert('Error: ' + e.message); btn.textContent = orig; btn.disabled = false;
         }
+    }
+
+    async function scheduleChannel(postId, channel, variantElId, btn) {
+        const now = new Date(); now.setMinutes(now.getMinutes() + 60);
+        const defaultDt = now.toISOString().slice(0,16).replace('T',' ');
+        const when = prompt('Schedule publish for (YYYY-MM-DD HH:MM, server time):', defaultDt);
+        if (!when) return;
+        if (variantElId) {
+            const ta = document.getElementById(variantElId);
+            if (ta) await channelAction(postId, channel, 'save', ta.value, null);
+        }
+        const res = await fetch(CHANNEL_API, {
+            method: 'POST', headers: {'Content-Type':'application/json'},
+            body: JSON.stringify({action: 'schedule', post_id: postId, channel, scheduled_for: when})
+        });
+        const data = await res.json();
+        if (data.success) location.reload();
+        else alert('Schedule failed: ' + (data.error || 'unknown'));
     }
     </script>
     <?php endif; ?>
