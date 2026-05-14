@@ -115,7 +115,7 @@ function sidebar_active(string $page, array $pages_or_query = []): string {
             display: flex;
             align-items: center;
             gap: 10px;
-            padding: 10px 20px;
+            padding: 8px 18px;
             color: rgba(255,255,255,0.75);
             text-decoration: none;
             font-size: 13px;
@@ -172,7 +172,7 @@ function sidebar_active(string $page, array $pages_or_query = []): string {
         .topbar {
             background: var(--white);
             border-bottom: 1px solid var(--border);
-            padding: 12px 24px;
+            padding: 10px 20px;
             display: flex;
             align-items: center;
             justify-content: space-between;
@@ -185,7 +185,7 @@ function sidebar_active(string $page, array $pages_or_query = []): string {
         }
 
         .content {
-            padding: 20px 24px;
+            padding: 16px 20px;
         }
 
         /* ── Cards ───────────────────────────────────── */
@@ -193,15 +193,15 @@ function sidebar_active(string $page, array $pages_or_query = []): string {
             background: var(--white);
             border: 1px solid var(--border);
             border-radius: var(--radius);
-            padding: 16px;
-            margin-bottom: 16px;
+            padding: 14px;
+            margin-bottom: 12px;
         }
 
         .card-header {
-            font-size: 14px;
+            font-size: 13px;
             font-weight: 600;
             color: var(--primary);
-            margin-bottom: 12px;
+            margin-bottom: 10px;
             padding-bottom: 8px;
             border-bottom: 1px solid var(--border);
         }

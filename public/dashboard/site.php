@@ -9,6 +9,7 @@
 require_once __DIR__ . '/../../includes/helpers.php';
 require_once __DIR__ . '/../../includes/auth.php';
 require_once __DIR__ . '/../../includes/integrations/google.php';
+require_once __DIR__ . '/../../includes/performance.php';
 
 auth_start();
 auth_require();
@@ -139,6 +140,21 @@ $has_content = array_sum($pc) > 0;
 
 $page_title = $site['name'];
 
+// ── Performance buckets for action cards ─────────────
+$buckets = ['winners' => [], 'decay' => [], 'dead_air' => []];
+try { $buckets = performance_buckets($db, $site_id); } catch (Throwable $e) {}
+
+// ── Integration status pills ─────────────────────────
+$integration_state = ['linkedin' => false, 'twitter' => false, 'reddit' => false];
+$stmt = $db->prepare("SELECT platform FROM integrations WHERE site_id = ? AND platform IN ('linkedin','twitter','reddit') AND is_active = 1");
+$stmt->execute([$site_id]);
+foreach ($stmt->fetchAll(PDO::FETCH_COLUMN) as $p) $integration_state[$p] = true;
+
+$gsc_connected_top    = !empty($gsc_integration);
+$resend_ok            = !empty(config('resend_api_key'));
+$claude_ok            = !empty(config('haiku_api_key'));
+$cse_ok               = !empty(config('google_cse_api_key'));
+
 ob_start();
 ?>
 
@@ -205,16 +221,103 @@ $sc_cls = $sc < 0 ? '' : ($sc >= 80 ? 'score-good' : ($sc >= 50 ? 'score-ok' : '
     </div>
 </div>
 
-<!-- Agent Actions -->
-<div class="card" style="margin-bottom:2px; padding:10px 14px;">
-    <div class="action-bar">
-        <a href="<?= url('/dashboard/agent-run.php?agent=scanner&site=' . $site_id) ?>" class="btn btn-primary btn-sm" style="text-decoration:none;">Scan Site</a>
-        <a href="<?= url('/dashboard/agent-run.php?agent=seo-auditor&site=' . $site_id) ?>" class="btn btn-primary btn-sm" style="text-decoration:none;">SEO Audit</a>
-        <a href="<?= url('/dashboard/agent-run.php?agent=auto-fixer&site=' . $site_id) ?>" class="btn btn-sm" style="background:#ef4444;color:#fff;text-decoration:none;">Auto-Fix Issues</a>
-        <a href="<?= url('/dashboard/agent-run.php?agent=keyword-research&site=' . $site_id) ?>" class="btn btn-primary btn-sm" style="text-decoration:none;">Find Keywords</a>
-        <a href="<?= url('/dashboard/write.php?site=' . $site_id . '&step=propose') ?>" class="btn btn-accent btn-sm" style="text-decoration:none;">Content Planner</a>
-        <a href="<?= url('/dashboard/agent-run.php?agent=news-scraper&site=' . $site_id) ?>" class="btn btn-primary btn-sm" style="text-decoration:none;">Scrape News</a>
-        <a href="<?= url('/dashboard/agent-run.php?agent=evaluator&site=' . $site_id) ?>" class="btn btn-outline btn-sm" style="text-decoration:none;">Evaluate Strategy</a>
+<!-- ── Hero metrics ───────────────────────────────────── -->
+<div style="display:grid; grid-template-columns:repeat(auto-fit, minmax(140px, 1fr)); gap:10px; margin-bottom:14px;">
+    <a href="<?= url('/dashboard/posts.php?site=' . $site_id) ?>" class="stat-card" style="text-decoration:none;color:inherit;">
+        <div class="stat-label">Published</div>
+        <div class="stat-value"><?= $pc['published'] ?? 0 ?></div>
+        <div class="stat-sub"><?= $posts_this_week ?> this week</div>
+    </a>
+    <a href="<?= url('/dashboard/performance.php?site=' . $site_id) ?>" class="stat-card" style="text-decoration:none;color:inherit;">
+        <div class="stat-label">Winners</div>
+        <div class="stat-value" style="color:var(--success);"><?= count($buckets['winners']) ?></div>
+        <div class="stat-sub"><?= count($buckets['decay']) ?> slipping</div>
+    </a>
+    <a href="<?= url('/dashboard/keywords.php?site=' . $site_id . '&view=gsc') ?>" class="stat-card" style="text-decoration:none;color:inherit;">
+        <div class="stat-label">SEO Score</div>
+        <div class="stat-value" style="color:<?= $sc >= 80 ? 'var(--success)' : ($sc >= 50 ? 'var(--warning)' : 'var(--danger)') ?>;"><?= $sc >= 0 ? $sc : '—' ?></div>
+        <div class="stat-sub"><?= $open_issues ?> open issues</div>
+    </a>
+    <a href="<?= url('/dashboard/alerts.php?site=' . $site_id) ?>" class="stat-card" style="text-decoration:none;color:inherit;">
+        <div class="stat-label">Alerts</div>
+        <div class="stat-value" style="color:<?= $unread_alerts > 0 ? '#3b82f6' : 'inherit' ?>;"><?= $unread_alerts ?></div>
+        <div class="stat-sub">unread</div>
+    </a>
+</div>
+
+<!-- ── Action cards: 3 things to do right now ────────── -->
+<div style="display:grid; grid-template-columns:repeat(auto-fit, minmax(260px, 1fr)); gap:12px; margin-bottom:14px;">
+    <!-- 1. Write a post -->
+    <div class="card" style="margin:0; border-left:3px solid var(--accent);">
+        <div style="font-weight:600; font-size:13px; color:var(--primary); margin-bottom:4px;">✍ Write a post</div>
+        <div style="font-size:11px; color:var(--text-light); margin-bottom:10px; line-height:1.5;">
+            AI proposes topics from your keywords, winning themes, and competitor gaps.
+        </div>
+        <a href="<?= url('/dashboard/write.php?site=' . $site_id . '&step=propose') ?>" class="btn btn-accent btn-sm" style="text-decoration:none;">Open Planner →</a>
+    </div>
+
+    <!-- 2. What's working -->
+    <div class="card" style="margin:0; border-left:3px solid var(--success);">
+        <div style="font-weight:600; font-size:13px; color:var(--primary); margin-bottom:4px;">🔥 What's working</div>
+        <?php if (!empty($buckets['winners'])): ?>
+            <div style="font-size:11px; color:var(--text-light); margin-bottom:8px;">Top winning posts (last 28 days):</div>
+            <?php foreach (array_slice($buckets['winners'], 0, 3) as $w): ?>
+                <div style="font-size:12px; padding:4px 0; border-bottom:1px solid #f1f5f9;">
+                    <a href="<?= url('/dashboard/performance.php?site=' . $site_id) ?>" style="color:var(--text); text-decoration:none;"><?= e(mb_strimwidth($w['title'], 0, 55, '…')) ?></a>
+                </div>
+            <?php endforeach; ?>
+            <a href="<?= url('/dashboard/performance.php?site=' . $site_id) ?>" style="font-size:11px; color:var(--accent); text-decoration:none; display:inline-block; margin-top:6px;">View all →</a>
+        <?php else: ?>
+            <div style="font-size:11px; color:var(--text-light); line-height:1.5;">
+                No winners yet. Once posts get traction in GSC, they'll appear here.
+            </div>
+        <?php endif; ?>
+    </div>
+
+    <!-- 3. Needs attention -->
+    <div class="card" style="margin:0; border-left:3px solid var(--warning);">
+        <div style="font-weight:600; font-size:13px; color:var(--primary); margin-bottom:4px;">⚠ Needs attention</div>
+        <?php
+        $attention = [];
+        if (count($buckets['decay']) > 0) $attention[] = ['label' => count($buckets['decay']) . ' post' . (count($buckets['decay']) === 1 ? '' : 's') . ' slipping', 'href' => url('/dashboard/performance.php?site=' . $site_id)];
+        if ($pending_approvals > 0)       $attention[] = ['label' => $pending_approvals . ' SEO approval' . ($pending_approvals === 1 ? '' : 's') . ' pending', 'href' => url('/dashboard/seo-approvals.php?site=' . $site_id)];
+        if ($open_gaps > 0)               $attention[] = ['label' => $open_gaps . ' content gap' . ($open_gaps === 1 ? '' : 's') . ' open', 'href' => url('/dashboard/content-gaps.php?site=' . $site_id)];
+        if ($unread_alerts > 0)           $attention[] = ['label' => $unread_alerts . ' unread alert' . ($unread_alerts === 1 ? '' : 's'), 'href' => url('/dashboard/alerts.php?site=' . $site_id)];
+        ?>
+        <?php if (!empty($attention)): ?>
+            <?php foreach ($attention as $a): ?>
+                <div style="font-size:12px; padding:4px 0; border-bottom:1px solid #f1f5f9;">
+                    <a href="<?= e($a['href']) ?>" style="color:var(--text); text-decoration:none;">→ <?= e($a['label']) ?></a>
+                </div>
+            <?php endforeach; ?>
+        <?php else: ?>
+            <div style="font-size:11px; color:var(--text-light); line-height:1.5;">
+                ✓ Nothing urgent. Keep shipping content.
+            </div>
+        <?php endif; ?>
+    </div>
+</div>
+
+<!-- ── Integration status pills ───────────────────────── -->
+<?php
+$pills = [
+    ['Claude AI',     $claude_ok,            url('/dashboard/integrations.php')],
+    ['Google Search', $cse_ok,               url('/dashboard/integrations.php')],
+    ['GSC',           $gsc_connected_top,    url('/dashboard/integrations.php')],
+    ['Resend Email',  $resend_ok,            url('/dashboard/integrations.php')],
+    ['LinkedIn',      $integration_state['linkedin'], url('/dashboard/integrations.php')],
+    ['Twitter',       $integration_state['twitter'],  url('/dashboard/integrations.php')],
+    ['Reddit',        $integration_state['reddit'],   url('/dashboard/integrations.php')],
+];
+?>
+<div class="card" style="margin-bottom:14px; padding:10px 14px;">
+    <div style="display:flex; flex-wrap:wrap; gap:6px; align-items:center;">
+        <span style="font-size:11px; color:var(--text-light); text-transform:uppercase; letter-spacing:0.5px; margin-right:4px;">Integrations:</span>
+        <?php foreach ($pills as [$label, $ok, $href]): ?>
+            <a href="<?= e($href) ?>" style="font-size:11px; padding:3px 10px; border-radius:10px; text-decoration:none; background:<?= $ok ? '#d1fae5' : '#fee2e2' ?>; color:<?= $ok ? '#065f46' : '#991b1b' ?>;">
+                <?= $ok ? '✓' : '✗' ?> <?= e($label) ?>
+            </a>
+        <?php endforeach; ?>
     </div>
 </div>
 
@@ -337,181 +440,8 @@ async function saveFocus(goToKeywords) {
 }
 </script>
 
-<!-- Google Search Console connection -->
 <?php $gsc_connected = !empty($gsc_integration); ?>
-<div class="card" style="margin-bottom:10px;border-left:4px solid <?= $gsc_connected ? '#10b981' : '#94a3b8' ?>;">
-    <div class="card-header" style="display:flex;justify-content:space-between;align-items:center;gap:10px;">
-        <div>
-            <div style="font-weight:600;font-size:14px;color:<?= $gsc_connected ? '#065f46' : '#475569' ?>;">
-                <?= $gsc_connected ? '✓ Google Search Console connected' : '📊 Connect Google Search Console for real keyword data' ?>
-            </div>
-            <div style="font-size:12px;color:#64748b;margin-top:2px;">
-                <?php if ($gsc_connected): ?>
-                    Last synced: <?= $gsc_last_sync ? format_date($gsc_last_sync) : 'never — click Sync below' ?>
-                <?php else: ?>
-                    Real impressions, clicks, position, and CTR from Google. Without this, keyword metrics are AI estimates.
-                <?php endif; ?>
-            </div>
-        </div>
-        <?php if ($gsc_connected): ?>
-            <a href="<?= url('/dashboard/search-console.php?site=' . $site_id . '&action=sync') ?>" class="btn btn-sm btn-accent" style="text-decoration:none;white-space:nowrap;">🔄 Sync from Google</a>
-        <?php else: ?>
-            <?php if (empty(config('google_client_id'))): ?>
-                <a href="<?= url('/dashboard/settings.php?tab=api') ?>" class="btn btn-sm btn-outline" style="text-decoration:none;white-space:nowrap;">Setup API Keys →</a>
-            <?php else: ?>
-                <a href="<?= e(function_exists('google_get_auth_url') ? google_get_auth_url($site_id) : url('/dashboard/search-console.php?site=' . $site_id)) ?>" class="btn btn-sm btn-accent" style="text-decoration:none;white-space:nowrap;">Connect Google →</a>
-            <?php endif; ?>
-        <?php endif; ?>
-    </div>
-</div>
 
-<!-- Distribution channels -->
-<?php
-require_once __DIR__ . '/../../includes/integrations/linkedin.php';
-require_once __DIR__ . '/../../includes/integrations/twitter.php';
-require_once __DIR__ . '/../../includes/integrations/reddit.php';
-
-$social_platforms = [
-    'linkedin' => ['LinkedIn', '#0A66C2', 'in', 'linkedin_client_id'],
-    'twitter'  => ['Twitter / X', '#000000', 'X', 'twitter_client_id'],
-    'reddit'   => ['Reddit',     '#FF4500', 'R', 'reddit_client_id'],
-];
-
-$social_state = [];
-$stmt = $db->prepare("SELECT platform, account_name, token_expires_at, updated_at FROM integrations WHERE site_id = ? AND platform IN ('linkedin','twitter','reddit') AND is_active = 1");
-$stmt->execute([$site_id]);
-foreach ($stmt->fetchAll() as $r) $social_state[$r['platform']] = $r;
-
-$has_any = !empty($social_state);
-?>
-<div class="card" style="margin-bottom:10px;border-left:4px solid <?= $has_any ? '#10b981' : '#94a3b8' ?>;">
-    <div class="card-header" style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:10px;">
-        <div>
-            <div style="font-weight:600;font-size:14px;color:<?= $has_any ? '#065f46' : '#475569' ?>;">
-                <?= $has_any ? '✓ ' . count($social_state) . ' channel(s) connected' : '📡 Connect distribution channels' ?>
-            </div>
-            <div style="font-size:12px;color:#64748b;margin-top:2px;">
-                Each connected channel can publish AI-tailored versions of your posts. Set up once per site.
-            </div>
-        </div>
-    </div>
-    <div style="padding:10px 14px;display:flex;gap:8px;flex-wrap:wrap;">
-        <?php foreach ($social_platforms as $key => [$label, $color, $icon, $config_key]):
-            $configured_globally = !empty(config($config_key));
-            $connected = isset($social_state[$key]);
-            $info = $social_state[$key] ?? null;
-        ?>
-        <div style="border:1px solid var(--border);border-radius:6px;padding:8px 12px;background:#fff;display:flex;align-items:center;gap:8px;min-width:200px;">
-            <span style="display:inline-block;width:24px;height:24px;border-radius:4px;background:<?= $color ?>;color:#fff;text-align:center;line-height:24px;font-size:12px;font-weight:700;"><?= $icon ?></span>
-            <div style="flex:1;min-width:0;">
-                <div style="font-size:12px;font-weight:600;color:var(--primary);"><?= $label ?></div>
-                <?php if ($connected): ?>
-                    <div style="font-size:11px;color:#10b981;">✓ <?= e($info['account_name'] ?: 'Connected') ?></div>
-                <?php elseif (!$configured_globally): ?>
-                    <div style="font-size:11px;color:#f59e0b;">No app keys</div>
-                <?php else: ?>
-                    <div style="font-size:11px;color:#94a3b8;">Not connected</div>
-                <?php endif; ?>
-            </div>
-            <?php if (!$configured_globally): ?>
-                <a href="<?= url('/dashboard/settings.php?tab=api') ?>" style="font-size:11px;color:var(--primary);text-decoration:none;">Setup</a>
-            <?php else: ?>
-                <?php
-                $auth_url = match($key) {
-                    'linkedin' => linkedin_get_auth_url($site_id),
-                    'twitter'  => twitter_get_auth_url($site_id),
-                    'reddit'   => reddit_get_auth_url($site_id),
-                };
-                ?>
-                <a href="<?= e($auth_url) ?>" style="font-size:11px;padding:4px 10px;background:<?= $connected ? 'transparent' : $color ?>;color:<?= $connected ? $color : '#fff' ?>;border:1px solid <?= $color ?>;border-radius:4px;text-decoration:none;white-space:nowrap;">
-                    <?= $connected ? 'Reconnect' : 'Connect' ?>
-                </a>
-            <?php endif; ?>
-        </div>
-        <?php endforeach; ?>
-    </div>
-</div>
-
-<!-- Stats -->
-<div class="stats-grid" style="margin-bottom:2px;">
-    <a href="<?= url('/dashboard/posts.php?site=' . $site_id . '&status=published') ?>" class="stat-card" style="text-decoration:none;color:inherit;">
-        <div class="stat-label">Published</div><div class="stat-value"><?= $pc['published'] ?? 0 ?></div>
-    </a>
-    <a href="<?= url('/dashboard/posts.php?site=' . $site_id . '&status=draft') ?>" class="stat-card" style="text-decoration:none;color:inherit;">
-        <div class="stat-label">Drafts</div><div class="stat-value"><?= $pc['draft'] ?? 0 ?></div>
-    </a>
-    <a href="<?= url('/dashboard/keywords.php?site=' . $site_id) ?>" class="stat-card" style="text-decoration:none;color:inherit;">
-        <div class="stat-label">Keywords</div><div class="stat-value"><?= $kw_count ?></div>
-    </a>
-    <a href="<?= url('/dashboard/competitors.php?site=' . $site_id) ?>" class="stat-card" style="text-decoration:none;color:inherit;">
-        <div class="stat-label">Competitors</div><div class="stat-value"><?= $competitors_active ?></div>
-    </a>
-    <a href="<?= url('/dashboard/content-gaps.php?site=' . $site_id) ?>" class="stat-card" style="text-decoration:none;color:inherit;">
-        <div class="stat-label">Content Gaps</div><div class="stat-value" style="color:<?= $open_gaps > 0 ? 'var(--warning)' : 'inherit' ?>;"><?= $open_gaps ?></div>
-    </a>
-    <a href="<?= url('/dashboard/alerts.php?site=' . $site_id) ?>" class="stat-card" style="text-decoration:none;color:inherit;">
-        <div class="stat-label">Alerts<?= $unread_alerts > 0 ? ' (unread)' : '' ?></div><div class="stat-value" style="color:<?= $unread_alerts > 0 ? '#3b82f6' : 'inherit' ?>;"><?= $unread_alerts ?></div>
-    </a>
-    <a href="<?= url('/dashboard/calendar.php?site=' . $site_id) ?>" class="stat-card" style="text-decoration:none;color:inherit;">
-        <div class="stat-label">📅 Calendar</div><div class="stat-value" style="font-size:18px;">View</div>
-    </a>
-    <a href="<?= url('/dashboard/seo-audit.php?site=' . $site_id) ?>" class="stat-card" style="text-decoration:none;color:inherit;">
-        <div class="stat-label">SEO Issues</div><div class="stat-value" style="color:<?= $open_issues > 0 ? 'var(--danger)' : 'var(--success)' ?>;"><?= $open_issues ?></div>
-    </a>
-    <a href="<?= url('/dashboard/posts.php?site=' . $site_id) ?>" class="stat-card" style="text-decoration:none;color:inherit;">
-        <div class="stat-label">Total Posts</div><div class="stat-value"><?= array_sum($pc) ?></div>
-    </a>
-</div>
-
-<!-- Progress Tracker -->
-<?php if (!empty($score_history)): ?>
-<div class="card" style="margin-bottom:10px;">
-    <div class="card-header flex justify-between items-center" style="padding:10px 14px;">
-        <span style="font-weight:600;font-size:13px;">Progress Tracker</span>
-        <?php if ($score_change !== null): ?>
-            <span class="text-sm">Since first audit: <span style="color:<?= $score_change >= 0 ? 'var(--success)' : 'var(--danger)' ?>;font-weight:600;"><?= $score_change >= 0 ? '+' : '' ?><?= $score_change ?> points</span></span>
-        <?php endif; ?>
-    </div>
-    <!-- SEO Score Chart -->
-    <div style="padding:0 14px 6px;">
-        <div class="text-sm text-muted mb-2" style="font-weight:600;font-size:12px;">SEO Score Over Time</div>
-        <div style="display:flex;align-items:flex-end;gap:4px;height:70px;">
-            <?php foreach ($score_history as $h):
-                $bh = max(8, ($h['score'] / 100) * 60);
-                $bc = $h['score'] >= 80 ? '#10b981' : ($h['score'] >= 50 ? '#f59e0b' : '#ef4444');
-            ?>
-            <div style="flex:1;display:flex;flex-direction:column;align-items:center;gap:2px;">
-                <span style="font-size:10px;font-weight:700;color:<?= $bc ?>;"><?= $h['score'] ?></span>
-                <div style="width:100%;max-width:45px;height:<?= $bh ?>px;background:<?= $bc ?>;border-radius:3px 3px 0 0;"></div>
-                <span style="font-size:8px;color:#94a3b8;"><?= $h['label'] ?></span>
-            </div>
-            <?php endforeach; ?>
-        </div>
-    </div>
-    <!-- Issues Progress Bar -->
-    <?php
-    $total_tracked = $issues_fixed + $open_issues;
-    $fix_pct = $total_tracked > 0 ? round(($issues_fixed / $total_tracked) * 100) : 0;
-    ?>
-    <div style="padding:6px 14px 10px;">
-        <div class="text-sm text-muted mb-2" style="font-weight:600;font-size:12px;">Issues: <?= $issues_fixed ?> fixed, <?= $open_issues ?> open</div>
-        <div style="height:8px;background:#fecaca;border-radius:4px;overflow:hidden;">
-            <div style="height:100%;width:<?= $fix_pct ?>%;background:#10b981;border-radius:4px;"></div>
-        </div>
-        <div class="flex justify-between mt-2" style="font-size:10px;color:#94a3b8;">
-            <span><?= $fix_pct ?>% resolved</span>
-            <span><?= $total_tracked ?> total tracked</span>
-        </div>
-    </div>
-    <!-- Weekly Summary -->
-    <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:6px;padding:8px 14px;border-top:1px solid var(--border);">
-        <div style="text-align:center;"><div style="font-size:18px;font-weight:700;color:var(--primary);"><?= $posts_this_week ?></div><div style="font-size:9px;color:#94a3b8;text-transform:uppercase;">Posts this week</div></div>
-        <div style="text-align:center;"><div style="font-size:18px;font-weight:700;color:var(--primary);"><?= $kw_this_week ?></div><div style="font-size:9px;color:#94a3b8;text-transform:uppercase;">New keywords</div></div>
-        <div style="text-align:center;"><div style="font-size:18px;font-weight:700;color:var(--success);"><?= $issues_fixed ?></div><div style="font-size:9px;color:#94a3b8;text-transform:uppercase;">Issues fixed</div></div>
-        <div style="text-align:center;"><div style="font-size:18px;font-weight:700;color:<?= $sc >= 50 ? 'var(--success)' : ($sc >= 0 ? 'var(--danger)' : '#94a3b8') ?>;"><?= $sc >= 0 ? $sc . '%' : '--' ?></div><div style="font-size:9px;color:#94a3b8;text-transform:uppercase;">SEO Health</div></div>
-    </div>
-</div>
-<?php endif; ?>
 
 <!-- What to do next -->
 <?php
