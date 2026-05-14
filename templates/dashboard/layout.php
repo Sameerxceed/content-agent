@@ -453,6 +453,9 @@ function sidebar_active(string $page, array $pages_or_query = []): string {
             <a href="<?= url('/dashboard/ai-presence.php?site=' . $ctx_site_id) ?>" class="<?= sidebar_active('', ['ai-presence', 'ai-visibility', 'brand-mentions']) ?>">
                 <span class="nav-icon">&#128172;</span> AI Presence
             </a>
+            <a href="<?= url('/dashboard/aeo.php?site=' . $ctx_site_id) ?>" class="<?= sidebar_active('aeo') ?>">
+                <span class="nav-icon">&#128301;</span> AEO Tracker
+            </a>
             <a href="<?= url('/dashboard/alerts.php?site=' . $ctx_site_id) ?>" class="<?= sidebar_active('alerts') ?>" style="display:flex;justify-content:space-between;align-items:center;">
                 <span><span class="nav-icon">&#128276;</span> Alerts</span>
                 <?php if ($ctx_alerts_unread > 0): ?>

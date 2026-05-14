@@ -14,6 +14,7 @@ function setup_wizards_all(): array
         'linkedin_app.php' => 'LinkedInAppWizard',
         'twitter_app.php'  => 'TwitterAppWizard',
         'gsc_app.php'      => 'GscAppWizard',
+        'perplexity.php'   => 'PerplexityWizard',
     ];
     foreach ($files as $file => $class) {
         require_once __DIR__ . '/' . $file;
