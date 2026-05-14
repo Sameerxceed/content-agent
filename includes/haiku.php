@@ -93,7 +93,11 @@ function haiku_write_blog(string $topic, string $brand_tone, array $keywords = [
     $topics = json_decode($site['topics'] ?? '[]', true) ?: [];
     $niche = !empty($topics) ? implode(', ', array_slice($topics, 0, 3)) : 'our industry';
     $business_desc = trim($site['business_description'] ?? '');
+    $persona       = trim($site['persona'] ?? '');
+    $usp           = trim($site['usp'] ?? '');
     $business_line = $business_desc ? "WHAT WE ACTUALLY DO (from owner): {$business_desc}\n\n" : '';
+    if ($persona) $business_line .= "OUR IDEAL READER: {$persona}\n\n";
+    if ($usp)     $business_line .= "WHAT MAKES US DIFFERENT (use this naturally, never as a sales pitch): {$usp}\n\n";
 
     // SERP brief — model the post on what's actually ranking
     $serp_lines = '';

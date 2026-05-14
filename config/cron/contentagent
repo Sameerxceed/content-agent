@@ -1,0 +1,25 @@
+# ContentAgent scheduled jobs
+# Install: cp config/cron/contentagent /etc/cron.d/contentagent && chmod 644 /etc/cron.d/contentagent
+# (no newline at end of file — required by cron)
+SHELL=/bin/bash
+PATH=/usr/local/sbin:/usr/local/bin:/sbin:/bin:/usr/sbin:/usr/bin
+
+# Times below are in UTC. India is UTC+5:30.
+# Schedule chosen to run things before the user's morning (around 9-10 AM IST).
+
+# === DAILY (UTC 03:30 = IST 09:00) ===
+30 3 * * * www-data /usr/bin/php8.3 /opt/contentagent/agent/cron-runner.php brand-monitor              >> /var/log/contentagent/cron.log 2>&1
+45 3 * * * www-data /usr/bin/php8.3 /opt/contentagent/agent/cron-runner.php competitor-pages-check    >> /var/log/contentagent/cron.log 2>&1
+0  4 * * * www-data /usr/bin/php8.3 /opt/contentagent/agent/cron-runner.php news-scrape               >> /var/log/contentagent/cron.log 2>&1
+
+# === WEEKLY (Mondays IST = Sundays UTC late) ===
+# Sunday 22:00 UTC = Monday 03:30 IST → GSC sync (still respect GSC 2-day data delay)
+0  22 * * 0 www-data /usr/bin/php8.3 /opt/contentagent/agent/cron-runner.php gsc-sync                 >> /var/log/contentagent/cron.log 2>&1
+30 22 * * 0 www-data /usr/bin/php8.3 /opt/contentagent/agent/cron-runner.php competitor-redetect      >> /var/log/contentagent/cron.log 2>&1
+0  23 * * 0 www-data /usr/bin/php8.3 /opt/contentagent/agent/cron-runner.php ai-visibility            >> /var/log/contentagent/cron.log 2>&1
+# Monday 02:30 UTC = 08:00 IST → digest after the watchers have run
+30 2 * * 1  www-data /usr/bin/php8.3 /opt/contentagent/agent/cron-runner.php weekly-digest            >> /var/log/contentagent/cron.log 2>&1
+
+# === MONTHLY (1st of month IST = 30th/31st UTC late) ===
+# 1st 00:30 UTC = 06:00 IST
+30 0 1 * *  www-data /usr/bin/php8.3 /opt/contentagent/agent/cron-runner.php gap-analysis             >> /var/log/contentagent/cron.log 2>&1

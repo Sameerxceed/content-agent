@@ -33,6 +33,8 @@ if (!$site) { http_response_code(404); echo json_encode(['error' => 'Site not fo
 
 if ($action === 'save') {
     $desc = trim($input['business_description'] ?? '');
+    $persona = trim($input['persona'] ?? '');
+    $usp = trim($input['usp'] ?? '');
     $topics = $input['topics'] ?? [];
     if (!is_array($topics)) $topics = [];
     $topics = array_values(array_filter(array_map('trim', $topics)));
@@ -43,8 +45,8 @@ if ($action === 'save') {
     }
 
     $confirmed = !empty($topics) ? 1 : 0;
-    $stmt = $db->prepare('UPDATE sites SET business_description = ?, topics = ?, topics_confirmed = ? WHERE id = ?');
-    $stmt->execute([$desc ?: null, json_encode($topics), $confirmed, $site_id]);
+    $stmt = $db->prepare('UPDATE sites SET business_description = ?, persona = ?, usp = ?, topics = ?, topics_confirmed = ? WHERE id = ?');
+    $stmt->execute([$desc ?: null, $persona ?: null, $usp ?: null, json_encode($topics), $confirmed, $site_id]);
 
     $db->prepare('INSERT INTO agent_log (site_id, action, details, status) VALUES (?, ?, ?, ?)')->execute([
         $site_id, 'business_focus_saved', json_encode(['topics' => $topics, 'description_chars' => mb_strlen($desc), 'by_user' => $user_id]), 'success',

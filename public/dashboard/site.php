@@ -83,6 +83,14 @@ try {
     $open_gaps = (int)$stmt->fetchColumn();
 } catch (PDOException $e) {}
 
+// Unread alerts
+$unread_alerts = 0;
+try {
+    $stmt = $db->prepare("SELECT COUNT(*) FROM alerts WHERE site_id = ? AND read_at IS NULL");
+    $stmt->execute([$site_id]);
+    $unread_alerts = (int)$stmt->fetchColumn();
+} catch (PDOException $e) {}
+
 // Fixed issues
 $stmt = $db->prepare('SELECT COUNT(*) FROM page_seo WHERE site_id = ?');
 $stmt->execute([$site_id]);
@@ -252,6 +260,16 @@ $has_description = !empty($site['business_description']);
             <div style="font-size:11px;color:#94a3b8;margin-top:4px;">3-6 short phrases work best (2-3 words each).</div>
         </div>
 
+        <div class="form-group" style="margin-bottom:10px;">
+            <label style="font-size:12px;font-weight:600;">Who is your ideal customer? <span style="color:#94a3b8;font-weight:400;">(optional, sharpens AI tone &amp; messaging)</span></label>
+            <textarea id="bf-persona" class="form-control" rows="2" placeholder="e.g. UK-based marketing managers at 50-200 person SaaS companies who own SEO and content" style="font-size:13px;"><?= e($site['persona'] ?? '') ?></textarea>
+        </div>
+
+        <div class="form-group" style="margin-bottom:10px;">
+            <label style="font-size:12px;font-weight:600;">What makes you different from competitors? <span style="color:#94a3b8;font-weight:400;">(your USP)</span></label>
+            <textarea id="bf-usp" class="form-control" rows="2" placeholder="e.g. Only platform that integrates GSC with AI-driven content briefs out of the box" style="font-size:13px;"><?= e($site['usp'] ?? '') ?></textarea>
+        </div>
+
         <div style="display:flex;gap:8px;flex-wrap:wrap;">
             <button type="button" onclick="saveFocus(false)" class="btn btn-outline" style="padding:8px 18px;">Save & Stay</button>
             <button type="button" onclick="saveFocus(true)" class="btn btn-accent" style="padding:8px 18px;">Save & Find Keywords →</button>
@@ -289,6 +307,8 @@ async function suggestTopics() {
 
 async function saveFocus(goToKeywords) {
     const description = document.getElementById('bf-description').value.trim();
+    const persona = document.getElementById('bf-persona').value.trim();
+    const usp = document.getElementById('bf-usp').value.trim();
     const topicsRaw = document.getElementById('bf-topics').value.trim();
     const topics = topicsRaw.split(',').map(s => s.trim()).filter(Boolean);
     if (!topics.length) {
@@ -298,7 +318,7 @@ async function saveFocus(goToKeywords) {
     try {
         const res = await fetch('<?= url('/api/business-focus.php') ?>', {
             method:'POST', headers:{'Content-Type':'application/json'},
-            body: JSON.stringify({action:'save', site_id: <?= $site_id ?>, business_description: description, topics})
+            body: JSON.stringify({action:'save', site_id: <?= $site_id ?>, business_description: description, topics, persona, usp})
         });
         const data = await res.json();
         if (data.success) {
@@ -361,6 +381,9 @@ async function saveFocus(goToKeywords) {
     </a>
     <a href="<?= url('/dashboard/content-gaps.php?site=' . $site_id) ?>" class="stat-card" style="text-decoration:none;color:inherit;">
         <div class="stat-label">Content Gaps</div><div class="stat-value" style="color:<?= $open_gaps > 0 ? 'var(--warning)' : 'inherit' ?>;"><?= $open_gaps ?></div>
+    </a>
+    <a href="<?= url('/dashboard/alerts.php?site=' . $site_id) ?>" class="stat-card" style="text-decoration:none;color:inherit;">
+        <div class="stat-label">Alerts<?= $unread_alerts > 0 ? ' (unread)' : '' ?></div><div class="stat-value" style="color:<?= $unread_alerts > 0 ? '#3b82f6' : 'inherit' ?>;"><?= $unread_alerts ?></div>
     </a>
     <a href="<?= url('/dashboard/seo-audit.php?site=' . $site_id) ?>" class="stat-card" style="text-decoration:none;color:inherit;">
         <div class="stat-label">SEO Issues</div><div class="stat-value" style="color:<?= $open_issues > 0 ? 'var(--danger)' : 'var(--success)' ?>;"><?= $open_issues ?></div>
