@@ -65,8 +65,12 @@ function cron_get_sites(PDO $db, ?int $site_id_filter): array
 }
 
 $job = $argv[1] ?? '';
-$opts = getopt('', ['site:']);
-$site_id_filter = isset($opts['site']) ? (int)$opts['site'] : null;
+
+// Parse --site=N from anywhere in argv (PHP's getopt stops at first positional arg)
+$site_id_filter = null;
+foreach (array_slice($argv, 1) as $a) {
+    if (preg_match('/^--site=(\d+)$/', $a, $m)) { $site_id_filter = (int)$m[1]; break; }
+}
 
 $valid_jobs = [
     'gsc-sync', 'competitor-redetect', 'competitor-pages-check', 'brand-monitor',
