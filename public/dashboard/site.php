@@ -365,6 +365,73 @@ async function saveFocus(goToKeywords) {
     </div>
 </div>
 
+<!-- Distribution channels -->
+<?php
+require_once __DIR__ . '/../../includes/integrations/linkedin.php';
+require_once __DIR__ . '/../../includes/integrations/twitter.php';
+require_once __DIR__ . '/../../includes/integrations/reddit.php';
+
+$social_platforms = [
+    'linkedin' => ['LinkedIn', '#0A66C2', 'in', 'linkedin_client_id'],
+    'twitter'  => ['Twitter / X', '#000000', 'X', 'twitter_client_id'],
+    'reddit'   => ['Reddit',     '#FF4500', 'R', 'reddit_client_id'],
+];
+
+$social_state = [];
+$stmt = $db->prepare("SELECT platform, account_name, token_expires_at, updated_at FROM integrations WHERE site_id = ? AND platform IN ('linkedin','twitter','reddit') AND is_active = 1");
+$stmt->execute([$site_id]);
+foreach ($stmt->fetchAll() as $r) $social_state[$r['platform']] = $r;
+
+$has_any = !empty($social_state);
+?>
+<div class="card" style="margin-bottom:10px;border-left:4px solid <?= $has_any ? '#10b981' : '#94a3b8' ?>;">
+    <div class="card-header" style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:10px;">
+        <div>
+            <div style="font-weight:600;font-size:14px;color:<?= $has_any ? '#065f46' : '#475569' ?>;">
+                <?= $has_any ? '✓ ' . count($social_state) . ' channel(s) connected' : '📡 Connect distribution channels' ?>
+            </div>
+            <div style="font-size:12px;color:#64748b;margin-top:2px;">
+                Each connected channel can publish AI-tailored versions of your posts. Set up once per site.
+            </div>
+        </div>
+    </div>
+    <div style="padding:10px 14px;display:flex;gap:8px;flex-wrap:wrap;">
+        <?php foreach ($social_platforms as $key => [$label, $color, $icon, $config_key]):
+            $configured_globally = !empty(config($config_key));
+            $connected = isset($social_state[$key]);
+            $info = $social_state[$key] ?? null;
+        ?>
+        <div style="border:1px solid var(--border);border-radius:6px;padding:8px 12px;background:#fff;display:flex;align-items:center;gap:8px;min-width:200px;">
+            <span style="display:inline-block;width:24px;height:24px;border-radius:4px;background:<?= $color ?>;color:#fff;text-align:center;line-height:24px;font-size:12px;font-weight:700;"><?= $icon ?></span>
+            <div style="flex:1;min-width:0;">
+                <div style="font-size:12px;font-weight:600;color:var(--primary);"><?= $label ?></div>
+                <?php if ($connected): ?>
+                    <div style="font-size:11px;color:#10b981;">✓ <?= e($info['account_name'] ?: 'Connected') ?></div>
+                <?php elseif (!$configured_globally): ?>
+                    <div style="font-size:11px;color:#f59e0b;">No app keys</div>
+                <?php else: ?>
+                    <div style="font-size:11px;color:#94a3b8;">Not connected</div>
+                <?php endif; ?>
+            </div>
+            <?php if (!$configured_globally): ?>
+                <a href="<?= url('/dashboard/settings.php?tab=api') ?>" style="font-size:11px;color:var(--primary);text-decoration:none;">Setup</a>
+            <?php else: ?>
+                <?php
+                $auth_url = match($key) {
+                    'linkedin' => linkedin_get_auth_url($site_id),
+                    'twitter'  => twitter_get_auth_url($site_id),
+                    'reddit'   => reddit_get_auth_url($site_id),
+                };
+                ?>
+                <a href="<?= e($auth_url) ?>" style="font-size:11px;padding:4px 10px;background:<?= $connected ? 'transparent' : $color ?>;color:<?= $connected ? $color : '#fff' ?>;border:1px solid <?= $color ?>;border-radius:4px;text-decoration:none;white-space:nowrap;">
+                    <?= $connected ? 'Reconnect' : 'Connect' ?>
+                </a>
+            <?php endif; ?>
+        </div>
+        <?php endforeach; ?>
+    </div>
+</div>
+
 <!-- Stats -->
 <div class="stats-grid" style="margin-bottom:2px;">
     <a href="<?= url('/dashboard/posts.php?site=' . $site_id . '&status=published') ?>" class="stat-card" style="text-decoration:none;color:inherit;">
@@ -384,6 +451,9 @@ async function saveFocus(goToKeywords) {
     </a>
     <a href="<?= url('/dashboard/alerts.php?site=' . $site_id) ?>" class="stat-card" style="text-decoration:none;color:inherit;">
         <div class="stat-label">Alerts<?= $unread_alerts > 0 ? ' (unread)' : '' ?></div><div class="stat-value" style="color:<?= $unread_alerts > 0 ? '#3b82f6' : 'inherit' ?>;"><?= $unread_alerts ?></div>
+    </a>
+    <a href="<?= url('/dashboard/calendar.php?site=' . $site_id) ?>" class="stat-card" style="text-decoration:none;color:inherit;">
+        <div class="stat-label">📅 Calendar</div><div class="stat-value" style="font-size:18px;">View</div>
     </a>
     <a href="<?= url('/dashboard/seo-audit.php?site=' . $site_id) ?>" class="stat-card" style="text-decoration:none;color:inherit;">
         <div class="stat-label">SEO Issues</div><div class="stat-value" style="color:<?= $open_issues > 0 ? 'var(--danger)' : 'var(--success)' ?>;"><?= $open_issues ?></div>

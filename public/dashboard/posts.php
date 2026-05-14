@@ -148,8 +148,15 @@ if ($action === 'edit' && isset($_GET['id'])):
                         <textarea id="excerpt" name="excerpt" class="form-control" rows="2"><?= e($post['excerpt'] ?? '') ?></textarea>
                     </div>
                     <div class="form-group">
-                        <label for="body">Body (HTML)</label>
+                        <label for="body" style="display:flex;justify-content:space-between;align-items:center;">
+                            <span>Body (HTML)</span>
+                            <button type="button" onclick="suggestInternalLinks(<?= $post['id'] ?>, this)" class="btn btn-outline btn-sm" style="font-size:11px;padding:3px 8px;">🔗 Suggest internal links</button>
+                        </label>
                         <textarea id="body" name="body" class="form-control" rows="16" style="font-family: monospace; font-size: 12px;"><?= e($post['body']) ?></textarea>
+                        <div id="internal-links-box" style="display:none;margin-top:8px;padding:10px 12px;background:#f0fdf4;border:1px solid #86efac;border-radius:6px;">
+                            <div style="font-size:12px;font-weight:600;color:#065f46;margin-bottom:6px;">Suggested internal links</div>
+                            <div id="internal-links-list" style="font-size:12px;"></div>
+                        </div>
                     </div>
                 </div>
             </div>
@@ -461,6 +468,58 @@ if ($action === 'edit' && isset($_GET['id'])):
             alert('Error: ' + e.message); btn.textContent = orig; btn.disabled = false;
         }
     }
+
+    async function suggestInternalLinks(postId, btn) {
+        const orig = btn.textContent;
+        btn.disabled = true; btn.textContent = '⏳ Thinking...';
+        try {
+            const res = await fetch('<?= url('/api/internal-links.php') ?>', {
+                method: 'POST', headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({post_id: postId})
+            });
+            const data = await res.json();
+            const box = document.getElementById('internal-links-box');
+            const list = document.getElementById('internal-links-list');
+            box.style.display = 'block';
+            if (!data.success) {
+                list.innerHTML = '<div style="color:#dc2626;">' + (data.error || 'Failed') + '</div>';
+            } else if (!data.suggestions || data.suggestions.length === 0) {
+                list.innerHTML = '<div style="color:#64748b;">No good matches found. ' + (data.note || 'Try adding more published posts first.') + '</div>';
+            } else {
+                list.innerHTML = data.suggestions.map(s => {
+                    const safeAnchor = (s.anchor || '').replace(/"/g, '&quot;');
+                    return '<div style="padding:6px 0;border-bottom:1px solid #d1fae5;">' +
+                        '<div style="font-weight:600;color:#065f46;">→ ' + escapeHtml(s.title) + '</div>' +
+                        '<div style="color:#64748b;font-size:11px;margin:2px 0;">Anchor: <strong>"' + escapeHtml(s.anchor) + '"</strong></div>' +
+                        '<div style="color:#94a3b8;font-size:11px;">' + escapeHtml(s.reason) + '</div>' +
+                        '<div style="margin-top:4px;">' +
+                            '<button type="button" onclick="insertLink(\'' + s.url + '\', \'' + safeAnchor + '\')" class="btn btn-outline btn-sm" style="font-size:11px;padding:3px 8px;">Insert into body</button>' +
+                        '</div>' +
+                    '</div>';
+                }).join('');
+            }
+        } catch(e) {
+            alert('Error: ' + e.message);
+        }
+        btn.disabled = false; btn.textContent = orig;
+    }
+
+    function insertLink(url, anchor) {
+        const ta = document.getElementById('body');
+        const current = ta.value;
+        // If anchor already exists in body, wrap the first instance in <a>
+        if (anchor && current.includes(anchor)) {
+            const replacement = '<a href="' + url + '">' + anchor + '</a>';
+            ta.value = current.replace(anchor, replacement);
+        } else {
+            // Append a sentence at the end before the last </p> if any
+            const linkSentence = '\n<p>Related: <a href="' + url + '">' + (anchor || 'Read more') + '</a></p>';
+            ta.value = current + linkSentence;
+        }
+        ta.scrollTop = ta.scrollHeight;
+    }
+
+    function escapeHtml(s) { const d = document.createElement('div'); d.textContent = s == null ? '' : s; return d.innerHTML; }
 
     async function scheduleChannel(postId, channel, variantElId, btn) {
         const now = new Date(); now.setMinutes(now.getMinutes() + 60);
