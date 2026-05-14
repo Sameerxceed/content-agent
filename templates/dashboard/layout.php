@@ -435,8 +435,11 @@ function sidebar_active(string $page, array $pages_or_query = []): string {
             <a href="<?= url('/dashboard/posts.php?site=' . $ctx_site_id) ?>" class="<?= sidebar_active('', ['posts', 'write']) ?>">
                 <span class="nav-icon">&#9998;</span> Content
             </a>
-            <a href="<?= url('/dashboard/keywords.php?site=' . $ctx_site_id) ?>" class="<?= sidebar_active('', ['keywords', 'seo-audit', 'report', 'search-console']) ?>">
-                <span class="nav-icon">&#128269;</span> SEO
+            <a href="<?= url('/dashboard/keywords.php?site=' . $ctx_site_id) ?>" class="<?= sidebar_active('', ['keywords', 'search-console']) ?>">
+                <span class="nav-icon">&#128269;</span> Keywords
+            </a>
+            <a href="<?= url('/dashboard/seo-audit.php?site=' . $ctx_site_id) ?>" class="<?= sidebar_active('', ['seo-audit', 'report', 'ai-seo', 'seo-approvals']) ?>">
+                <span class="nav-icon">&#9874;</span> SEO Health
             </a>
             <a href="<?= url('/dashboard/competitors.php?site=' . $ctx_site_id) ?>" class="<?= sidebar_active('', ['competitors', 'content-gaps']) ?>">
                 <span class="nav-icon">&#127919;</span> Competitors
@@ -450,10 +453,10 @@ function sidebar_active(string $page, array $pages_or_query = []): string {
             <a href="<?= url('/dashboard/subscribers.php?site=' . $ctx_site_id) ?>" class="<?= sidebar_active('subscribers') ?>">
                 <span class="nav-icon">&#9993;</span> Subscribers
             </a>
-            <a href="<?= url('/dashboard/ai-presence.php?site=' . $ctx_site_id) ?>" class="<?= sidebar_active('', ['ai-presence', 'ai-visibility', 'brand-mentions']) ?>">
-                <span class="nav-icon">&#128172;</span> AI Presence
+            <a href="<?= url('/dashboard/mentions.php?site=' . $ctx_site_id) ?>" class="<?= sidebar_active('', ['mentions', 'ai-presence', 'brand-mentions']) ?>">
+                <span class="nav-icon">&#128172;</span> Mentions
             </a>
-            <a href="<?= url('/dashboard/aeo.php?site=' . $ctx_site_id) ?>" class="<?= sidebar_active('aeo') ?>">
+            <a href="<?= url('/dashboard/aeo.php?site=' . $ctx_site_id) ?>" class="<?= sidebar_active('', ['aeo', 'ai-visibility']) ?>">
                 <span class="nav-icon">&#128301;</span> AEO Tracker
             </a>
             <a href="<?= url('/dashboard/alerts.php?site=' . $ctx_site_id) ?>" class="<?= sidebar_active('alerts') ?>" style="display:flex;justify-content:space-between;align-items:center;">

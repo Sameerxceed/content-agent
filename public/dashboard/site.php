@@ -949,7 +949,7 @@ async function toggleSnippetMode(siteId, newMode) {
                 <div class="section-subtitle">Connect & auto-post to LinkedIn, Twitter, Instagram</div>
             </div>
         </div>
-        <a href="<?= url('/dashboard/social.php?site=' . $site_id) ?>" class="edit-link" onclick="event.stopPropagation()">Connect →</a>
+        <a href="<?= url('/dashboard/integrations.php') ?>" class="edit-link" onclick="event.stopPropagation()">Connect →</a>
     </div>
 </div>
 

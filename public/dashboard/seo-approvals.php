@@ -34,8 +34,12 @@ $pending = array_filter($all, fn($p) => $p['status'] === 'pending');
 $approved = array_filter($all, fn($p) => $p['status'] === 'approved');
 $rejected = array_filter($all, fn($p) => $p['status'] === 'rejected');
 
-$page_title = 'SEO Approvals — ' . $site['name'];
+$page_title = 'SEO Health — Approvals';
 ob_start();
+
+$active = 'approvals';
+$filter_site = $site_id;
+include __DIR__ . '/_health_tabs.php';
 ?>
 
 <div style="margin-bottom:10px;">

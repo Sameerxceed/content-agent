@@ -5,6 +5,7 @@
  */
 require_once __DIR__ . '/../../includes/helpers.php';
 require_once __DIR__ . '/../../includes/auth.php';
+require_once __DIR__ . '/../../includes/integrations/google.php';
 
 auth_start();
 auth_require();
@@ -15,6 +16,7 @@ $user_id = auth_user_id();
 $filter_site = $_GET['site'] ?? '';
 $filter_cluster = $_GET['cluster'] ?? '';
 $filter_status = $_GET['status'] ?? 'active'; // active | ignored | quick_wins | all
+$top_view = $_GET['view'] ?? 'keywords';    // keywords | gsc
 
 $page_title = 'Keywords';
 
@@ -110,6 +112,100 @@ $current_filters = ['site' => $filter_site, 'cluster' => $filter_cluster];
 </div>
 <?php endif; ?>
 
+<?php if ($filter_site): ?>
+<!-- Top-level view tabs: Keywords vs GSC Data -->
+<div style="display:flex;gap:2px;border-bottom:1px solid var(--border);margin-bottom:14px;">
+    <a href="<?= url('/dashboard/keywords.php?site=' . (int)$filter_site . '&view=keywords') ?>" style="text-decoration:none;padding:10px 16px;font-size:13px;border-bottom:2px solid <?= $top_view === 'keywords' ? 'var(--accent)' : 'transparent' ?>;color:<?= $top_view === 'keywords' ? 'var(--accent)' : '#64748b' ?>;font-weight:<?= $top_view === 'keywords' ? '600' : '500' ?>;">Keywords</a>
+    <a href="<?= url('/dashboard/keywords.php?site=' . (int)$filter_site . '&view=gsc') ?>" style="text-decoration:none;padding:10px 16px;font-size:13px;border-bottom:2px solid <?= $top_view === 'gsc' ? 'var(--accent)' : 'transparent' ?>;color:<?= $top_view === 'gsc' ? 'var(--accent)' : '#64748b' ?>;font-weight:<?= $top_view === 'gsc' ? '600' : '500' ?>;">📈 GSC Data</a>
+</div>
+<?php endif; ?>
+
+<?php if ($top_view === 'gsc' && $filter_site):
+    // ── GSC Data view (was search-console.php) ──────────────
+    $stmt = $db->prepare('SELECT * FROM integrations WHERE site_id = ? AND platform = "google_search_console" AND is_active = 1');
+    $stmt->execute([(int)$filter_site]);
+    $integration = $stmt->fetch();
+
+    $gsc_site = null;
+    $stmt = $db->prepare('SELECT * FROM sites WHERE id = ? AND user_id = ?');
+    $stmt->execute([(int)$filter_site, $user_id]);
+    $gsc_site = $stmt->fetch();
+
+    if (!$integration): ?>
+        <div class="card" style="text-align:center;padding:40px;">
+            <div style="font-size:48px;margin-bottom:10px;">📊</div>
+            <h3 style="margin-bottom:4px;">Connect Google Search Console</h3>
+            <p class="text-muted text-sm" style="max-width:500px;margin:0 auto 16px;">See real keyword rankings, clicks, impressions, and CTR from Google.</p>
+            <?php if (empty(config('google_client_id'))): ?>
+                <div class="alert alert-warning" style="max-width:500px;margin:0 auto;">
+                    Google OAuth credentials not configured. <a href="<?= url('/dashboard/integrations.php') ?>">Set up in Integrations Hub</a>.
+                </div>
+            <?php else: ?>
+                <a href="<?= e(google_get_auth_url((int)$filter_site)) ?>" class="btn btn-primary" style="padding:10px 24px;">Connect Google Search Console →</a>
+            <?php endif; ?>
+        </div>
+    <?php else:
+        $access_token = google_get_token($db, (int)$filter_site);
+        if (($_GET['action'] ?? '') === 'sync' && $access_token) {
+            $sync_result = google_update_rankings($db, (int)$filter_site);
+            if ($sync_result['success']) {
+                $total = ($sync_result['updated'] ?? 0) + ($sync_result['inserted'] ?? 0);
+                echo '<div class="alert alert-success">Synced ' . $total . ' keywords (matched property: <code>' . e($sync_result['matched_url'] ?? '') . '</code>)</div>';
+            } else {
+                echo '<div class="alert alert-error">Sync failed: ' . e($sync_result['error'] ?? 'Unknown') . '</div>';
+            }
+        }
+        $summary = $access_token ? google_performance_summary($db, (int)$filter_site, 30) : null;
+        $page_data = $access_token ? google_page_performance($db, (int)$filter_site, 30) : null;
+    ?>
+        <div class="flex justify-between items-center mb-4">
+            <div class="text-sm text-muted">
+                Connected as: <strong><?= e($integration['account_name'] ?? 'Google Account') ?></strong>
+                · Last synced: <?= $integration['updated_at'] ? format_date($integration['updated_at']) : 'Never' ?>
+            </div>
+            <a href="<?= url('/dashboard/keywords.php?site=' . (int)$filter_site . '&view=gsc&action=sync') ?>" class="btn btn-primary btn-sm">🔄 Sync Rankings</a>
+        </div>
+
+        <?php if ($summary): ?>
+        <div class="stats-grid" style="margin-bottom:14px;">
+            <div class="stat-card"><div class="stat-label">Clicks (30 days)</div><div class="stat-value"><?= number_format($summary['clicks']) ?></div></div>
+            <div class="stat-card"><div class="stat-label">Impressions</div><div class="stat-value"><?= number_format($summary['impressions']) ?></div></div>
+            <div class="stat-card"><div class="stat-label">Avg CTR</div><div class="stat-value"><?= $summary['ctr'] ?>%</div></div>
+            <div class="stat-card"><div class="stat-label">Avg Position</div><div class="stat-value"><?= $summary['position'] ?></div></div>
+        </div>
+        <?php endif; ?>
+
+        <?php if ($page_data && !empty($page_data['rows'])): ?>
+        <div class="card">
+            <div class="card-header">Top Pages (last 30 days)</div>
+            <table>
+                <thead><tr><th>Page</th><th>Clicks</th><th>Impressions</th><th>CTR</th><th>Avg Position</th></tr></thead>
+                <tbody>
+                    <?php foreach (array_slice($page_data['rows'], 0, 20) as $row): ?>
+                    <tr>
+                        <td class="text-sm" style="max-width:300px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">
+                            <a href="<?= e($row['keys'][0]) ?>" target="_blank" style="color:var(--primary);text-decoration:none;"><?= e(str_replace('https://www.' . $gsc_site['domain'], '', $row['keys'][0])) ?></a>
+                        </td>
+                        <td><?= $row['clicks'] ?></td>
+                        <td><?= number_format($row['impressions']) ?></td>
+                        <td><?= round($row['ctr'] * 100, 1) ?>%</td>
+                        <td><?= round($row['position'], 1) ?></td>
+                    </tr>
+                    <?php endforeach; ?>
+                </tbody>
+            </table>
+        </div>
+        <?php else: ?>
+        <div class="card" style="padding:30px;text-align:center;color:#94a3b8;">No page data yet. Click Sync to pull from Google.</div>
+        <?php endif; ?>
+
+    <?php endif;
+    // Skip the rest of the page (keywords list)
+    $page_content = ob_get_clean();
+    require __DIR__ . '/../../templates/dashboard/layout.php';
+    return;
+endif; ?>
+
 <!-- GSC banner -->
 <?php if ($filter_site): ?>
 <div style="margin-bottom:10px;padding:10px 14px;background:<?= $gsc_connected ? '#f0fdf4' : '#fef3c7' ?>;border:1px solid <?= $gsc_connected ? '#86efac' : '#fcd34d' ?>;border-radius:6px;display:flex;justify-content:space-between;align-items:center;gap:10px;">
@@ -120,7 +216,7 @@ $current_filters = ['site' => $filter_site, 'cluster' => $filter_cluster];
             <strong>⚠ Showing AI estimates only.</strong> Connect Google Search Console for real impressions, clicks, position, and CTR.
         <?php endif; ?>
     </div>
-    <a href="<?= url('/dashboard/search-console.php?site=' . (int)$filter_site . ($gsc_connected ? '&action=sync' : '')) ?>" class="btn btn-sm btn-accent" style="text-decoration:none;white-space:nowrap;">
+    <a href="<?= url('/dashboard/keywords.php?site=' . (int)$filter_site . '&view=gsc' . ($gsc_connected ? '&action=sync' : '')) ?>" class="btn btn-sm btn-accent" style="text-decoration:none;white-space:nowrap;">
         <?= $gsc_connected ? '🔄 Sync Now' : 'Connect Google →' ?>
     </a>
 </div>

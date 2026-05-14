@@ -17,9 +17,14 @@ $user_id = auth_user_id();
 $filter_site = $_GET['site'] ?? '';
 $action = $_GET['action'] ?? '';
 
-$page_title = 'AI SEO & Discoverability';
+$page_title = 'SEO Health — AI Readiness';
 
 ob_start();
+
+if ($filter_site) {
+    $active = 'ai';
+    include __DIR__ . '/_health_tabs.php';
+}
 
 // Get sites
 $stmt = $db->prepare('SELECT id, name, domain FROM sites WHERE user_id = ? ORDER BY name');

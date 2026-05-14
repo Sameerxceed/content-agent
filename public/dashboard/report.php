@@ -96,8 +96,12 @@ if ($homepage['status'] === 200) {
 
 $seo_score = $audit ? $audit['score'] : null;
 
-$page_title = 'Health Report — ' . $site['name'];
+$page_title = 'SEO Health — Full Report';
 ob_start();
+
+$active = 'report';
+$filter_site = $site_id;
+include __DIR__ . '/_health_tabs.php';
 ?>
 
 <style>

@@ -14,9 +14,14 @@ $user_id = auth_user_id();
 $filter_site = $_GET['site'] ?? '';
 $audit_id = $_GET['audit'] ?? '';
 
-$page_title = 'SEO Audit';
+$page_title = 'SEO Health — Issues';
 
 ob_start();
+
+if ($filter_site && !$audit_id) {
+    $active = 'audit';
+    include __DIR__ . '/_health_tabs.php';
+}
 
 if ($audit_id):
     // Show single audit detail
