@@ -6,6 +6,44 @@
 
 $user = auth_user();
 $current_page = basename($_SERVER['PHP_SELF'], '.php');
+
+// Detect "in-site" mode: a site_id is in the URL (?site=X or ?id=X on site.php)
+$ctx_site_id = 0;
+if (!empty($_GET['site']) && is_numeric($_GET['site'])) {
+    $ctx_site_id = (int)$_GET['site'];
+} elseif ($current_page === 'site' && !empty($_GET['id']) && is_numeric($_GET['id'])) {
+    $ctx_site_id = (int)$_GET['id'];
+}
+
+// If we have a site context, fetch the site name for the sidebar header
+$ctx_site = null;
+if ($ctx_site_id) {
+    $ctx_db = require __DIR__ . '/../../includes/db.php';
+    $_ctx_stmt = $ctx_db->prepare('SELECT id, name, domain FROM sites WHERE id = ? AND user_id = ?');
+    $_ctx_stmt->execute([$ctx_site_id, $user['id'] ?? 0]);
+    $ctx_site = $_ctx_stmt->fetch();
+    if (!$ctx_site) { $ctx_site_id = 0; }
+}
+
+// Page-level alerts count for the "Alerts" link badge
+$ctx_alerts_unread = 0;
+if ($ctx_site_id) {
+    try {
+        $_a = $ctx_db->prepare('SELECT COUNT(*) FROM alerts WHERE site_id = ? AND read_at IS NULL');
+        $_a->execute([$ctx_site_id]);
+        $ctx_alerts_unread = (int)$_a->fetchColumn();
+    } catch (PDOException $e) {}
+}
+
+// Helper to mark sidebar items active. Match by current_page + optional query check.
+function sidebar_active(string $page, array $pages_or_query = []): string {
+    global $current_page;
+    if (empty($pages_or_query)) {
+        return $current_page === $page ? 'active' : '';
+    }
+    if (in_array($current_page, $pages_or_query, true)) return 'active';
+    return '';
+}
 ?>
 <!DOCTYPE html>
 <html lang="en">
@@ -383,19 +421,55 @@ $current_page = basename($_SERVER['PHP_SELF'], '.php');
     </div>
 
     <div class="sidebar-nav">
-        <div class="nav-section">Main</div>
-        <a href="<?= url('/dashboard/index.php') ?>" class="<?= $current_page === 'index' ? 'active' : '' ?>">
-            <span class="nav-icon">&#9632;</span> Dashboard
-        </a>
-        <!-- Sites tab removed — Dashboard shows all sites -->
-        <!-- Posts & AI Writer removed — accessed from site detail page -->
+        <?php if ($ctx_site): ?>
+            <!-- ── In-site sidebar ─────────────────────────────────── -->
+            <a href="<?= url('/dashboard/index.php') ?>" style="font-size:11px;color:#94a3b8;text-decoration:none;padding:6px 16px;display:block;letter-spacing:0.3px;">&larr; All sites</a>
+            <div style="padding:4px 16px 10px;border-bottom:1px solid rgba(255,255,255,0.08);margin-bottom:6px;">
+                <div style="font-size:13px;font-weight:600;color:#fff;line-height:1.3;"><?= e($ctx_site['name']) ?></div>
+                <div style="font-size:11px;color:#cbd5e1;"><?= e($ctx_site['domain']) ?></div>
+            </div>
 
-        <!-- Tools removed from sidebar — accessed from within site detail page -->
+            <a href="<?= url('/dashboard/site.php?id=' . $ctx_site_id) ?>" class="<?= sidebar_active('site') ?>">
+                <span class="nav-icon">&#8962;</span> Overview
+            </a>
+            <a href="<?= url('/dashboard/posts.php?site=' . $ctx_site_id) ?>" class="<?= sidebar_active('', ['posts', 'write']) ?>">
+                <span class="nav-icon">&#9998;</span> Content
+            </a>
+            <a href="<?= url('/dashboard/keywords.php?site=' . $ctx_site_id) ?>" class="<?= sidebar_active('', ['keywords', 'seo-audit', 'report', 'search-console']) ?>">
+                <span class="nav-icon">&#128269;</span> SEO
+            </a>
+            <a href="<?= url('/dashboard/competitors.php?site=' . $ctx_site_id) ?>" class="<?= sidebar_active('', ['competitors', 'content-gaps']) ?>">
+                <span class="nav-icon">&#127919;</span> Competitors
+            </a>
+            <a href="<?= url('/dashboard/calendar.php?site=' . $ctx_site_id) ?>" class="<?= sidebar_active('calendar') ?>">
+                <span class="nav-icon">&#128197;</span> Calendar
+            </a>
+            <a href="<?= url('/dashboard/ai-presence.php?site=' . $ctx_site_id) ?>" class="<?= sidebar_active('', ['ai-presence', 'ai-visibility', 'brand-mentions']) ?>">
+                <span class="nav-icon">&#128172;</span> AI Presence
+            </a>
+            <a href="<?= url('/dashboard/alerts.php?site=' . $ctx_site_id) ?>" class="<?= sidebar_active('alerts') ?>" style="display:flex;justify-content:space-between;align-items:center;">
+                <span><span class="nav-icon">&#128276;</span> Alerts</span>
+                <?php if ($ctx_alerts_unread > 0): ?>
+                    <span style="background:#ef4444;color:#fff;font-size:10px;padding:1px 6px;border-radius:10px;font-weight:600;"><?= $ctx_alerts_unread ?></span>
+                <?php endif; ?>
+            </a>
 
-        <div class="nav-section">Settings</div>
-        <a href="<?= url('/dashboard/settings.php') ?>" class="<?= $current_page === 'settings' ? 'active' : '' ?>">
-            <span class="nav-icon">&#9881;</span> Settings
-        </a>
+            <div class="nav-section" style="margin-top:14px;">Global</div>
+            <a href="<?= url('/dashboard/settings.php') ?>" class="<?= sidebar_active('settings') ?>">
+                <span class="nav-icon">&#9881;</span> Settings
+            </a>
+        <?php else: ?>
+            <!-- ── Global sidebar ──────────────────────────────────── -->
+            <div class="nav-section">Main</div>
+            <a href="<?= url('/dashboard/index.php') ?>" class="<?= sidebar_active('index') ?>">
+                <span class="nav-icon">&#9632;</span> Dashboard
+            </a>
+
+            <div class="nav-section">Settings</div>
+            <a href="<?= url('/dashboard/settings.php') ?>" class="<?= sidebar_active('settings') ?>">
+                <span class="nav-icon">&#9881;</span> Settings
+            </a>
+        <?php endif; ?>
     </div>
 
     <?php if (($user['id'] ?? 0) == 1): ?>
