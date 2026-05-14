@@ -174,5 +174,8 @@ function channels_registry(): ChannelRegistry
     require_once __DIR__ . '/reddit.php';
     $registry->register(new RedditChannel());
 
+    require_once __DIR__ . '/newsletter.php';
+    $registry->register(new NewsletterChannel());
+
     return $registry;
 }
