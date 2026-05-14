@@ -186,6 +186,59 @@ if ($action === 'edit' && isset($_GET['id'])):
                     </table>
                 </div>
 
+                <!-- Publishing Channels -->
+                <?php
+                require_once __DIR__ . '/../../includes/channels/registry.php';
+                $registry = channels_registry();
+                $stmt = $db->prepare('SELECT * FROM post_channels WHERE post_id = ? ORDER BY channel');
+                $stmt->execute([$post['id']]);
+                $channel_rows = $stmt->fetchAll(PDO::FETCH_ASSOC);
+                $by_channel = [];
+                foreach ($channel_rows as $r) $by_channel[$r['channel']] = $r;
+                ?>
+                <div class="card">
+                    <div class="card-header">📡 Publishing Channels</div>
+                    <div style="padding:4px 0;font-size:12px;color:#64748b;">
+                        Status across each destination. Click a channel to publish/retry it.
+                    </div>
+                    <?php foreach ($registry->all() as $adapter):
+                        $cid = $adapter->id();
+                        $row = $by_channel[$cid] ?? null;
+                        $configured = $adapter->is_configured(['cms_url' => $post['cms_url'] ?? null, 'cms_api_key' => $post['cms_api_key'] ?? null] + (array)$post);
+                        $status = $row['status'] ?? null;
+                        $status_colors = [
+                            'published'  => ['#d1fae5','#065f46','✓ Published'],
+                            'queued'     => ['#dbeafe','#1e40af','⏳ Queued'],
+                            'publishing' => ['#fef3c7','#92400e','… Publishing'],
+                            'failed'     => ['#fecaca','#991b1b','✗ Failed'],
+                            'draft'      => ['#f1f5f9','#64748b','Draft'],
+                        ];
+                        [$bg, $fg, $label] = $status_colors[$status] ?? ['#f8fafc','#94a3b8','Not yet'];
+                    ?>
+                    <div style="display:flex;justify-content:space-between;align-items:center;padding:8px 0;border-bottom:1px solid #f1f5f9;">
+                        <div style="flex:1;min-width:0;">
+                            <div style="font-size:13px;font-weight:600;color:var(--primary);">
+                                <span style="display:inline-block;width:22px;height:22px;border-radius:4px;background:<?= $adapter->color() ?>;color:#fff;text-align:center;line-height:22px;font-size:13px;margin-right:4px;"><?= $adapter->icon() ?></span>
+                                <?= e($adapter->display_name()) ?>
+                            </div>
+                            <?php if (!$configured): ?>
+                                <div style="font-size:11px;color:#f59e0b;margin-top:2px;"><?= e($adapter->setup_hint(['cms_url' => null, 'cms_api_key' => null]) ?: 'Not configured for this site.') ?></div>
+                            <?php elseif ($row && !empty($row['external_url'])): ?>
+                                <a href="<?= e($row['external_url']) ?>" target="_blank" style="font-size:11px;color:#3b82f6;text-decoration:none;"><?= e(parse_url($row['external_url'], PHP_URL_HOST) . parse_url($row['external_url'], PHP_URL_PATH)) ?> ↗</a>
+                            <?php elseif ($row && $status === 'failed' && !empty($row['error'])): ?>
+                                <div style="font-size:11px;color:#dc2626;margin-top:2px;"><?= e(mb_substr($row['error'], 0, 120)) ?></div>
+                            <?php endif; ?>
+                        </div>
+                        <div style="display:flex;gap:6px;align-items:center;flex-shrink:0;">
+                            <span style="font-size:10px;font-weight:600;padding:2px 8px;border-radius:10px;background:<?= $bg ?>;color:<?= $fg ?>;"><?= $label ?></span>
+                            <?php if ($configured && $post['status'] !== 'draft' && $status !== 'published'): ?>
+                                <button type="button" onclick="publishChannel(<?= $post['id'] ?>, '<?= $cid ?>', this)" style="background:transparent;border:1px solid var(--border);color:#64748b;font-size:11px;padding:3px 8px;border-radius:4px;cursor:pointer;"><?= $status === 'failed' ? 'Retry' : 'Publish' ?></button>
+                            <?php endif; ?>
+                        </div>
+                    </div>
+                    <?php endforeach; ?>
+                </div>
+
                 <div class="flex gap-2">
                     <button type="submit" class="btn btn-primary">Save Changes</button>
                     <a href="<?= url('/dashboard/posts.php') ?>" class="btn btn-outline">Back</a>
@@ -303,6 +356,31 @@ if ($action === 'edit' && isset($_GET['id'])):
             }
         } catch(e) {
             alert('Request failed');
+            btn.textContent = orig;
+            btn.disabled = false;
+        }
+    }
+
+    async function publishChannel(postId, channel, btn) {
+        const orig = btn.textContent;
+        btn.disabled = true;
+        btn.textContent = '…';
+        try {
+            const res = await fetch('<?= url('/api/publish-channel.php') ?>', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({post_id: postId, channel})
+            });
+            const data = await res.json();
+            if (data.success) {
+                location.reload();
+            } else {
+                alert('Channel publish failed: ' + (data.error || 'unknown'));
+                btn.textContent = orig;
+                btn.disabled = false;
+            }
+        } catch(e) {
+            alert('Error: ' + e.message);
             btn.textContent = orig;
             btn.disabled = false;
         }

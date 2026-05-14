@@ -23,3 +23,6 @@ PATH=/usr/local/sbin:/usr/local/bin:/sbin:/bin:/usr/sbin:/usr/bin
 # === MONTHLY (1st of month IST = 30th/31st UTC late) ===
 # 1st 00:30 UTC = 06:00 IST
 30 0 1 * *  www-data /usr/bin/php8.3 /opt/contentagent/agent/cron-runner.php gap-analysis             >> /var/log/contentagent/cron.log 2>&1
+
+# === FREQUENT — publish retrier every 15 min ===
+*/15 * * * * www-data /usr/bin/php8.3 /opt/contentagent/agent/cron-runner.php publish                 >> /var/log/contentagent/cron.log 2>&1

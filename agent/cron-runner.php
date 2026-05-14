@@ -75,6 +75,7 @@ foreach (array_slice($argv, 1) as $a) {
 $valid_jobs = [
     'gsc-sync', 'competitor-redetect', 'competitor-pages-check', 'brand-monitor',
     'ai-visibility', 'gap-analysis', 'weekly-digest', 'news-scrape',
+    'publish',
 ];
 
 if (!in_array($job, $valid_jobs, true)) {

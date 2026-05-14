@@ -420,31 +420,42 @@ Output ONLY valid JSON array:
 
         $post_id = $db->lastInsertId();
 
-        // Push to CMS if requested
-        $cms_result = null;
-        if ($action === 'publish_cms' && !empty($site['cms_url']) && !empty($site['cms_api_key'])) {
-            require_once __DIR__ . '/../../includes/cms-connector.php';
-            $stmt = $db->prepare('SELECT * FROM posts WHERE id = ?');
-            $stmt->execute([$post_id]);
-            $post_data = $stmt->fetch();
-            $cms_result = cms_push_post($post_data, $site['cms_url'], $site['cms_api_key']);
+        // Publish via the new channels pipeline.
+        // For now, "publish_cms" queues + immediately runs the cms channel.
+        // Future: collect a multi-select of channels from the form.
+        $publish_results = [];
+        if ($action === 'publish_cms') {
+            require_once __DIR__ . '/../../includes/channels/registry.php';
+            $registry = channels_registry();
+            $created = $registry->queue_publish($db, (int)$post_id, ['cms']);
 
+            foreach ($created as $cid => $row_id) {
+                $publish_results[$cid] = $registry->publish_row($db, $row_id);
+            }
+
+            $cms_ok = !empty($publish_results['cms']['success']);
             $db->prepare('INSERT INTO agent_log (site_id, action, details, status) VALUES (?, ?, ?, ?)')->execute([
-                $site_id, 'publish_to_cms',
-                json_encode(['post_id' => $post_id, 'slug' => $slug, 'result' => $cms_result['success']]),
-                $cms_result['success'] ? 'success' : 'fail',
+                $site_id, 'publish_via_channels',
+                json_encode(['post_id' => $post_id, 'slug' => $slug, 'channels' => array_keys($publish_results), 'cms_ok' => $cms_ok]),
+                $cms_ok ? 'success' : 'fail',
             ]);
         }
     ?>
 
-    <?php if ($action === 'publish_cms' && $cms_result && $cms_result['success']): ?>
+    <?php if ($action === 'publish_cms' && !empty($publish_results['cms']['success'])): ?>
         <div class="alert alert-success">
             Published to <strong><?= e($site['domain']) ?></strong>!
-            <a href="https://<?= e($site['domain']) ?>/blog/<?= e($cms_result['slug'] ?? $slug) ?>" target="_blank" style="color:#065f46;font-weight:600;">View on site →</a>
+            <?php if (!empty($publish_results['cms']['external_url'])): ?>
+                <a href="<?= e($publish_results['cms']['external_url']) ?>" target="_blank" style="color:#065f46;font-weight:600;">View on site →</a>
+            <?php endif; ?>
         </div>
-    <?php elseif ($action === 'publish_cms' && $cms_result): ?>
+    <?php elseif ($action === 'publish_cms' && !empty($publish_results['cms'])): ?>
         <div class="alert alert-error">
-            Saved locally but CMS push failed: <?= e($cms_result['error'] ?? 'Unknown error') ?>
+            Saved locally but CMS push failed: <?= e($publish_results['cms']['error'] ?? 'Unknown error') ?>
+        </div>
+    <?php elseif ($action === 'publish_cms'): ?>
+        <div class="alert alert-warning">
+            Saved locally. CMS is not configured for this site — set <strong>cms_url</strong> + <strong>cms_api_key</strong> on the site to enable live publishing.
         </div>
     <?php elseif ($action === 'draft'): ?>
         <div class="alert alert-info">Saved as draft. Go to Posts to review and publish later.</div>
