@@ -21,6 +21,176 @@ ob_start();
 if ($filter_site && !$audit_id) {
     $active = 'audit';
     include __DIR__ . '/_health_tabs.php';
+
+    // Show pasted/external issues at the top of the Issues tab
+    $ext_stmt = $db->prepare('SELECT * FROM seo_issues WHERE site_id = ? AND source = "pasted_alert" AND status = "open" ORDER BY created_at DESC LIMIT 50');
+    try {
+        $ext_stmt->execute([(int)$filter_site]);
+        $external_issues = $ext_stmt->fetchAll();
+    } catch (PDOException $e) {
+        $external_issues = []; // migration 023 not applied yet
+    }
+?>
+<style>
+.alert-paste-card { background:#fff; border:1px solid var(--border); border-left:3px solid #3b82f6; border-radius:6px; padding:12px 14px; margin-bottom:14px; }
+.alert-paste-card .title { font-weight:600; font-size:13px; color:var(--primary); margin-bottom:4px; }
+.alert-paste-card .desc  { font-size:11px; color:var(--text-light); margin-bottom:8px; line-height:1.5; }
+.alert-paste-card textarea { width:100%; min-height:80px; padding:8px 10px; border:1px solid var(--border); border-radius:5px; font-size:12px; font-family:inherit; resize:vertical; }
+.alert-preview { margin-top:10px; padding-top:10px; border-top:1px solid #f1f5f9; }
+.alert-issue-row { display:flex; gap:8px; align-items:flex-start; padding:8px 0; border-bottom:1px solid #f1f5f9; font-size:12px; }
+.alert-issue-row input[type=checkbox] { margin-top:3px; }
+.alert-issue-row .url { color:var(--primary); word-break:break-all; }
+.alert-issue-row .code { font-size:10px; padding:1px 6px; border-radius:8px; background:#e2e8f0; color:#475569; text-transform:uppercase; letter-spacing:0.3px; }
+.alert-issue-row .code.critical { background:#fecaca; color:#991b1b; }
+.alert-issue-row .code.warning  { background:#fef3c7; color:#92400e; }
+.alert-issue-row .fix { color:var(--text-light); margin-top:2px; }
+.ext-issue { background:#fff; border:1px solid var(--border); border-left:3px solid #3b82f6; border-radius:6px; padding:10px 14px; margin-bottom:6px; }
+.ext-issue .url { font-weight:600; font-size:12px; color:var(--primary); word-break:break-all; }
+.ext-issue .meta { font-size:11px; color:var(--text-light); margin-top:2px; }
+</style>
+
+<div class="alert-paste-card">
+    <div class="title">📥 Paste a Search Console alert or email</div>
+    <div class="desc">Drop in the raw text of any GSC email (e.g. "Not found (404)", "Excluded by 'noindex' tag", "Duplicate without canonical"). Claude will extract the affected URLs and the fix for each.</div>
+    <textarea id="paste-alert-text" placeholder="Paste the email body here, including the URL list..."></textarea>
+    <div style="display:flex; gap:8px; align-items:center; margin-top:8px;">
+        <button class="btn btn-primary btn-sm" onclick="parseAlert(this)">Parse with AI</button>
+        <span id="parse-status" style="font-size:11px; color:var(--text-light);"></span>
+    </div>
+    <div id="parse-preview" class="alert-preview" style="display:none;">
+        <div style="font-size:12px; font-weight:600; margin-bottom:6px;">Parsed issues — tick the ones to save:</div>
+        <div id="parsed-list"></div>
+        <div style="margin-top:10px; display:flex; gap:8px;">
+            <button class="btn btn-accent btn-sm" onclick="saveAlert(this)">Save selected to Issues</button>
+            <button class="btn btn-outline btn-sm" onclick="document.getElementById('parse-preview').style.display='none'">Cancel</button>
+        </div>
+    </div>
+</div>
+
+<?php if (!empty($external_issues)): ?>
+<div class="card">
+    <div class="card-header" style="display:flex; justify-content:space-between; align-items:center;">
+        <span>External alerts (from pasted emails) — <?= count($external_issues) ?> open</span>
+        <span style="font-size:11px; color:var(--text-light); font-weight:normal;">Source: Search Console / email</span>
+    </div>
+    <?php foreach ($external_issues as $ei):
+        $sev_color = $ei['severity'] === 'critical' ? '#991b1b' : ($ei['severity'] === 'warning' ? '#92400e' : '#475569');
+        $sev_bg    = $ei['severity'] === 'critical' ? '#fecaca' : ($ei['severity'] === 'warning' ? '#fef3c7' : '#e2e8f0');
+    ?>
+    <div class="ext-issue" data-id="<?= (int)$ei['id'] ?>">
+        <div style="display:flex; justify-content:space-between; gap:10px; align-items:flex-start;">
+            <div style="flex:1; min-width:0;">
+                <div class="url"><?= e($ei['url']) ?></div>
+                <div class="meta">
+                    <span style="background:<?= $sev_bg ?>; color:<?= $sev_color ?>; padding:1px 6px; border-radius:8px; font-weight:600; font-size:10px; text-transform:uppercase;"><?= e($ei['type']) ?></span>
+                    · added <?= e(date('d M H:i', strtotime($ei['created_at']))) ?>
+                </div>
+                <?php if (!empty($ei['suggested_fix'])): ?>
+                    <div style="font-size:12px; color:var(--text); margin-top:6px; line-height:1.5;"><?= e($ei['suggested_fix']) ?></div>
+                <?php endif; ?>
+            </div>
+            <div style="display:flex; gap:4px; flex-shrink:0;">
+                <a href="<?= e($ei['url']) ?>" target="_blank" class="btn btn-outline btn-sm" style="font-size:11px; padding:3px 8px; text-decoration:none;">Open ↗</a>
+                <button class="btn btn-outline btn-sm" style="font-size:11px; padding:3px 8px;" onclick="markExtResolved(<?= (int)$ei['id'] ?>, this)">Resolved</button>
+                <button class="btn btn-outline btn-sm" style="font-size:11px; padding:3px 8px; color:var(--text-light);" onclick="markExtIgnored(<?= (int)$ei['id'] ?>, this)">Ignore</button>
+            </div>
+        </div>
+    </div>
+    <?php endforeach; ?>
+</div>
+<?php endif; ?>
+
+<script>
+const PARSE_API = '<?= url('/api/seo-issue-parse.php') ?>';
+const PARSE_SITE = <?= (int)$filter_site ?>;
+let _parsedIssues = [];
+
+async function parseAlert(btn) {
+    const text = document.getElementById('paste-alert-text').value.trim();
+    if (!text) { alert('Paste some text first.'); return; }
+    btn.disabled = true; btn.textContent = 'Parsing…';
+    document.getElementById('parse-status').textContent = 'Asking Claude to extract issues…';
+    try {
+        const res = await fetch(PARSE_API, {
+            method:'POST', headers:{'Content-Type':'application/json'},
+            body: JSON.stringify({action:'parse', site_id: PARSE_SITE, text})
+        });
+        const data = await res.json();
+        if (!data.success) {
+            document.getElementById('parse-status').innerHTML = '<span style="color:#dc2626;">' + (data.error || 'Failed') + '</span>';
+            btn.disabled = false; btn.textContent = 'Parse with AI';
+            return;
+        }
+        _parsedIssues = data.issues || [];
+        if (_parsedIssues.length === 0) {
+            document.getElementById('parse-status').innerHTML = '<span style="color:#dc2626;">No issues extracted. Try pasting more context.</span>';
+            btn.disabled = false; btn.textContent = 'Parse with AI';
+            return;
+        }
+        renderParsed();
+        document.getElementById('parse-status').textContent = `Found ${_parsedIssues.length} issue(s)`;
+        document.getElementById('parse-preview').style.display = 'block';
+        btn.disabled = false; btn.textContent = 'Re-parse';
+    } catch(e) {
+        document.getElementById('parse-status').innerHTML = '<span style="color:#dc2626;">' + e.message + '</span>';
+        btn.disabled = false; btn.textContent = 'Parse with AI';
+    }
+}
+
+function renderParsed() {
+    const html = _parsedIssues.map((i, idx) => `
+        <div class="alert-issue-row">
+            <input type="checkbox" data-i="${idx}" checked>
+            <div style="flex:1; min-width:0;">
+                <div><span class="code ${escAttr(i.severity)}">${escHtml(i.issue_label)}</span> <span class="url">${escHtml(i.url)}</span></div>
+                <div class="fix">${escHtml(i.recommended_fix)}</div>
+            </div>
+        </div>
+    `).join('');
+    document.getElementById('parsed-list').innerHTML = html;
+}
+
+async function saveAlert(btn) {
+    const checks = document.querySelectorAll('#parsed-list input[type=checkbox]:checked');
+    if (checks.length === 0) { alert('Select at least one issue.'); return; }
+    const selected = Array.from(checks).map(c => _parsedIssues[parseInt(c.dataset.i, 10)]);
+    btn.disabled = true; btn.textContent = 'Saving…';
+    try {
+        const res = await fetch(PARSE_API, {
+            method:'POST', headers:{'Content-Type':'application/json'},
+            body: JSON.stringify({action:'save', site_id: PARSE_SITE, issues: selected})
+        });
+        const data = await res.json();
+        if (data.success) {
+            alert(`Saved ${data.saved} issue(s). ${data.skipped > 0 ? data.skipped + ' already on the open list.' : ''}`);
+            window.location.reload();
+        } else {
+            alert(data.error || 'Failed'); btn.disabled = false; btn.textContent = 'Save selected to Issues';
+        }
+    } catch(e) { alert(e.message); btn.disabled = false; btn.textContent = 'Save selected to Issues'; }
+}
+
+async function markExtResolved(id, btn) { await _extUpdate(id, 'resolved', btn); }
+async function markExtIgnored(id, btn)  { await _extUpdate(id, 'ignored',  btn); }
+async function _extUpdate(id, status, btn) {
+    btn.disabled = true; btn.textContent = '…';
+    try {
+        const res = await fetch('<?= url('/api/seo-issue-status.php') ?>', {
+            method:'POST', headers:{'Content-Type':'application/json'},
+            body: JSON.stringify({issue_id: id, status})
+        });
+        const data = await res.json();
+        if (data.success) {
+            const row = btn.closest('.ext-issue'); if (row) row.remove();
+        } else { alert(data.error || 'Failed'); btn.disabled = false; }
+    } catch(e) { alert(e.message); btn.disabled = false; }
+}
+
+function escHtml(s) { return String(s||'').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'})[c]); }
+function escAttr(s) { return escHtml(s); }
+</script>
+
+<?php
 }
 
 if ($audit_id):
