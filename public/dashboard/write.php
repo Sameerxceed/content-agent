@@ -9,6 +9,7 @@
 require_once __DIR__ . '/../../includes/helpers.php';
 require_once __DIR__ . '/../../includes/auth.php';
 require_once __DIR__ . '/../../includes/haiku.php';
+require_once __DIR__ . '/../../includes/performance.php';
 
 auth_start();
 auth_require();
@@ -79,16 +80,41 @@ ob_start();
     $topics = json_decode($site['topics'] ?? '[]', true) ?: [];
     $current_year = date('Y');
 
+    // Performance Loop signals — what's already working, what's slipping
+    $perf_buckets = ['winners' => [], 'decay' => [], 'dead_air' => [], 'all' => []];
+    try { $perf_buckets = performance_buckets($db, $site_id); } catch (PDOException $e) {}
+
+    // Hide posts the user has already dismissed or queued for refresh from the planner
+    $hidden_post_ids = [];
+    try {
+        $h = $db->prepare("SELECT DISTINCT post_id FROM performance_actions WHERE action IN ('dismiss','refresh_queued','refresh_done') AND created_at > DATE_SUB(NOW(), INTERVAL 30 DAY)");
+        $h->execute();
+        $hidden_post_ids = array_flip($h->fetchAll(PDO::FETCH_COLUMN));
+    } catch (PDOException $e) {}
+    $winners_filtered = array_values(array_filter($perf_buckets['winners'], fn($p) => !isset($hidden_post_ids[$p['post_id']])));
+    $decay_filtered   = array_values(array_filter($perf_buckets['decay'],   fn($p) => !isset($hidden_post_ids[$p['post_id']])));
+
+    // Compact strings for the AI prompt
+    $winner_titles = array_map(fn($p) => $p['title'], array_slice($winners_filtered, 0, 5));
+    $decay_titles  = array_map(fn($p) => $p['title'], array_slice($decay_filtered,   0, 5));
+    $dead_titles   = array_map(fn($p) => $p['title'], array_slice($perf_buckets['dead_air'], 0, 5));
+
+    $perf_block = '';
+    if ($winner_titles) $perf_block .= "\n\nWINNING posts (extend these topics): " . implode(' | ', $winner_titles);
+    if ($dead_titles)   $perf_block .= "\n\nDEAD topics (avoid these — no traction): " . implode(' | ', $dead_titles);
+
     // Ask AI for topic proposals
     $result = haiku_chat(
         "You are a content strategist for {$site['name']} ({$site['domain']}). Year: {$current_year}.
 Propose 4 blog post topics. Each must be relevant to the business and target SEO keywords.
+Lean toward topic clusters that are already working organically — go deeper on winning themes rather than scattering.
+Avoid topics similar to ones with no traction.
 
 Output ONLY valid JSON array:
 [
   {\"title\": \"Proposed title\", \"description\": \"1 sentence about what to cover\", \"keywords\": [\"kw1\", \"kw2\"], \"type\": \"evergreen|trend|how-to|opinion\"}
 ]",
-        "Business: {$site['name']}\nTopics: " . implode(', ', $topics) . "\nKeywords: " . implode(', ', array_slice($keywords, 0, 10)) . "\nAlready written: " . implode(', ', array_slice($existing, 0, 5)) . "\nAvoid duplicates.",
+        "Business: {$site['name']}\nTopics: " . implode(', ', $topics) . "\nKeywords: " . implode(', ', array_slice($keywords, 0, 10)) . "\nAlready written: " . implode(', ', array_slice($existing, 0, 5)) . $perf_block . "\nAvoid duplicates.",
         1024
     );
 
@@ -106,6 +132,72 @@ Output ONLY valid JSON array:
     <div class="mb-4">
         <span class="text-muted">Writing for:</span> <strong><?= e($site['name']) ?></strong> (<?= e($site['domain']) ?>)
     </div>
+
+    <?php if (!empty($winners_filtered)): ?>
+    <div class="card mb-4" style="border-left:3px solid #10b981;">
+        <div class="card-header" style="display:flex;justify-content:space-between;align-items:center;">
+            <span>🔥 What's working — write more like these (<?= count($winners_filtered) ?>)</span>
+            <a href="<?= url('/dashboard/performance.php?site=' . $site_id) ?>" style="font-size:12px;color:var(--primary);text-decoration:none;">Performance →</a>
+        </div>
+        <?php foreach (array_slice($winners_filtered, 0, 5) as $w): $cms = $w['channels']['cms'] ?? []; ?>
+        <div style="padding:10px 0;border-bottom:1px solid #f1f5f9;display:flex;justify-content:space-between;align-items:center;gap:10px;">
+            <div style="flex:1;min-width:0;">
+                <div style="font-weight:600;font-size:13px;color:var(--primary);">"<?= e($w['title']) ?>"</div>
+                <div style="font-size:11px;color:#64748b;margin-top:2px;">
+                    <?= number_format($cms['clicks'] ?? 0) ?> clicks · <?= number_format($cms['impressions'] ?? 0) ?> impressions · <?= e($w['reason'] ?? '') ?>
+                </div>
+            </div>
+            <form method="POST" style="margin:0;">
+                <input type="hidden" name="step" value="write">
+                <input type="hidden" name="site_id" value="<?= $site_id ?>">
+                <input type="hidden" name="topic" value="More on: <?= e($w['title']) ?>">
+                <input type="hidden" name="description" value="Build on the success of '<?= e($w['title']) ?>' — go one level deeper, cover an adjacent angle, or address the follow-up questions a reader would naturally have.">
+                <button type="submit" class="btn btn-success btn-sm" style="font-size:11px;padding:4px 12px;">Extend →</button>
+            </form>
+        </div>
+        <?php endforeach; ?>
+    </div>
+    <?php endif; ?>
+
+    <?php if (!empty($decay_filtered)): ?>
+    <div class="card mb-4" style="border-left:3px solid #f59e0b;">
+        <div class="card-header" style="display:flex;justify-content:space-between;align-items:center;">
+            <span>📉 Refresh queue — slipping posts (<?= count($decay_filtered) ?>)</span>
+            <a href="<?= url('/dashboard/performance.php?site=' . $site_id) ?>" style="font-size:12px;color:var(--primary);text-decoration:none;">View all →</a>
+        </div>
+        <?php foreach (array_slice($decay_filtered, 0, 4) as $d): $cms = $d['channels']['cms'] ?? []; ?>
+        <div style="padding:10px 0;border-bottom:1px solid #f1f5f9;display:flex;justify-content:space-between;align-items:center;gap:10px;">
+            <div style="flex:1;min-width:0;">
+                <div style="font-weight:600;font-size:13px;color:var(--text);">"<?= e($d['title']) ?>"</div>
+                <div style="font-size:11px;color:#64748b;margin-top:2px;">
+                    <?= number_format($cms['impressions'] ?? 0) ?> impr · CTR <?= isset($cms['ctr']) ? $cms['ctr'] . '%' : '—' ?> · <?= e($d['reason'] ?? '') ?>
+                </div>
+            </div>
+            <button class="btn btn-accent btn-sm" style="font-size:11px;padding:4px 12px;" onclick="refreshPost(<?= (int)$d['post_id'] ?>, this)">AI Refresh</button>
+        </div>
+        <?php endforeach; ?>
+    </div>
+    <script>
+    async function refreshPost(postId, btn) {
+        btn.disabled = true; btn.textContent = 'Refreshing…';
+        try {
+            const res = await fetch('<?= url('/api/performance-action.php') ?>', {
+                method:'POST', headers:{'Content-Type':'application/json'},
+                body: JSON.stringify({ action:'refresh', post_id: postId })
+            });
+            const data = await res.json();
+            if (data.success && data.new_post_id) {
+                btn.textContent = '✓ Draft created';
+                btn.style.background = 'var(--success)';
+                setTimeout(() => { window.location.href = '<?= url('/dashboard/posts.php?site=' . $site_id) ?>'; }, 600);
+            } else {
+                btn.disabled = false; btn.textContent = 'AI Refresh';
+                alert(data.error || 'Failed');
+            }
+        } catch (e) { btn.disabled = false; btn.textContent = 'AI Refresh'; alert(e.message); }
+    }
+    </script>
+    <?php endif; ?>
 
     <?php
     // Top open content gaps (from competitor analysis)
@@ -179,7 +271,14 @@ Output ONLY valid JSON array:
 
     <?php if (!empty($proposals)): ?>
     <div class="card">
-        <div class="card-header">🧠 AI Proposed Topics — Pick one or write your own</div>
+        <div class="card-header">
+            🧠 AI Proposed Topics — Pick one or write your own
+            <?php if ($winner_titles || $dead_titles): ?>
+                <span style="font-size:11px;color:var(--text-light);font-weight:normal;display:block;margin-top:2px;">
+                    Informed by <?= count($winner_titles) ?> winning theme<?= count($winner_titles) === 1 ? '' : 's' ?><?php if ($dead_titles): ?> and avoiding <?= count($dead_titles) ?> dead topic<?= count($dead_titles) === 1 ? '' : 's' ?><?php endif; ?>.
+                </span>
+            <?php endif; ?>
+        </div>
         <?php foreach ($proposals as $i => $prop): ?>
         <div style="padding:12px 0;border-bottom:1px solid #f1f5f9;<?= $i === 0 ? '' : '' ?>">
             <form method="POST" style="display:flex;justify-content:space-between;align-items:center;gap:12px;">
