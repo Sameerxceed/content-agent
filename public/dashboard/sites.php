@@ -4,6 +4,7 @@
  */
 require_once __DIR__ . '/../../includes/helpers.php';
 require_once __DIR__ . '/../../includes/auth.php';
+require_once __DIR__ . '/../../includes/site_delete.php';
 
 auth_start();
 auth_require();
@@ -96,21 +97,32 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
     if ($post_action === 'delete') {
         $id = (int)$_POST['id'];
+
         if (!auth_can_access_site($db, $id)) {
             $_SESSION['flash_error'] = 'Site not found.';
             redirect('/dashboard/sites.php');
         }
-        // Super-admin can delete any site; regular users only their own.
-        if (auth_is_super_admin()) {
-            $stmt = $db->prepare('DELETE FROM sites WHERE id = ?');
-            $stmt->execute([$id]);
-        } else {
-            $stmt = $db->prepare('DELETE FROM sites WHERE id = ? AND user_id = ?');
-            $stmt->execute([$id, $user_id]);
+
+        // Typed-name confirmation prevents accidental clicks.
+        $typed   = trim($_POST['confirm_name'] ?? '');
+        $stmt    = $db->prepare('SELECT name FROM sites WHERE id = ?');
+        $stmt->execute([$id]);
+        $expected = $stmt->fetchColumn();
+        if ($expected !== false && strcasecmp($typed, $expected) !== 0) {
+            $_SESSION['flash_error'] = 'You must type the site name exactly to confirm deletion.';
+            redirect('/dashboard/sites.php?action=edit&id=' . $id);
         }
 
-        $_SESSION['flash_success'] = 'Site deleted.';
-        redirect('/dashboard/sites.php');
+        $result = site_delete_cascade($db, $id);
+        if (!empty($result['success'])) {
+            $_SESSION['flash_success'] = "Site '" . $result['site_name'] . "' deleted ("
+                . $result['total_rows'] . " rows across "
+                . count($result['counts']) . " tables).";
+            redirect('/dashboard/index.php');
+        } else {
+            $_SESSION['flash_error'] = 'Delete failed: ' . ($result['error'] ?? 'unknown');
+            redirect('/dashboard/sites.php?action=edit&id=' . $id);
+        }
     }
 }
 
@@ -307,13 +319,32 @@ if ($action === 'add'):
             </div>
         </form>
 
-        <div class="mt-4" style="padding-top: 14px; border-top: 1px solid var(--border);">
-            <form method="POST" onsubmit="return confirm('Delete this site and all its data?')">
+        <div class="card" style="margin-top:20px; border:1px solid #fca5a5; background:#fef2f2;">
+            <div class="card-header" style="color:#991b1b; border-bottom-color:#fca5a5;">⚠ Danger zone</div>
+            <p style="font-size:13px; color:#7f1d1d; margin-bottom:10px;">
+                Deleting this site is <strong>permanent</strong>. Every post, keyword, audit, alert, subscriber, AEO query,
+                competitor record, and integration connection for this site will be wiped. There is no undo.
+            </p>
+            <p style="font-size:12px; color:#7f1d1d; margin-bottom:10px;">
+                To confirm, type the site's exact name below: <code style="background:#fff;padding:1px 6px;border-radius:3px;font-weight:600;"><?= e($site['name']) ?></code>
+            </p>
+            <form method="POST" onsubmit="return _confirmDelete(this, <?= json_encode($site['name']) ?>)" style="display:flex; gap:8px; align-items:center;">
                 <?= csrf_field() ?>
                 <input type="hidden" name="action" value="delete">
                 <input type="hidden" name="id" value="<?= $site['id'] ?>">
-                <button type="submit" class="btn btn-danger btn-sm">Delete Site</button>
+                <input type="text" name="confirm_name" class="form-control" style="max-width:260px;" placeholder="Type site name here" autocomplete="off">
+                <button type="submit" class="btn btn-danger btn-sm">Delete site and all data</button>
             </form>
+            <script>
+            function _confirmDelete(form, expected) {
+                var typed = form.querySelector('input[name=confirm_name]').value.trim();
+                if (typed.toLowerCase() !== expected.toLowerCase()) {
+                    alert('Type the site name exactly to confirm. Expected: ' + expected);
+                    return false;
+                }
+                return confirm('Final check: permanently delete "' + expected + '" and ALL its data?');
+            }
+            </script>
         </div>
     </div>
     <?php endif; ?>
