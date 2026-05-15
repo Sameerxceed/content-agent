@@ -173,7 +173,7 @@ Output ONLY valid JSON array:
                     <?= number_format($cms['impressions'] ?? 0) ?> impr · CTR <?= isset($cms['ctr']) ? $cms['ctr'] . '%' : '—' ?> · <?= e($d['reason'] ?? '') ?>
                 </div>
             </div>
-            <button class="btn btn-accent btn-sm" style="font-size:11px;padding:4px 12px;" onclick="refreshPost(<?= (int)$d['post_id'] ?>, this)">AI Refresh</button>
+            <button class="btn btn-accent btn-sm" style="font-size:11px;padding:4px 12px;" onclick="refreshPost(<?= (int)$d['post_id'] ?>, this)" title="Cannibalization check + GSC query intent + internal-link suggestions">⚡ Smart Refresh</button>
         </div>
         <?php endforeach; ?>
     </div>
@@ -191,10 +191,10 @@ Output ONLY valid JSON array:
                 btn.style.background = 'var(--success)';
                 setTimeout(() => { window.location.href = '<?= url('/dashboard/posts.php?site=' . $site_id) ?>'; }, 600);
             } else {
-                btn.disabled = false; btn.textContent = 'AI Refresh';
+                btn.disabled = false; btn.textContent = 'Smart Refresh';
                 alert(data.error || 'Failed');
             }
-        } catch (e) { btn.disabled = false; btn.textContent = 'AI Refresh'; alert(e.message); }
+        } catch (e) { btn.disabled = false; btn.textContent = 'Smart Refresh'; alert(e.message); }
     }
     </script>
     <?php endif; ?>

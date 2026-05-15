@@ -133,7 +133,7 @@ function render_post_row($p, string $bucket_class, string $bucket_kind): void {
             <?php if ($bucket_kind === 'winner'): ?>
                 <button class="btn btn-success btn-sm" onclick="postAction(<?= (int)$p['post_id'] ?>, 'queue_similar', this)">Write more like this</button>
             <?php elseif ($bucket_kind === 'decay'): ?>
-                <button class="btn btn-accent btn-sm" onclick="postAction(<?= (int)$p['post_id'] ?>, 'refresh', this)">AI Refresh</button>
+                <button class="btn btn-accent btn-sm" onclick="postAction(<?= (int)$p['post_id'] ?>, 'refresh', this)" title="Cannibalization check + GSC query intent + internal-link suggestions">⚡ Smart Refresh</button>
                 <button class="btn btn-outline btn-sm" onclick="postAction(<?= (int)$p['post_id'] ?>, 'dismiss', this)">Dismiss</button>
             <?php elseif ($bucket_kind === 'dead'): ?>
                 <button class="btn btn-outline btn-sm" onclick="postAction(<?= (int)$p['post_id'] ?>, 'dismiss', this)">Dismiss</button>
