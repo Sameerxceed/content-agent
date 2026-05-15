@@ -69,7 +69,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         // Brand fonts
         $brand_fonts = array_filter(array_map('trim', explode(',', $_POST['brand_fonts'] ?? '')));
 
-        $stmt = $db->prepare('UPDATE sites SET name = ?, agent_mode = ?, blog_path = ?, topics = ?, rss_feeds = ?, cms_url = ?, cms_api_key = ?, server_type = ?, server_host = ?, server_user = ?, server_pass = ?, server_path = ?, git_repo = ?, hosting_panel = ?, brand_colors = ?, brand_fonts = ?, is_active = ? WHERE id = ?');
+        $stmt = $db->prepare('UPDATE sites SET name = ?, agent_mode = ?, blog_path = ?, topics = ?, rss_feeds = ?, cms_url = ?, cms_api_key = ?, server_type = ?, server_host = ?, server_user = ?, server_pass = ?, server_path = ?, git_repo = ?, hosting_panel = ?, brand_colors = ?, brand_fonts = ?, is_active = ?, digest_email = ? WHERE id = ?');
         $stmt->execute([
             trim($_POST['name']),
             $_POST['agent_mode'] ?? 'manual',
@@ -88,6 +88,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             json_encode($brand_colors),
             json_encode(array_values($brand_fonts)),
             isset($_POST['is_active']) ? 1 : 0,
+            trim($_POST['digest_email'] ?? '') ?: null,
             $id,
         ]);
 
@@ -279,6 +280,12 @@ if ($action === 'add'):
                         </select>
                     </div>
                 </div>
+            </div>
+
+            <div class="form-group">
+                <label for="digest_email">Weekly digest recipient (optional)</label>
+                <input type="email" id="digest_email" name="digest_email" class="form-control" value="<?= e($site['digest_email'] ?? '') ?>" placeholder="reports@yourcompany.com">
+                <div class="text-sm text-muted" style="margin-top:4px;">When set, the weekly digest emails go here instead of the owner's login email.</div>
             </div>
 
             <div class="form-group">

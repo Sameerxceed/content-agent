@@ -33,18 +33,24 @@ foreach ($sites as $site) {
         continue;
     }
 
-    // Get owner email
+    // Get owner email — but prefer site.digest_email override when set,
+    // so the owner can keep their login email different from the digest recipient.
     $stmt = $db->prepare('SELECT email, name FROM users WHERE id = ?');
     $stmt->execute([$site['user_id']]);
     $user = $stmt->fetch();
-    if (!$user || empty($user['email'])) {
-        echo "  skip #{$sid}: no owner email\n";
+    if (!$user) {
+        echo "  skip #{$sid}: no owner user\n";
+        continue;
+    }
+    $recipient = !empty($site['digest_email']) ? $site['digest_email'] : ($user['email'] ?? '');
+    if (empty($recipient)) {
+        echo "  skip #{$sid}: no recipient (set sites.digest_email or users.email)\n";
         continue;
     }
 
-    echo "  building digest for #{$sid} {$site['domain']} → {$user['email']}\n";
+    echo "  building digest for #{$sid} {$site['domain']} → {$recipient}\n";
 
-    cron_run_site_job($db, $sid, $job_type, function ($run_id) use ($db, $sid, $site, $user) {
+    cron_run_site_job($db, $sid, $job_type, function ($run_id) use ($db, $sid, $site, $user, $recipient) {
         // ── SEO score this week vs last week ────────────────────────
         $stmt = $db->prepare('SELECT score, run_at FROM seo_audits WHERE site_id = ? ORDER BY run_at DESC LIMIT 2');
         $stmt->execute([$sid]);
@@ -217,12 +223,12 @@ foreach ($sites as $site) {
         $html = mailer_wrap('Weekly digest — ' . $site['name'], $inner);
 
         $subject = 'ContentAgent · ' . $site['name'] . ' · weekly digest';
-        $result = mailer_send($user['email'], $subject, $html);
+        $result = mailer_send($recipient, $subject, $html);
 
         if ($result['success']) {
             $db->prepare('UPDATE sites SET last_digest_sent = NOW() WHERE id = ?')->execute([$sid]);
             echo "    sent\n";
-            return ['sent' => true, 'to' => $user['email'], 'alerts' => count($alerts), 'posts' => count($posts), 'gaps' => count($gaps)];
+            return ['sent' => true, 'to' => $recipient, 'alerts' => count($alerts), 'posts' => count($posts), 'gaps' => count($gaps)];
         } else {
             throw new \RuntimeException('Mailer failed: ' . ($result['error'] ?? 'unknown'));
         }
