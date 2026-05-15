@@ -14,6 +14,8 @@
  */
 
 require_once __DIR__ . '/../includes/mailer.php';
+require_once __DIR__ . '/../includes/performance.php';
+require_once __DIR__ . '/../includes/aeo.php';
 
 /** @var PDO $db */
 /** @var ?int $site_id_filter */
@@ -71,8 +73,24 @@ foreach ($sites as $site) {
         $stmt->execute([$sid]);
         $gaps = $stmt->fetchAll();
 
+        // ── Performance buckets (winners / decay) ───────────────────
+        $perf_winners = [];
+        $perf_decay = [];
+        try {
+            $buckets = performance_buckets($db, $sid);
+            $perf_winners = array_slice($buckets['winners'] ?? [], 0, 3);
+            $perf_decay   = array_slice($buckets['decay']   ?? [], 0, 3);
+        } catch (Throwable $e) {}
+
+        // ── AEO citation rate ───────────────────────────────────────
+        $aeo_summary = null;
+        try {
+            $aeo_summary = aeo_site_summary($db, $sid);
+            if (($aeo_summary['total_queries'] ?? 0) === 0) $aeo_summary = null;
+        } catch (Throwable $e) {}
+
         // ── Skip if nothing happened ────────────────────────────────
-        if (empty($alerts) && empty($posts) && empty($gaps) && $score_delta === null) {
+        if (empty($alerts) && empty($posts) && empty($gaps) && empty($perf_winners) && empty($perf_decay) && $score_delta === null) {
             echo "    no activity this week — skipping send\n";
             return ['sent' => false, 'reason' => 'no activity'];
         }
@@ -108,6 +126,51 @@ foreach ($sites as $site) {
                 <strong><?= number_format($gsc_now['i']) ?></strong> impressions ·
                 <strong><?= number_format($gsc_now['c']) ?></strong> clicks
             </div>
+        </div>
+        <?php endif; ?>
+
+        <?php if (!empty($perf_winners)): ?>
+        <div style="margin:18px 0 8px;font-weight:600;color:#1f2937;">🔥 What's working — write more like these</div>
+        <?php foreach ($perf_winners as $w): $cms = $w['channels']['cms'] ?? []; ?>
+        <div style="border-left:3px solid #10b981;padding:6px 10px;margin:6px 0;background:#f0fdf4;">
+            <div style="font-size:13px;font-weight:600;color:#065f46;"><?= htmlspecialchars($w['title'], ENT_QUOTES, 'UTF-8') ?></div>
+            <div style="font-size:11px;color:#65a30d;margin-top:2px;">
+                <?= number_format($cms['clicks'] ?? 0) ?> clicks ·
+                <?= number_format($cms['impressions'] ?? 0) ?> impressions ·
+                <?= htmlspecialchars($w['reason'] ?? 'trending up', ENT_QUOTES, 'UTF-8') ?>
+            </div>
+        </div>
+        <?php endforeach; ?>
+        <?php endif; ?>
+
+        <?php if (!empty($perf_decay)): ?>
+        <div style="margin:18px 0 8px;font-weight:600;color:#1f2937;">📉 Slipping — refresh candidates</div>
+        <?php foreach ($perf_decay as $d): $cms = $d['channels']['cms'] ?? []; ?>
+        <div style="border-left:3px solid #f59e0b;padding:6px 10px;margin:6px 0;background:#fffbeb;">
+            <div style="font-size:13px;font-weight:600;color:#92400e;"><?= htmlspecialchars($d['title'], ENT_QUOTES, 'UTF-8') ?></div>
+            <div style="font-size:11px;color:#a16207;margin-top:2px;">
+                <?= number_format($cms['impressions'] ?? 0) ?> impressions ·
+                CTR <?= isset($cms['ctr']) ? $cms['ctr'] . '%' : '—' ?> ·
+                <?= htmlspecialchars($d['reason'] ?? 'traffic dropping', ENT_QUOTES, 'UTF-8') ?>
+            </div>
+        </div>
+        <?php endforeach; ?>
+        <?php endif; ?>
+
+        <?php if ($aeo_summary): ?>
+        <div style="margin:18px 0 8px;font-weight:600;color:#1f2937;">🔭 AI search citations</div>
+        <div style="background:#f8fafc;padding:10px 14px;border-radius:6px;font-size:13px;color:#1f2937;">
+            Cited on <strong><?= (int)$aeo_summary['cited_now'] ?></strong> of
+            <strong><?= (int)$aeo_summary['total_queries'] ?></strong> tracked queries
+            (<?= $aeo_summary['citation_rate'] ?>% citation rate).
+            <?php if (!empty($aeo_summary['top_competitors'])):
+                $top = array_slice($aeo_summary['top_competitors'], 0, 3);
+                $names = array_map(fn($c) => $c['domain'], $top);
+            ?>
+            <div style="font-size:11px;color:#64748b;margin-top:4px;">
+                Top competitor citers: <?= htmlspecialchars(implode(', ', $names), ENT_QUOTES, 'UTF-8') ?>
+            </div>
+            <?php endif; ?>
         </div>
         <?php endif; ?>
 
