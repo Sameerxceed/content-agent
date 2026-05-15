@@ -178,6 +178,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             <button type="submit" class="btn-login">Sign In</button>
         </form>
 
+        <div style="text-align:center; font-size:12px; color:#64748b; margin-top:16px;">
+            <a href="<?= $bp ?>/auth/forgot.php" style="color:#1B3A6B; text-decoration:none;">Forgot password?</a>
+            <span style="color:#cbd5e1; margin: 0 6px;">·</span>
+            <a href="<?= $bp ?>/auth/signup.php" style="color:#1B3A6B; text-decoration:none; font-weight:600;">Create an account →</a>
+        </div>
+
         <div class="footer-text">Powered by Xceed Imagination</div>
     </div>
 </body>

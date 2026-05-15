@@ -31,7 +31,7 @@ function auth_start(): void
  */
 function auth_login(PDO $db, string $email, string $password): bool
 {
-    $stmt = $db->prepare('SELECT id, email, password_hash, name, plan FROM users WHERE email = ? LIMIT 1');
+    $stmt = $db->prepare('SELECT id, email, password_hash, name, plan, is_super_admin FROM users WHERE email = ? LIMIT 1');
     $stmt->execute([$email]);
     $user = $stmt->fetch();
 
@@ -39,16 +39,27 @@ function auth_login(PDO $db, string $email, string $password): bool
         return false;
     }
 
+    auth_set_session($user);
+    return true;
+}
+
+/**
+ * Set the session vars for a logged-in user. Extracted so signup and
+ * password-reset can reuse it without going through auth_login().
+ *
+ * @param array $user row from users with at minimum: id, email, name, plan, is_super_admin
+ */
+function auth_set_session(array $user): void
+{
     // Regenerate session ID to prevent fixation
     session_regenerate_id(true);
 
-    $_SESSION['user_id']    = $user['id'];
-    $_SESSION['user_email'] = $user['email'];
-    $_SESSION['user_name']  = $user['name'];
-    $_SESSION['user_plan']  = $user['plan'];
-    $_SESSION['logged_in']  = true;
-
-    return true;
+    $_SESSION['user_id']         = $user['id'];
+    $_SESSION['user_email']      = $user['email'];
+    $_SESSION['user_name']       = $user['name'];
+    $_SESSION['user_plan']       = $user['plan'] ?? 'free';
+    $_SESSION['is_super_admin']  = (int)($user['is_super_admin'] ?? 0);
+    $_SESSION['logged_in']       = true;
 }
 
 /**
@@ -90,11 +101,57 @@ function auth_user(): ?array
 {
     if (!auth_check()) return null;
     return [
-        'id'    => $_SESSION['user_id'],
-        'email' => $_SESSION['user_email'],
-        'name'  => $_SESSION['user_name'],
-        'plan'  => $_SESSION['user_plan'],
+        'id'             => $_SESSION['user_id'],
+        'email'          => $_SESSION['user_email'],
+        'name'           => $_SESSION['user_name'],
+        'plan'           => $_SESSION['user_plan'] ?? 'free',
+        'is_super_admin' => (int)($_SESSION['is_super_admin'] ?? 0),
     ];
+}
+
+/**
+ * Is the current user a global super-admin? (sees all sites)
+ */
+function auth_is_super_admin(): bool
+{
+    return !empty($_SESSION['is_super_admin']);
+}
+
+/**
+ * Can the current user act on this site?
+ * Super-admins can act on any site; regular users only on sites they own.
+ *
+ * Returns false if not logged in.
+ */
+function auth_can_access_site(PDO $db, int $site_id): bool
+{
+    if (!auth_check() || $site_id <= 0) return false;
+    if (auth_is_super_admin()) {
+        // Still confirm the site exists
+        $stmt = $db->prepare('SELECT 1 FROM sites WHERE id = ?');
+        $stmt->execute([$site_id]);
+        return (bool)$stmt->fetchColumn();
+    }
+    $stmt = $db->prepare('SELECT 1 FROM sites WHERE id = ? AND user_id = ?');
+    $stmt->execute([$site_id, auth_user_id()]);
+    return (bool)$stmt->fetchColumn();
+}
+
+/**
+ * Convenience: load a site by id if accessible, else null.
+ */
+function auth_get_accessible_site(PDO $db, int $site_id): ?array
+{
+    if (!auth_check() || $site_id <= 0) return null;
+    if (auth_is_super_admin()) {
+        $stmt = $db->prepare('SELECT * FROM sites WHERE id = ?');
+        $stmt->execute([$site_id]);
+    } else {
+        $stmt = $db->prepare('SELECT * FROM sites WHERE id = ? AND user_id = ?');
+        $stmt->execute([$site_id, auth_user_id()]);
+    }
+    $row = $stmt->fetch();
+    return $row ?: null;
 }
 
 /**
