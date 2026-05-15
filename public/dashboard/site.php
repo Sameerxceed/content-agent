@@ -21,9 +21,7 @@ $site_id = (int)($_GET['id'] ?? 0);
 
 if (!$site_id) { redirect('/dashboard/sites.php'); }
 
-$stmt = $db->prepare('SELECT * FROM sites WHERE id = ? AND user_id = ?');
-$stmt->execute([$site_id, $user_id]);
-$site = $stmt->fetch();
+$site = auth_get_accessible_site($db, $site_id);
 
 if (!$site) { redirect('/dashboard/sites.php'); }
 

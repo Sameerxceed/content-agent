@@ -27,8 +27,12 @@ if ($filter_site) {
 }
 
 // Get sites
-$stmt = $db->prepare('SELECT id, name, domain FROM sites WHERE user_id = ? ORDER BY name');
-$stmt->execute([$user_id]);
+if (auth_is_super_admin()) {
+    $stmt = $db->query('SELECT id, name, domain FROM sites ORDER BY name');
+} else {
+    $stmt = $db->prepare('SELECT id, name, domain FROM sites WHERE user_id = ? ORDER BY name');
+    $stmt->execute([$user_id]);
+}
 $sites = $stmt->fetchAll();
 
 // Handle generate actions
@@ -39,9 +43,7 @@ if ($action && $filter_site) {
 
 // All generate pages show content + auto-deploy button
 if ($action && strpos($action, 'generate-') === 0 && $filter_site) {
-    $stmt = $db->prepare('SELECT * FROM sites WHERE id = ? AND user_id = ?');
-    $stmt->execute([(int)$filter_site, $user_id]);
-    $gen_site = $stmt->fetch();
+    $gen_site = auth_get_accessible_site($db, (int)$filter_site);
 
     if ($gen_site) {
         $deploy_type = str_replace('generate-', '', $action);
@@ -133,9 +135,7 @@ if ($action === 'generate-schema' && $filter_site && isset($gen_site)) {
 
 // Show audit results if a site is selected
 if ($filter_site && !$action) {
-    $stmt = $db->prepare('SELECT * FROM sites WHERE id = ? AND user_id = ?');
-    $stmt->execute([(int)$filter_site, $user_id]);
-    $site = $stmt->fetch();
+    $site = auth_get_accessible_site($db, (int)$filter_site);
 
     if ($site) {
         echo '<div class="alert alert-info">Running AI discoverability audit for <strong>' . e($site['name']) . '</strong>... This checks llms.txt, AI crawler access, schema, and more.</div>';

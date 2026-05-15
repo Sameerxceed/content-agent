@@ -30,10 +30,8 @@ if (empty($code) || !$state) {
     redirect('/dashboard/settings.php');
 }
 
-// Verify site ownership
-$stmt = $db->prepare('SELECT id FROM sites WHERE id = ? AND user_id = ?');
-$stmt->execute([$state, auth_user_id()]);
-if (!$stmt->fetch()) {
+// Verify site access (owner OR super-admin)
+if (!auth_can_access_site($db, (int)$state)) {
     $_SESSION['flash_error'] = 'Site not found.';
     redirect('/dashboard/sites.php');
 }

@@ -47,10 +47,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     if ($post_action === 'update') {
         $id = (int)$_POST['id'];
 
-        // Verify ownership
-        $stmt = $db->prepare('SELECT id FROM sites WHERE id = ? AND user_id = ?');
-        $stmt->execute([$id, $user_id]);
-        if (!$stmt->fetch()) {
+        // Verify access (owner OR super-admin)
+        if (!auth_can_access_site($db, $id)) {
             $_SESSION['flash_error'] = 'Site not found.';
             redirect('/dashboard/sites.php');
         }
@@ -98,8 +96,18 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
     if ($post_action === 'delete') {
         $id = (int)$_POST['id'];
-        $stmt = $db->prepare('DELETE FROM sites WHERE id = ? AND user_id = ?');
-        $stmt->execute([$id, $user_id]);
+        if (!auth_can_access_site($db, $id)) {
+            $_SESSION['flash_error'] = 'Site not found.';
+            redirect('/dashboard/sites.php');
+        }
+        // Super-admin can delete any site; regular users only their own.
+        if (auth_is_super_admin()) {
+            $stmt = $db->prepare('DELETE FROM sites WHERE id = ?');
+            $stmt->execute([$id]);
+        } else {
+            $stmt = $db->prepare('DELETE FROM sites WHERE id = ? AND user_id = ?');
+            $stmt->execute([$id, $user_id]);
+        }
 
         $_SESSION['flash_success'] = 'Site deleted.';
         redirect('/dashboard/sites.php');
@@ -142,9 +150,7 @@ if ($action === 'add'):
 ?>
 
 <?php elseif ($action === 'edit' && isset($_GET['id'])):
-    $stmt = $db->prepare('SELECT * FROM sites WHERE id = ? AND user_id = ?');
-    $stmt->execute([(int)$_GET['id'], $user_id]);
-    $site = $stmt->fetch();
+    $site = auth_get_accessible_site($db, (int)$_GET['id']);
 
     if (!$site):
         echo '<div class="alert alert-error">Site not found.</div>';
@@ -314,8 +320,12 @@ if ($action === 'add'):
 
 <?php else:
     // List all sites — rich card view
+    if (auth_is_super_admin()) {
+    $stmt = $db->query('SELECT * FROM sites ORDER BY created_at DESC');
+} else {
     $stmt = $db->prepare('SELECT * FROM sites WHERE user_id = ? ORDER BY created_at DESC');
     $stmt->execute([$user_id]);
+}
     $sites = $stmt->fetchAll();
 
     $topbar_actions = '<a href="' . url('/dashboard/onboarding.php') . '" class="btn btn-accent">+ Add Site</a>';

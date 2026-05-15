@@ -22,10 +22,8 @@ $step = $_POST['step'] ?? $_GET['step'] ?? 'pick-site';
 
 // If a specific site is in play and topics aren't confirmed, bounce to site page.
 if ($site_id) {
-    $chk = $db->prepare('SELECT topics_confirmed FROM sites WHERE id = ? AND user_id = ?');
-    $chk->execute([$site_id, $user_id]);
-    $row = $chk->fetch();
-    if ($row && empty($row['topics_confirmed'])) {
+    $_site_chk = auth_get_accessible_site($db, $site_id);
+    if ($_site_chk && empty($_site_chk['topics_confirmed'])) {
         $_SESSION['flash_error'] = 'Please confirm your Business Focus first — without it, AI might write off-topic content.';
         header('Location: ' . url('/dashboard/site.php?id=' . $site_id . '#business-focus'));
         exit;
@@ -34,9 +32,13 @@ if ($site_id) {
 
 $page_title = '🧠 AI Content Writer';
 
-// Get user's sites
-$stmt = $db->prepare('SELECT id, name, domain FROM sites WHERE user_id = ? ORDER BY name');
-$stmt->execute([$user_id]);
+// Get user's sites (super-admin sees all)
+if (auth_is_super_admin()) {
+    $stmt = $db->query('SELECT id, name, domain FROM sites ORDER BY name');
+} else {
+    $stmt = $db->prepare('SELECT id, name, domain FROM sites WHERE user_id = ? ORDER BY name');
+    $stmt->execute([$user_id]);
+}
 $sites = $stmt->fetchAll();
 
 ob_start();
@@ -63,9 +65,7 @@ ob_start();
 <?php elseif ($step === 'propose'): ?>
     <!-- Step 1: AI proposes topics -->
     <?php
-    $stmt = $db->prepare('SELECT * FROM sites WHERE id = ? AND user_id = ?');
-    $stmt->execute([$site_id, $user_id]);
-    $site = $stmt->fetch();
+    $site = auth_get_accessible_site($db, $site_id);
     if (!$site) { echo '<div class="alert alert-error">Site not found.</div>'; } else {
 
     // Gather signals
@@ -344,9 +344,7 @@ Output ONLY valid JSON array:
     $keywords_str = $_POST['keywords'] ?? '';
     $description = $_POST['description'] ?? '';
 
-    $stmt = $db->prepare('SELECT * FROM sites WHERE id = ? AND user_id = ?');
-    $stmt->execute([$site_id, $user_id]);
-    $site = $stmt->fetch();
+    $site = auth_get_accessible_site($db, $site_id);
 
     if (!$site || !$topic) {
         echo '<div class="alert alert-error">Missing site or topic.</div>';
@@ -484,9 +482,7 @@ Output ONLY valid JSON array:
 <?php elseif ($step === 'publish'): ?>
     <!-- Step 3: Save and optionally push to CMS -->
     <?php
-    $stmt = $db->prepare('SELECT * FROM sites WHERE id = ? AND user_id = ?');
-    $stmt->execute([$site_id, $user_id]);
-    $site = $stmt->fetch();
+    $site = auth_get_accessible_site($db, $site_id);
 
     if (!$site) { echo '<div class="alert alert-error">Site not found.</div>'; } else {
         $title = trim($_POST['title'] ?? '');

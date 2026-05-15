@@ -26,9 +26,7 @@ $snippet_enabled = $input['snippet_enabled'] ?? null;
 if (!$site_id) { http_response_code(400); echo json_encode(['error' => 'site_id required']); exit; }
 
 // Verify ownership
-$stmt = $db->prepare('SELECT id FROM sites WHERE id = ? AND user_id = ?');
-$stmt->execute([$site_id, $user_id]);
-if (!$stmt->fetch()) { http_response_code(404); echo json_encode(['error' => 'Site not found']); exit; }
+if (!auth_can_access_site($db, $site_id)) { http_response_code(404); echo json_encode(['error' => 'Site not found']); exit; }
 
 // Snippet master kill switch
 if ($snippet_enabled !== null) {

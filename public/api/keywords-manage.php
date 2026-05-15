@@ -25,9 +25,7 @@ $input = json_decode(file_get_contents('php://input'), true) ?: [];
 $action = $input['action'] ?? '';
 
 function verify_site(PDO $db, int $site_id, int $user_id): bool {
-    $stmt = $db->prepare('SELECT id FROM sites WHERE id = ? AND user_id = ?');
-    $stmt->execute([$site_id, $user_id]);
-    return (bool)$stmt->fetch();
+    return auth_can_access_site($db, $site_id);
 }
 
 function ids_with_ownership_filter(array $ids): array {

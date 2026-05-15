@@ -490,8 +490,12 @@ if ($audit_id):
     $stmt->execute($params);
     $audits = $stmt->fetchAll();
 
+    if (auth_is_super_admin()) {
+    $stmt = $db->query('SELECT id, name FROM sites ORDER BY name');
+} else {
     $stmt = $db->prepare('SELECT id, name FROM sites WHERE user_id = ? ORDER BY name');
     $stmt->execute([$user_id]);
+}
     $sites = $stmt->fetchAll();
 ?>
     <div style="margin-bottom:10px;">

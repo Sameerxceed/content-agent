@@ -523,7 +523,12 @@ function sidebar_active(string $page, array $pages_or_query = []): string {
 
 <div class="main">
     <div class="topbar">
-        <h1><?= e($page_title ?? 'Dashboard') ?></h1>
+        <div style="display:flex; align-items:center; gap:10px;">
+            <h1><?= e($page_title ?? 'Dashboard') ?></h1>
+            <?php if (function_exists('auth_is_super_admin') && auth_is_super_admin()): ?>
+                <span title="Logged in as a global super-admin — you see and can edit every site in the system." style="background:#fef3c7; color:#92400e; padding:3px 9px; border-radius:10px; font-size:10px; font-weight:600; letter-spacing:0.3px; text-transform:uppercase;">Super-admin</span>
+            <?php endif; ?>
+        </div>
         <div class="flex items-center gap-2">
             <?= $topbar_actions ?? '' ?>
         </div>

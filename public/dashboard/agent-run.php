@@ -15,9 +15,7 @@ $user_id = auth_user_id();
 $agent = $_GET['agent'] ?? '';
 $site_id = (int)($_GET['site'] ?? 0);
 
-$stmt = $db->prepare('SELECT * FROM sites WHERE id = ? AND user_id = ?');
-$stmt->execute([$site_id, $user_id]);
-$site = $stmt->fetch();
+$site = auth_get_accessible_site($db, $site_id);
 
 if (!$site) {
     header('Location: ' . url('/dashboard/sites.php'));

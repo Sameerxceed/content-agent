@@ -37,9 +37,7 @@ $offset = (int)($input['offset'] ?? 0);
 
 if (!$site_id) json_response(['error' => 'site_id required'], 400);
 
-$stmt = $db->prepare('SELECT * FROM sites WHERE id = ? AND user_id = ?');
-$stmt->execute([$site_id, $user_id]);
-$site = $stmt->fetch();
+$site = auth_get_accessible_site($db, $site_id);
 
 if (!$site) json_response(['error' => 'Site not found'], 404);
 

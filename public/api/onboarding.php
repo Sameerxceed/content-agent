@@ -51,9 +51,7 @@ if ($action === 'create_site') {
 if ($action === 'scan') {
     $site_id = (int)($input['site_id'] ?? 0);
 
-    $stmt = $db->prepare('SELECT * FROM sites WHERE id = ? AND user_id = ?');
-    $stmt->execute([$site_id, $user_id]);
-    $site = $stmt->fetch();
+    $site = auth_get_accessible_site($db, $site_id);
     if (!$site) json_response(['error' => 'Site not found'], 404);
 
     $domain = 'https://' . $site['domain'];
@@ -133,9 +131,7 @@ if ($action === 'scan') {
 if ($action === 'audit') {
     $site_id = (int)($input['site_id'] ?? 0);
 
-    $stmt = $db->prepare('SELECT * FROM sites WHERE id = ? AND user_id = ?');
-    $stmt->execute([$site_id, $user_id]);
-    $site = $stmt->fetch();
+    $site = auth_get_accessible_site($db, $site_id);
     if (!$site) json_response(['error' => 'Site not found'], 404);
 
     // Cooldown: prevent running audit more than once per 2 minutes
@@ -180,9 +176,7 @@ if ($action === 'audit') {
 if ($action === 'keywords') {
     $site_id = (int)($input['site_id'] ?? 0);
 
-    $stmt = $db->prepare('SELECT * FROM sites WHERE id = ? AND user_id = ?');
-    $stmt->execute([$site_id, $user_id]);
-    $site = $stmt->fetch();
+    $site = auth_get_accessible_site($db, $site_id);
     if (!$site) json_response(['error' => 'Site not found'], 404);
 
     // Run keyword research via CLI
@@ -218,9 +212,7 @@ if ($action === 'keywords') {
 if ($action === 'content_plan') {
     $site_id = (int)($input['site_id'] ?? 0);
 
-    $stmt = $db->prepare('SELECT * FROM sites WHERE id = ? AND user_id = ?');
-    $stmt->execute([$site_id, $user_id]);
-    $site = $stmt->fetch();
+    $site = auth_get_accessible_site($db, $site_id);
     if (!$site) json_response(['error' => 'Site not found'], 404);
 
     require_once __DIR__ . '/../../includes/haiku.php';

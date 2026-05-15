@@ -29,9 +29,7 @@ if (!$site_id || !$type) {
 }
 
 // Verify site ownership
-$stmt = $db->prepare('SELECT * FROM sites WHERE id = ? AND user_id = ?');
-$stmt->execute([$site_id, $user_id]);
-$site = $stmt->fetch();
+$site = auth_get_accessible_site($db, $site_id);
 
 if (!$site) {
     json_response(['error' => 'Site not found'], 404);

@@ -22,9 +22,14 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $post_action = $_POST['action'] ?? '';
     $post_id = (int)($_POST['id'] ?? 0);
 
-    // Verify ownership
-    $stmt = $db->prepare('SELECT p.* FROM posts p JOIN sites s ON p.site_id = s.id WHERE p.id = ? AND s.user_id = ?');
-    $stmt->execute([$post_id, $user_id]);
+    // Verify access (post belongs to a site the current user can access)
+    if (auth_is_super_admin()) {
+        $stmt = $db->prepare('SELECT p.* FROM posts p WHERE p.id = ?');
+        $stmt->execute([$post_id]);
+    } else {
+        $stmt = $db->prepare('SELECT p.* FROM posts p JOIN sites s ON p.site_id = s.id WHERE p.id = ? AND s.user_id = ?');
+        $stmt->execute([$post_id, $user_id]);
+    }
     $post = $stmt->fetch();
 
     if (!$post) {
@@ -76,8 +81,13 @@ $page_title = 'Posts';
 ob_start();
 
 if ($action === 'edit' && isset($_GET['id'])):
-    $stmt = $db->prepare('SELECT p.*, s.domain FROM posts p JOIN sites s ON p.site_id = s.id WHERE p.id = ? AND s.user_id = ?');
-    $stmt->execute([(int)$_GET['id'], $user_id]);
+    if (auth_is_super_admin()) {
+        $stmt = $db->prepare('SELECT p.*, s.domain FROM posts p JOIN sites s ON p.site_id = s.id WHERE p.id = ?');
+        $stmt->execute([(int)$_GET['id']]);
+    } else {
+        $stmt = $db->prepare('SELECT p.*, s.domain FROM posts p JOIN sites s ON p.site_id = s.id WHERE p.id = ? AND s.user_id = ?');
+        $stmt->execute([(int)$_GET['id'], $user_id]);
+    }
     $post = $stmt->fetch();
 
     if (!$post):
@@ -541,8 +551,13 @@ if ($action === 'edit' && isset($_GET['id'])):
     $filter_status = $_GET['status'] ?? '';
     $filter_type = $_GET['type'] ?? '';
 
-    $where = ['s.user_id = ?'];
-    $params = [$user_id];
+    if (auth_is_super_admin()) {
+        $where = ['1=1'];
+        $params = [];
+    } else {
+        $where = ['s.user_id = ?'];
+        $params = [$user_id];
+    }
 
     if ($filter_site) { $where[] = 'p.site_id = ?'; $params[] = (int)$filter_site; }
     if ($filter_status) { $where[] = 'p.status = ?'; $params[] = $filter_status; }
@@ -554,9 +569,13 @@ if ($action === 'edit' && isset($_GET['id'])):
     $stmt->execute($params);
     $posts = $stmt->fetchAll();
 
-    // Get sites for filter dropdown
-    $stmt = $db->prepare('SELECT id, name, domain FROM sites WHERE user_id = ? ORDER BY name');
-    $stmt->execute([$user_id]);
+    // Get sites for filter dropdown (super-admin sees all)
+    if (auth_is_super_admin()) {
+        $stmt = $db->query('SELECT id, name, domain FROM sites ORDER BY name');
+    } else {
+        $stmt = $db->prepare('SELECT id, name, domain FROM sites WHERE user_id = ? ORDER BY name');
+        $stmt->execute([$user_id]);
+    }
     $sites = $stmt->fetchAll();
 
     // Get site name if filtered

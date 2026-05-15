@@ -28,9 +28,7 @@ $user_id = auth_user_id();
 $site_id = (int)($_GET['site_id'] ?? 0);
 if (!$site_id) die('site_id required');
 
-$stmt = $db->prepare('SELECT * FROM sites WHERE id = ? AND user_id = ?');
-$stmt->execute([$site_id, $user_id]);
-$site = $stmt->fetch();
+$site = auth_get_accessible_site($db, $site_id);
 if (!$site) die('Site not found');
 
 $filename = slugify($site['name']) . '-report-' . date('Y-m-d') . '.xls';

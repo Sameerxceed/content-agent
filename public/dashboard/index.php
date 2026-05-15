@@ -10,10 +10,13 @@ auth_require();
 
 $db = require __DIR__ . '/../../includes/db.php';
 $user_id = auth_user_id();
+$is_super = auth_is_super_admin();
 
-// Get all sites with key metrics
-$stmt = $db->prepare('
+// Super-admin sees every site (with owner column); regular users see their own.
+$base_select = '
     SELECT s.*,
+        u.name AS owner_name,
+        u.email AS owner_email,
         (SELECT COUNT(*) FROM posts p WHERE p.site_id = s.id AND p.status = "published") as published,
         (SELECT COUNT(*) FROM posts p WHERE p.site_id = s.id AND p.status = "draft") as drafts,
         (SELECT COUNT(*) FROM posts p WHERE p.site_id = s.id) as total_posts,
@@ -22,10 +25,16 @@ $stmt = $db->prepare('
         (SELECT COUNT(*) FROM seo_issues i WHERE i.audit_id = (SELECT a2.id FROM seo_audits a2 WHERE a2.site_id = s.id ORDER BY a2.run_at DESC LIMIT 1) AND i.status = "open") as open_issues,
         (SELECT al.created_at FROM agent_log al WHERE al.site_id = s.id ORDER BY al.created_at DESC LIMIT 1) as last_activity
     FROM sites s
-    WHERE s.user_id = ?
-    ORDER BY s.created_at DESC
-');
-$stmt->execute([$user_id]);
+    LEFT JOIN users u ON s.user_id = u.id
+';
+
+if ($is_super) {
+    $stmt = $db->prepare($base_select . ' ORDER BY s.created_at DESC');
+    $stmt->execute();
+} else {
+    $stmt = $db->prepare($base_select . ' WHERE s.user_id = ? ORDER BY s.created_at DESC');
+    $stmt->execute([$user_id]);
+}
 $sites = $stmt->fetchAll();
 
 $page_title = 'Dashboard';
@@ -67,6 +76,11 @@ ob_start();
                                 <span class="badge badge-info" style="font-size:10px;"><?= e($s['platform']) ?></span>
                             <?php endif; ?>
                         </div>
+                        <?php if ($is_super && !empty($s['owner_email'])): ?>
+                            <div style="font-size: 10px; color: #94a3b8; margin-top:2px;">
+                                Owner: <?= e($s['owner_name'] ?: $s['owner_email']) ?>
+                            </div>
+                        <?php endif; ?>
                     </div>
                 </div>
 

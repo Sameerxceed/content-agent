@@ -28,13 +28,9 @@ if (!$site_id) {
 
 $db = require __DIR__ . '/../../includes/db.php';
 
-// Verify ownership if session auth
-if (auth_check()) {
-    $stmt = $db->prepare('SELECT id FROM sites WHERE id = ? AND user_id = ?');
-    $stmt->execute([$site_id, auth_user_id()]);
-    if (!$stmt->fetch()) {
-        json_response(['error' => 'Site not found'], 404);
-    }
+// Verify access if session auth (API-key callers skip this)
+if (auth_check() && !auth_can_access_site($db, $site_id)) {
+    json_response(['error' => 'Site not found'], 404);
 }
 
 // Run scanner in background

@@ -17,9 +17,7 @@ $user_id = auth_user_id();
 $site_id = (int)($_GET['site'] ?? 0);
 if (!$site_id) { http_response_code(400); echo 'site required'; exit; }
 
-$stmt = $db->prepare('SELECT * FROM sites WHERE id = ? AND user_id = ?');
-$stmt->execute([$site_id, $user_id]);
-$site = $stmt->fetch();
+$site = auth_get_accessible_site($db, $site_id);
 if (!$site) { http_response_code(404); echo 'Site not found'; exit; }
 
 $domain = 'https://' . ltrim($site['domain'], 'https://');

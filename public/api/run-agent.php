@@ -46,9 +46,7 @@ if (!isset($valid_agents[$agent])) {
 
 // Verify site ownership
 if ($site_id) {
-    $stmt = $db->prepare('SELECT id FROM sites WHERE id = ? AND user_id = ?');
-    $stmt->execute([$site_id, $user_id]);
-    if (!$stmt->fetch()) {
+    if (!auth_can_access_site($db, $site_id)) {
         json_response(['error' => 'Site not found'], 404);
     }
 }

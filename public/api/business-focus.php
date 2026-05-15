@@ -26,9 +26,7 @@ $site_id = (int)($input['site_id'] ?? 0);
 
 if (!$site_id) { http_response_code(400); echo json_encode(['error' => 'site_id required']); exit; }
 
-$stmt = $db->prepare('SELECT * FROM sites WHERE id = ? AND user_id = ?');
-$stmt->execute([$site_id, $user_id]);
-$site = $stmt->fetch();
+$site = auth_get_accessible_site($db, $site_id);
 if (!$site) { http_response_code(404); echo json_encode(['error' => 'Site not found']); exit; }
 
 if ($action === 'save') {

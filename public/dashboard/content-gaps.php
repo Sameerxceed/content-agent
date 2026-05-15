@@ -19,9 +19,7 @@ $user_id = auth_user_id();
 $site_id = (int)($_GET['site'] ?? 0);
 if (!$site_id) { redirect('/dashboard/index.php'); }
 
-$stmt = $db->prepare('SELECT * FROM sites WHERE id = ? AND user_id = ?');
-$stmt->execute([$site_id, $user_id]);
-$site = $stmt->fetch();
+$site = auth_get_accessible_site($db, $site_id);
 if (!$site) { redirect('/dashboard/index.php'); }
 
 $filter_status = $_GET['status'] ?? 'open';

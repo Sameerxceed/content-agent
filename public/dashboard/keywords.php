@@ -23,13 +23,22 @@ $page_title = 'Keywords';
 ob_start();
 
 // Get sites
-$stmt = $db->prepare('SELECT id, name FROM sites WHERE user_id = ? ORDER BY name');
-$stmt->execute([$user_id]);
+if (auth_is_super_admin()) {
+    $stmt = $db->query('SELECT id, name FROM sites ORDER BY name');
+} else {
+    $stmt = $db->prepare('SELECT id, name FROM sites WHERE user_id = ? ORDER BY name');
+    $stmt->execute([$user_id]);
+}
 $sites = $stmt->fetchAll();
 
-// Build query
-$where = ['s.user_id = ?'];
-$params = [$user_id];
+// Build query — super-admin sees all keywords across all sites
+if (auth_is_super_admin()) {
+    $where = ['1=1'];
+    $params = [];
+} else {
+    $where = ['s.user_id = ?'];
+    $params = [$user_id];
+}
 
 if ($filter_site)    { $where[] = 'k.site_id = ?'; $params[] = (int)$filter_site; }
 if ($filter_cluster) { $where[] = 'k.cluster = ?'; $params[] = $filter_cluster; }
@@ -126,10 +135,7 @@ $current_filters = ['site' => $filter_site, 'cluster' => $filter_cluster];
     $stmt->execute([(int)$filter_site]);
     $integration = $stmt->fetch();
 
-    $gsc_site = null;
-    $stmt = $db->prepare('SELECT * FROM sites WHERE id = ? AND user_id = ?');
-    $stmt->execute([(int)$filter_site, $user_id]);
-    $gsc_site = $stmt->fetch();
+    $gsc_site = auth_get_accessible_site($db, (int)$filter_site);
 
     if (!$integration): ?>
         <div class="card" style="text-align:center;padding:40px;">

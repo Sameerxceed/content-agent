@@ -27,9 +27,7 @@ $action = $input['action'] ?? '';
 try {
     if ($action === 'fetch_now') {
         $site_id = (int)($input['site_id'] ?? 0);
-        $stmt = $db->prepare('SELECT id FROM sites WHERE id = ? AND user_id = ?');
-        $stmt->execute([$site_id, $user_id]);
-        if (!$stmt->fetch()) { http_response_code(404); echo json_encode(['error' => 'Site not found']); exit; }
+        if (!auth_can_access_site($db, $site_id)) { http_response_code(404); echo json_encode(['error' => 'Site not found']); exit; }
         $org = performance_snapshot_organic($db, $site_id);
         $soc = performance_snapshot_social($db, $site_id);
         echo json_encode(['success' => true, 'organic' => $org, 'social' => $soc]);
