@@ -91,10 +91,12 @@ if ($filter_site && !$audit_id) {
             </div>
             <div style="display:flex; gap:4px; flex-shrink:0;">
                 <a href="<?= e($ei['url']) ?>" target="_blank" class="btn btn-outline btn-sm" style="font-size:11px; padding:3px 8px; text-decoration:none;">Open ↗</a>
+                <button class="btn btn-accent btn-sm" style="font-size:11px; padding:3px 8px;" onclick="generateFix(<?= (int)$ei['id'] ?>, this)">⚡ Fix</button>
                 <button class="btn btn-outline btn-sm" style="font-size:11px; padding:3px 8px;" onclick="markExtResolved(<?= (int)$ei['id'] ?>, this)">Resolved</button>
                 <button class="btn btn-outline btn-sm" style="font-size:11px; padding:3px 8px; color:var(--text-light);" onclick="markExtIgnored(<?= (int)$ei['id'] ?>, this)">Ignore</button>
             </div>
         </div>
+        <div class="fix-preview" id="fix-<?= (int)$ei['id'] ?>" style="display:none; margin-top:10px; padding-top:10px; border-top:1px solid #f1f5f9;"></div>
     </div>
     <?php endforeach; ?>
 </div>
@@ -168,6 +170,40 @@ async function saveAlert(btn) {
             alert(data.error || 'Failed'); btn.disabled = false; btn.textContent = 'Save selected to Issues';
         }
     } catch(e) { alert(e.message); btn.disabled = false; btn.textContent = 'Save selected to Issues'; }
+}
+
+async function generateFix(issueId, btn) {
+    const box = document.getElementById('fix-' + issueId);
+    if (box.style.display === 'block') { box.style.display = 'none'; return; }
+    btn.disabled = true; const orig = btn.textContent; btn.textContent = '…';
+    try {
+        const res = await fetch(PARSE_API, {
+            method:'POST', headers:{'Content-Type':'application/json'},
+            body: JSON.stringify({action:'generate_fix', site_id: PARSE_SITE, issue_id: issueId})
+        });
+        const fix = await res.json();
+        if (!fix.success) { alert(fix.error || 'Failed'); btn.disabled = false; btn.textContent = orig; return; }
+        const followupBtn = fix.followup ? `<a href="${escAttr(fix.followup)}" class="btn btn-accent btn-sm" style="font-size:11px;padding:3px 10px;text-decoration:none;margin-left:6px;">Open in Posts →</a>` : '';
+        box.innerHTML = `
+            <div style="font-size:13px; font-weight:600; color:var(--primary); margin-bottom:4px;">${escHtml(fix.title)} <span style="font-size:10px;text-transform:uppercase;background:#e2e8f0;color:#475569;padding:1px 6px;border-radius:8px;margin-left:4px;letter-spacing:0.3px;">${escHtml(fix.fix_type)}</span></div>
+            <div style="font-size:12px; color:var(--text-light); margin-bottom:8px;">${escHtml(fix.summary)}</div>
+            <pre id="fix-pre-${issueId}" style="background:#0f172a;color:#cbd5e1;padding:10px 12px;border-radius:6px;font-size:11px;line-height:1.5;max-height:280px;overflow:auto;white-space:pre-wrap;word-break:break-word;margin:0;">${escHtml(fix.preview)}</pre>
+            <div style="margin-top:6px; display:flex; gap:6px;">
+                <button class="btn btn-outline btn-sm" style="font-size:11px;padding:3px 10px;" onclick="copyFix(${issueId}, this)">Copy</button>
+                ${followupBtn}
+            </div>
+        `;
+        box.style.display = 'block';
+        btn.disabled = false; btn.textContent = '✓ Fix ready';
+    } catch(e) {
+        alert(e.message); btn.disabled = false; btn.textContent = orig;
+    }
+}
+function copyFix(issueId, btn) {
+    const pre = document.getElementById('fix-pre-' + issueId);
+    if (!pre) return;
+    navigator.clipboard.writeText(pre.textContent);
+    btn.textContent = 'Copied!'; setTimeout(() => btn.textContent = 'Copy', 1500);
 }
 
 async function markExtResolved(id, btn) { await _extUpdate(id, 'resolved', btn); }

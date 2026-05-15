@@ -9,6 +9,7 @@
 require_once __DIR__ . '/../../includes/helpers.php';
 require_once __DIR__ . '/../../includes/auth.php';
 require_once __DIR__ . '/../../includes/seo_issue_parser.php';
+require_once __DIR__ . '/../../includes/seo_issue_fixer.php';
 
 auth_start();
 if (!auth_check()) { http_response_code(401); echo json_encode(['error' => 'Unauthorized']); exit; }
@@ -40,6 +41,17 @@ try {
         if (!is_array($issues)) { echo json_encode(['error' => 'issues must be array']); exit; }
         $saved = seo_issue_save_parsed($db, $site_id, $issues);
         echo json_encode(['success' => true, 'saved' => $saved, 'skipped' => count($issues) - $saved]);
+        exit;
+    }
+
+    if ($action === 'generate_fix') {
+        $issue_id = (int)($input['issue_id'] ?? 0);
+        $stmt = $db->prepare('SELECT * FROM seo_issues WHERE id = ? AND site_id = ?');
+        $stmt->execute([$issue_id, $site_id]);
+        $issue = $stmt->fetch();
+        if (!$issue) { http_response_code(404); echo json_encode(['error' => 'Issue not found']); exit; }
+        $fix = seo_issue_generate_fix($db, $issue, $site);
+        echo json_encode($fix);
         exit;
     }
 
