@@ -9,6 +9,9 @@
 require_once __DIR__ . '/../../includes/helpers.php';
 require_once __DIR__ . '/../../includes/auth.php';
 require_once __DIR__ . '/../../includes/integrations/google.php';
+require_once __DIR__ . '/../../includes/integrations/linkedin.php';
+require_once __DIR__ . '/../../includes/integrations/twitter.php';
+require_once __DIR__ . '/../../includes/integrations/reddit.php';
 require_once __DIR__ . '/../../includes/performance.php';
 
 auth_start();
@@ -142,11 +145,25 @@ $page_title = $site['name'];
 $buckets = ['winners' => [], 'decay' => [], 'dead_air' => []];
 try { $buckets = performance_buckets($db, $site_id); } catch (Throwable $e) {}
 
-// ── Integration status pills ─────────────────────────
-$integration_state = ['linkedin' => false, 'twitter' => false, 'reddit' => false];
-$stmt = $db->prepare("SELECT platform FROM integrations WHERE site_id = ? AND platform IN ('linkedin','twitter','reddit') AND is_active = 1");
+// ── Per-site connections (richer than pills) ────────
+$site_connections = [
+    'google_search_console' => ['active' => false, 'account' => null],
+    'linkedin'              => ['active' => false, 'account' => null],
+    'twitter'               => ['active' => false, 'account' => null],
+    'reddit'                => ['active' => false, 'account' => null],
+];
+$stmt = $db->prepare("SELECT platform, account_name FROM integrations
+                      WHERE site_id = ? AND is_active = 1
+                        AND platform IN ('google_search_console','linkedin','twitter','reddit')");
 $stmt->execute([$site_id]);
-foreach ($stmt->fetchAll(PDO::FETCH_COLUMN) as $p) $integration_state[$p] = true;
+foreach ($stmt->fetchAll(PDO::FETCH_ASSOC) as $row) {
+    $site_connections[$row['platform']] = ['active' => true, 'account' => $row['account_name']];
+}
+$integration_state = [
+    'linkedin' => $site_connections['linkedin']['active'],
+    'twitter'  => $site_connections['twitter']['active'],
+    'reddit'   => $site_connections['reddit']['active'],
+];
 
 $gsc_connected_top    = !empty($gsc_integration);
 $resend_ok            = !empty(config('resend_api_key'));
@@ -296,25 +313,75 @@ $sc_cls = $sc < 0 ? '' : ($sc >= 80 ? 'score-good' : ($sc >= 50 ? 'score-ok' : '
     </div>
 </div>
 
-<!-- ── Integration status pills ───────────────────────── -->
+<!-- ── Per-site connections card ───────────────────────── -->
 <?php
-$pills = [
-    ['Claude AI',     $claude_ok,            url('/dashboard/integrations.php')],
-    ['Google Search', $cse_ok,               url('/dashboard/integrations.php')],
-    ['GSC',           $gsc_connected_top,    url('/dashboard/integrations.php')],
-    ['Resend Email',  $resend_ok,            url('/dashboard/integrations.php')],
-    ['LinkedIn',      $integration_state['linkedin'], url('/dashboard/integrations.php')],
-    ['Twitter',       $integration_state['twitter'],  url('/dashboard/integrations.php')],
-    ['Reddit',        $integration_state['reddit'],   url('/dashboard/integrations.php')],
+$connect_specs = [
+    'google_search_console' => [
+        'name'    => 'Google Search Console',
+        'color'   => '#4285F4',
+        'icon'    => 'G',
+        'why'     => 'Real keyword rankings, impressions, clicks, CTR for this site.',
+        'app_ok'  => !empty(config('google_client_id')),
+        'auth_url'=> !empty(config('google_client_id')) ? google_get_auth_url($site_id) : null,
+    ],
+    'linkedin' => [
+        'name'    => 'LinkedIn',
+        'color'   => '#0A66C2',
+        'icon'    => 'in',
+        'why'     => 'Auto-post AI-tailored versions of blog posts to LinkedIn.',
+        'app_ok'  => !empty(config('linkedin_client_id')),
+        'auth_url'=> !empty(config('linkedin_client_id')) ? linkedin_get_auth_url($site_id) : null,
+    ],
+    'twitter' => [
+        'name'    => 'Twitter / X',
+        'color'   => '#000000',
+        'icon'    => 'X',
+        'why'     => 'Auto-post AI-generated tweet threads from blog posts.',
+        'app_ok'  => !empty(config('twitter_client_id')),
+        'auth_url'=> !empty(config('twitter_client_id')) ? twitter_get_auth_url($site_id) : null,
+    ],
+    'reddit' => [
+        'name'    => 'Reddit',
+        'color'   => '#FF4500',
+        'icon'    => 'R',
+        'why'     => 'Search Reddit for relevant discussions + post replies.',
+        'app_ok'  => !empty(config('reddit_client_id')),
+        'auth_url'=> !empty(config('reddit_client_id')) ? reddit_get_auth_url($site_id) : null,
+    ],
 ];
 ?>
-<div class="card" style="margin-bottom:14px; padding:10px 14px;">
-    <div style="display:flex; flex-wrap:wrap; gap:6px; align-items:center;">
-        <span style="font-size:11px; color:var(--text-light); text-transform:uppercase; letter-spacing:0.5px; margin-right:4px;">Integrations:</span>
-        <?php foreach ($pills as [$label, $ok, $href]): ?>
-            <a href="<?= e($href) ?>" style="font-size:11px; padding:3px 10px; border-radius:10px; text-decoration:none; background:<?= $ok ? '#d1fae5' : '#fee2e2' ?>; color:<?= $ok ? '#065f46' : '#991b1b' ?>;">
-                <?= $ok ? '✓' : '✗' ?> <?= e($label) ?>
-            </a>
+<div class="card" style="margin-bottom:14px;">
+    <div class="card-header" style="display:flex;justify-content:space-between;align-items:center;">
+        <span>Connect this site's accounts</span>
+        <span style="font-size:11px; color:var(--text-light); font-weight:normal;">Per-site OAuth — only authorises THIS site</span>
+    </div>
+    <div style="display:grid; grid-template-columns:repeat(auto-fill, minmax(240px, 1fr)); gap:8px; padding-top:6px;">
+        <?php foreach ($connect_specs as $key => $spec):
+            $conn   = $site_connections[$key] ?? ['active' => false, 'account' => null];
+            $active = $conn['active'];
+        ?>
+        <div style="border:1px solid var(--border); border-left:3px solid <?= $active ? '#10b981' : '#cbd5e1' ?>; border-radius:6px; padding:10px 12px; display:flex; align-items:center; gap:10px;">
+            <span style="display:inline-block; width:28px; height:28px; border-radius:5px; background:<?= $spec['color'] ?>; color:#fff; text-align:center; line-height:28px; font-size:12px; font-weight:700; flex-shrink:0;"><?= $spec['icon'] ?></span>
+            <div style="flex:1; min-width:0;">
+                <div style="font-size:13px; font-weight:600; color:var(--primary);"><?= e($spec['name']) ?></div>
+                <?php if ($active): ?>
+                    <div style="font-size:11px; color:#10b981;">✓ <?= e($conn['account'] ?: 'Connected') ?></div>
+                <?php elseif (!$spec['app_ok']): ?>
+                    <div style="font-size:11px; color:#f59e0b;">App keys missing<?= auth_is_super_admin() ? ' — set up in Hub' : ' — contact admin' ?></div>
+                <?php else: ?>
+                    <div style="font-size:11px; color:#94a3b8;">Not connected</div>
+                <?php endif; ?>
+            </div>
+            <?php if (!$spec['app_ok']): ?>
+                <?php if (auth_is_super_admin()): ?>
+                    <a href="<?= url('/dashboard/integrations.php') ?>" style="font-size:11px; color:var(--primary); text-decoration:none; white-space:nowrap;">Setup</a>
+                <?php endif; ?>
+            <?php else: ?>
+                <a href="<?= e($spec['auth_url']) ?>" style="font-size:11px; padding:4px 10px; background:<?= $active ? 'transparent' : $spec['color'] ?>; color:<?= $active ? $spec['color'] : '#fff' ?>; border:1px solid <?= $spec['color'] ?>; border-radius:4px; text-decoration:none; white-space:nowrap;">
+                    <?= $active ? 'Reconnect' : 'Connect' ?>
+                </a>
+            <?php endif; ?>
+        </div>
         <?php endforeach; ?>
     </div>
 </div>

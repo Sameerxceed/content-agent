@@ -179,11 +179,24 @@ endif; /* customer view */
 
 <div class="card" style="background:linear-gradient(135deg, #1B3A6B 0%, #2c5282 100%); color:#fff; border:none;">
     <div style="font-size:18px; font-weight:600; margin-bottom:4px;">Integrations Hub</div>
-    <div style="font-size:13px; opacity:0.85;">Everything ContentAgent talks to — set up once, runs forever. Click any card to start or resume setup.</div>
+    <div style="font-size:13px; opacity:0.85;">Two categories: <strong>Platform Services</strong> are shared API keys you set once for all customers · <strong>OAuth Apps</strong> are your developer credentials so customers can grant access to their own social/Google accounts.</div>
 </div>
 
+<?php
+// Classify every wizard. OAuth-app wizards end in `_app`; the rest are platform services.
+$oauth_app_ids = ['linkedin_app', 'twitter_app', 'reddit_app', 'gsc_app'];
+$platform_wizards = [];
+$oauth_wizards    = [];
+foreach ($wizards as $id => $w) {
+    if (in_array($id, $oauth_app_ids, true)) $oauth_wizards[$id] = $w;
+    else                                     $platform_wizards[$id] = $w;
+}
+?>
+
+<div style="font-size:11px; text-transform:uppercase; letter-spacing:0.5px; color:var(--text-light); font-weight:600; margin:18px 0 8px;">Platform Services</div>
+<div style="font-size:12px; color:var(--text-light); margin-bottom:10px;">Shared across every customer. One key, one bill.</div>
 <div class="intg-grid">
-    <?php foreach ($wizards as $id => $wiz):
+    <?php foreach ($platform_wizards as $id => $wiz):
         $configured = $wiz->is_configured();
         $prog = $progress_map[$id] ?? null;
         $status = $prog['status'] ?? null;
@@ -209,6 +222,42 @@ endif; /* customer view */
                 <div style="font-size:11px; color:var(--text-light); margin-top:2px;">
                     <?= $wiz->scope() === 'site' ? 'Per-site connection' : 'Global setup' ?>
                 </div>
+            </div>
+        </div>
+        <div class="intg-purpose"><?= e($wiz->purpose()) ?></div>
+        <div style="margin-top:auto;">
+            <span class="intg-status <?= $pill_class ?>"><?= $pill_text ?></span>
+        </div>
+    </div>
+    <?php endforeach; ?>
+</div>
+
+<div style="font-size:11px; text-transform:uppercase; letter-spacing:0.5px; color:var(--text-light); font-weight:600; margin:24px 0 8px;">OAuth Apps</div>
+<div style="font-size:12px; color:var(--text-light); margin-bottom:10px;">Your developer-app credentials so customers can connect THEIR own LinkedIn / Twitter / Reddit / Google Search Console accounts. Per-customer connections happen on each site's Overview page.</div>
+<div class="intg-grid">
+    <?php foreach ($oauth_wizards as $id => $wiz):
+        $configured = $wiz->is_configured();
+        $prog = $progress_map[$id] ?? null;
+        $status = $prog['status'] ?? null;
+        $card_class = 'intg-card';
+        $pill_class = 's-new'; $pill_text = 'App keys not set';
+        if ($configured) {
+            $card_class .= ' connected';
+            $pill_class = 's-ok'; $pill_text = '✓ App keys configured';
+        } elseif ($status === 'failed') {
+            $card_class .= ' failed';
+            $pill_class = 's-fail'; $pill_text = 'Last test failed';
+        } elseif ($status === 'in_progress' && (int)($prog['current_step'] ?? 1) > 1) {
+            $card_class .= ' in-progress';
+            $pill_class = 's-prog'; $pill_text = 'Resume at step ' . (int)$prog['current_step'];
+        }
+    ?>
+    <div class="<?= $card_class ?>" onclick="openWizard('<?= e($id) ?>')">
+        <div class="intg-head">
+            <span class="intg-icon"><?= $wiz->icon() ?></span>
+            <div style="flex:1;">
+                <div class="intg-name"><?= e($wiz->name()) ?></div>
+                <div style="font-size:11px; color:var(--text-light); margin-top:2px;">OAuth app · customers connect per-site</div>
             </div>
         </div>
         <div class="intg-purpose"><?= e($wiz->purpose()) ?></div>
