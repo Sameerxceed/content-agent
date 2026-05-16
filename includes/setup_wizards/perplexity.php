@@ -25,17 +25,19 @@ class PerplexityWizard extends SetupWizard
         return [
             [
                 'title' => 'Create a Perplexity API key',
-                'why'   => 'Perplexity is the cleanest AI-search engine for citation tracking — every answer comes with a source list. We use that to see if your site is being cited for the queries that matter.',
-                'external_url' => 'https://www.perplexity.ai/settings/api',
-                'link_label'   => 'Open Perplexity API settings ↗',
+                'why'   => 'Perplexity is an AI search engine. Every answer comes with a source list — we use those citations to track whether your site is being referenced by AI for the queries that matter. Note: ContentAgent\'s AEO Tracker uses Claude by default, so Perplexity is an OPTIONAL second engine.',
+                'external_url' => 'https://www.perplexity.ai/account/api/keys',
+                'link_label'   => 'Open Perplexity Account → API ↗',
                 'instructions' => [
-                    'Sign in (or create a Perplexity account).',
-                    'On the API page, click <strong>Generate API Key</strong>.',
-                    'You may be asked to add a payment method — the free tier covers light usage, but a card is required for the API.',
-                    'Copy the API key (it starts with <code>pplx-</code>).',
+                    'Sign in at perplexity.ai (or create an account). After login you\'ll land on the chat interface — that\'s normal.',
+                    'Go to the API console at <code>console.perplexity.ai</code> (or click the button above). Perplexity will ask you to create an "Organization / Group" — name it <strong>ContentAgent</strong>.',
+                    'Once inside the group, look at the LEFT sidebar. You\'ll see: Settings · Members · <strong>Billing</strong> · <strong>API Keys</strong>.',
+                    '<strong>Billing first:</strong> click <em>Billing</em> → <em>Buy more credits</em>. Perplexity is pre-paid pay-as-you-go: <strong>$50 minimum top-up</strong>, no monthly subscription. You\'ll need a card. Light usage means the $50 lasts months — but it IS required before any API call works.',
+                    'After top-up, click <strong>API Keys</strong> in the sidebar → <strong>Create Key</strong>. Give it any label (e.g. "ContentAgent prod").',
+                    'Copy the key (starts with <code>pplx-</code>) and paste below. It\'s shown only once.',
                 ],
                 'fields' => [
-                    ['key' => 'api_key', 'label' => 'API Key', 'placeholder' => 'pplx-...', 'type' => 'password'],
+                    ['key' => 'api_key', 'label' => 'API Key (pplx-...)', 'placeholder' => 'pplx-...', 'type' => 'password'],
                 ],
                 'verify' => function (array $input): array {
                     $key = trim($input['api_key'] ?? '');
