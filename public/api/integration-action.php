@@ -20,6 +20,14 @@ if (!auth_check()) { http_response_code(401); echo json_encode(['error' => 'Unau
 
 header('Content-Type: application/json');
 
+// Only super-admins can manage shared integrations. Customers shouldn't be
+// able to view, edit, or test shared API keys belonging to the platform.
+if (!auth_is_super_admin()) {
+    http_response_code(403);
+    echo json_encode(['error' => 'Forbidden: integration management is super-admin only.']);
+    exit;
+}
+
 $db = require __DIR__ . '/../../includes/db.php';
 $user_id = auth_user_id();
 

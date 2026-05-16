@@ -468,7 +468,7 @@ function sidebar_active(string $page, array $pages_or_query = []): string {
 
             <div class="nav-section" style="margin-top:14px;">Global</div>
             <a href="<?= url('/dashboard/integrations.php') ?>" class="<?= sidebar_active('integrations') ?>">
-                <span class="nav-icon">&#128268;</span> Integrations
+                <span class="nav-icon">&#128268;</span> <?= (function_exists('auth_is_super_admin') && auth_is_super_admin()) ? 'Integrations' : "What's included" ?>
             </a>
             <a href="<?= url('/dashboard/settings.php') ?>" class="<?= sidebar_active('settings') ?>">
                 <span class="nav-icon">&#9881;</span> Settings
@@ -482,7 +482,7 @@ function sidebar_active(string $page, array $pages_or_query = []): string {
 
             <div class="nav-section">Settings</div>
             <a href="<?= url('/dashboard/integrations.php') ?>" class="<?= sidebar_active('integrations') ?>">
-                <span class="nav-icon">&#128268;</span> Integrations
+                <span class="nav-icon">&#128268;</span> <?= (function_exists('auth_is_super_admin') && auth_is_super_admin()) ? 'Integrations' : "What's included" ?>
             </a>
             <a href="<?= url('/dashboard/settings.php') ?>" class="<?= sidebar_active('settings') ?>">
                 <span class="nav-icon">&#9881;</span> Settings

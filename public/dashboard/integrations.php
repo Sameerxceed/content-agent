@@ -17,24 +17,87 @@ auth_require();
 $db      = require __DIR__ . '/../../includes/db.php';
 $user_id = auth_user_id();
 
-$wizards = setup_wizards_all();
+$wizards   = setup_wizards_all();
+$is_super  = auth_is_super_admin();
 
-// Fetch each user's progress in one query
+// Fetch each user's wizard progress (super-admin only — customers don't run wizards)
 $progress_map = [];
-try {
-    $stmt = $db->prepare('SELECT integration, current_step, status, state_json, last_test_result, last_attempted_at
-                          FROM integration_setup_progress WHERE user_id = ?');
-    $stmt->execute([$user_id]);
-    foreach ($stmt->fetchAll() as $row) {
-        $progress_map[$row['integration']] = $row;
+if ($is_super) {
+    try {
+        $stmt = $db->prepare('SELECT integration, current_step, status, state_json, last_test_result, last_attempted_at
+                              FROM integration_setup_progress WHERE user_id = ?');
+        $stmt->execute([$user_id]);
+        foreach ($stmt->fetchAll() as $row) {
+            $progress_map[$row['integration']] = $row;
+        }
+    } catch (PDOException $e) {
+        // table not migrated yet — fail soft
     }
-} catch (PDOException $e) {
-    // table not migrated yet — fail soft
 }
 
-$page_title = 'Integrations';
+$page_title = $is_super ? 'Integrations' : "What's included";
 
 ob_start();
+?>
+
+<?php if (!$is_super): /* ───── CUSTOMER read-only view ───── */ ?>
+<style>
+.inc-hero { background:linear-gradient(135deg, #1B3A6B 0%, #2c5282 100%); color:#fff; border-radius:8px; padding:18px 22px; margin-bottom:18px; }
+.inc-hero h2 { font-size:17px; font-weight:600; margin-bottom:4px; }
+.inc-hero p  { font-size:13px; opacity:0.9; }
+.inc-grid { display:grid; grid-template-columns:repeat(auto-fill, minmax(240px, 1fr)); gap:10px; margin-bottom:18px; }
+.inc-card {
+    background:#fff; border:1px solid var(--border); border-left:3px solid var(--success);
+    border-radius:6px; padding:12px 14px; display:flex; align-items:flex-start; gap:10px;
+}
+.inc-card .ico { font-size:22px; line-height:1; }
+.inc-card .nm  { font-weight:600; font-size:13px; color:var(--primary); }
+.inc-card .dc  { font-size:11px; color:var(--text-light); line-height:1.5; margin-top:2px; }
+.inc-connect-card {
+    background:#fff; border:1px solid var(--border); border-radius:6px; padding:14px 16px;
+}
+.inc-connect-card h3 { font-size:14px; font-weight:600; color:var(--primary); margin-bottom:4px; }
+.inc-connect-card p  { font-size:12px; color:var(--text-light); margin-bottom:10px; }
+</style>
+
+<div class="inc-hero">
+    <h2>Everything ContentAgent runs on, included in your plan</h2>
+    <p>These are the AI and data services powering your dashboard. No setup needed — we handle the keys and the bill.</p>
+</div>
+
+<div class="inc-grid">
+    <?php
+    // Customer-friendly list of shared services. Don't expose keys or internal IDs.
+    $included = [
+        ['🤖', 'Claude AI (Anthropic)',     'Writes blog posts, repurposes for channels, parses pasted alerts.'],
+        ['📊', 'DataForSEO',                'Real keyword volume, difficulty, and SERP positions.'],
+        ['🔭', 'Perplexity (optional)',     'Tracks who AI search engines cite for your queries.'],
+        ['🔍', 'Google Custom Search',      'Powers competitor discovery and AI Presence scans.'],
+        ['✉',  'Resend Email',              'Delivers your weekly digests and newsletter sends.'],
+    ];
+    foreach ($included as [$icon, $name, $desc]):
+    ?>
+    <div class="inc-card">
+        <div class="ico"><?= $icon ?></div>
+        <div style="flex:1;">
+            <div class="nm"><?= e($name) ?></div>
+            <div class="dc"><?= e($desc) ?></div>
+        </div>
+    </div>
+    <?php endforeach; ?>
+</div>
+
+<div class="inc-connect-card">
+    <h3>Connect your accounts</h3>
+    <p>Plug ContentAgent into your <strong>own</strong> external accounts (Google Search Console, LinkedIn, Twitter, Reddit) per site — we don't share these across customers.</p>
+    <p style="margin:0;">Open any of your sites and use the <strong>Distribution channels</strong> card on the Overview page to connect.</p>
+</div>
+
+<?php
+$page_content = ob_get_clean();
+require __DIR__ . '/../../templates/dashboard/layout.php';
+return;
+endif; /* customer view */
 ?>
 <style>
 .intg-grid { display:grid; grid-template-columns:repeat(auto-fill, minmax(320px, 1fr)); gap:14px; margin-bottom:20px; }

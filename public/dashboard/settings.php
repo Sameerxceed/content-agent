@@ -106,6 +106,18 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
 $page_title = 'Settings';
 $tab = $_GET['tab'] ?? 'profile';
+$is_super = auth_is_super_admin();
+
+// Customers can't open the API tab even by URL — bounce them to Profile.
+if ($tab === 'api' && !$is_super) {
+    $tab = 'profile';
+}
+
+// Same for the api_keys POST action.
+if (($_POST['action'] ?? '') === 'api_keys' && !$is_super) {
+    $_SESSION['flash_error'] = 'API keys are managed by the super-admin.';
+    redirect('/dashboard/settings.php');
+}
 
 ob_start();
 ?>
@@ -117,7 +129,9 @@ ob_start();
 <!-- Tabs -->
 <div class="flex gap-2 mb-4" style="border-bottom:2px solid var(--border);padding-bottom:8px;">
     <a href="<?= url('/dashboard/settings.php?tab=profile') ?>" class="btn btn-sm <?= $tab === 'profile' ? 'btn-primary' : 'btn-outline' ?>" style="text-decoration:none;">Profile</a>
+    <?php if ($is_super): ?>
     <a href="<?= url('/dashboard/settings.php?tab=api') ?>" class="btn btn-sm <?= $tab === 'api' ? 'btn-primary' : 'btn-outline' ?>" style="text-decoration:none;">API Keys & Integrations</a>
+    <?php endif; ?>
 </div>
 
 <?php if ($tab === 'profile'): ?>
