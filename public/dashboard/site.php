@@ -377,9 +377,14 @@ $connect_specs = [
                     <a href="<?= url('/dashboard/integrations.php') ?>" style="font-size:11px; color:var(--primary); text-decoration:none; white-space:nowrap;">Setup</a>
                 <?php endif; ?>
             <?php else: ?>
-                <a href="<?= e($spec['auth_url']) ?>" style="font-size:11px; padding:4px 10px; background:<?= $active ? 'transparent' : $spec['color'] ?>; color:<?= $active ? $spec['color'] : '#fff' ?>; border:1px solid <?= $spec['color'] ?>; border-radius:4px; text-decoration:none; white-space:nowrap;">
-                    <?= $active ? 'Reconnect' : 'Connect' ?>
-                </a>
+                <div style="display:flex; flex-direction:column; gap:4px; align-items:flex-end;">
+                    <a href="<?= e($spec['auth_url']) ?>" style="font-size:11px; padding:4px 10px; background:<?= $active ? 'transparent' : $spec['color'] ?>; color:<?= $active ? $spec['color'] : '#fff' ?>; border:1px solid <?= $spec['color'] ?>; border-radius:4px; text-decoration:none; white-space:nowrap;">
+                        <?= $active ? 'Reconnect' : 'Connect' ?>
+                    </a>
+                    <?php if ($active && $key === 'linkedin'): ?>
+                        <a href="<?= url('/dashboard/linkedin-author.php?site=' . $site_id) ?>" style="font-size:10px; color:var(--text-light); text-decoration:none;">Change target →</a>
+                    <?php endif; ?>
+                </div>
             <?php endif; ?>
         </div>
         <?php endforeach; ?>

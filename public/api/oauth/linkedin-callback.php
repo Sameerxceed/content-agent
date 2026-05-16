@@ -24,5 +24,13 @@ if (!$tokens) {
 $profile = linkedin_get_profile($tokens['access_token']);
 linkedin_save_tokens($db, $state, $tokens, $profile ?: []);
 
-$_SESSION['flash_success'] = 'LinkedIn connected! (' . ($profile['name'] ?? 'Account') . ')';
-redirect('/dashboard/sites.php?action=view&id=' . $state);
+// If the user admins any LinkedIn company pages, send them to the author chooser
+// so they can pick personal vs page for THIS site.
+$pages = linkedin_list_admin_pages($tokens['access_token']);
+if (!empty($pages)) {
+    $_SESSION['flash_success'] = 'LinkedIn connected! Pick where posts go for this site.';
+    redirect('/dashboard/linkedin-author.php?site=' . $state);
+}
+
+$_SESSION['flash_success'] = 'LinkedIn connected as ' . ($profile['name'] ?? 'Account') . '. Posts will go to your personal profile.';
+redirect('/dashboard/site.php?id=' . $state);

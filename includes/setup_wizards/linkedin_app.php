@@ -37,9 +37,10 @@ class LinkedInAppWizard extends SetupWizard
                     'Privacy URL: any working URL (you can use your homepage).',
                     'App logo: upload anything.',
                     'Accept terms → Create app.',
-                    'Inside the new app: <strong>Products</strong> tab → request <strong>Sign In with LinkedIn using OpenID Connect</strong> + <strong>Share on LinkedIn</strong> (both approve instantly).',
-                    'Wait until both show "Added" status under Products.',
+                    'Inside the new app: <strong>Products</strong> tab → request these three (all approve instantly):<br>· <strong>Sign In with LinkedIn using OpenID Connect</strong><br>· <strong>Share on LinkedIn</strong> (personal posting)<br>· <strong>Community Management API</strong> (company-page posting + listing pages)',
+                    'Wait until all three show "Added" under Products.',
                     'Then <strong>Auth</strong> tab → under <strong>OAuth 2.0 settings</strong> → <strong>Authorized redirect URLs</strong> → Add: <code>' . htmlspecialchars($redirect, ENT_QUOTES, 'UTF-8') . '</code> → Update.',
+                    'Confirm the <strong>OAuth 2.0 scopes</strong> list now includes <code>w_member_social</code>, <code>w_organization_social</code>, and <code>r_organization_admin</code>.',
                     'On the same Auth tab, copy Client ID and Client Secret.',
                 ],
                 'fields' => [
