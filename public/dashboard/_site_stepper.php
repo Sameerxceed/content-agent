@@ -44,9 +44,16 @@ $_stp_gsc_sync = $stmt->fetchColumn();
 $_stp_has_scan    = !empty($site['scanned_at']);
 $_stp_has_audit   = !empty($_stp_audit);
 $_stp_has_kw      = $_stp_kw > 0;
-$_stp_has_content = ($_stp_posts['published'] + $_stp_posts['draft']) > 0;
 $_stp_has_publish = $_stp_posts['published'] > 0;
 $_stp_has_track   = $_stp_gsc && $_stp_gsc_sync;
+
+// Write and Publish used to be separate steps, but for most sites they happen
+// together (auto-publish or write-then-publish-immediately) and the two
+// metrics ended up identical on the stepper. Merged into one "Publish" step
+// with the draft count appended only when drafts are actually waiting.
+$_stp_publish_metric = $_stp_has_publish
+    ? ($_stp_posts['published'] . ' live' . ($_stp_posts['draft'] > 0 ? ' · ' . $_stp_posts['draft'] . ' draft' : ''))
+    : ($_stp_posts['draft'] > 0 ? $_stp_posts['draft'] . ' draft' . ($_stp_posts['draft'] === 1 ? '' : 's') : 'nothing yet');
 
 $_stp_steps = [
     'scan' => [
@@ -67,17 +74,11 @@ $_stp_steps = [
         'done'   => $_stp_has_kw,
         'href'   => url('/dashboard/keywords.php?site=' . $site_id),
     ],
-    'write' => [
-        'label'  => 'Write',
-        'metric' => $_stp_has_content ? (($_stp_posts['published'] + $_stp_posts['draft']) . ' posts') : '0',
-        'done'   => $_stp_has_content,
-        'href'   => url('/dashboard/posts.php?site=' . $site_id),
-    ],
     'publish' => [
         'label'  => 'Publish',
-        'metric' => $_stp_has_publish ? ($_stp_posts['published'] . ' live') : '0',
+        'metric' => $_stp_publish_metric,
         'done'   => $_stp_has_publish,
-        'href'   => url('/dashboard/posts.php?site=' . $site_id . '&status=published'),
+        'href'   => url('/dashboard/posts.php?site=' . $site_id),
     ],
     'track' => [
         'label'  => 'Track',

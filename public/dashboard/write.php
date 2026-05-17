@@ -67,7 +67,7 @@ ob_start();
     <?php
     $site = auth_get_accessible_site($db, $site_id);
     if (!$site) { echo '<div class="alert alert-error">Site not found.</div>'; } else {
-        $stepper_active = 'write';
+        $stepper_active = 'publish';
         include __DIR__ . '/_site_stepper.php';
 
     // Gather signals

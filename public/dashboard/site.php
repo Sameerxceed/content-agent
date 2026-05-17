@@ -58,8 +58,7 @@ $next_action_labels = [
     'scan'     => 'Start: Scan your website',
     'seo'      => 'Next: Run SEO audit',
     'keywords' => 'Next: Find keywords',
-    'write'    => 'Next: Write your first post',
-    'publish'  => 'Next: Publish to your site',
+    'publish'  => 'Next: Write & publish your first post',
     'track'    => 'Next: Connect Google Search Console',
 ];
 $next_action_label = $_stp_current_key ? $next_action_labels[$_stp_current_key] : null;

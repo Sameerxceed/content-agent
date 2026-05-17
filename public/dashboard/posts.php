@@ -621,6 +621,7 @@ if ($action === 'edit' && isset($_GET['id'])):
     <div style="margin-bottom:10px; display:flex; justify-content:space-between; align-items:center; gap:6px; flex-wrap:wrap;">
         <a href="<?= url('/dashboard/site.php?id=' . (int)$filter_site) ?>" style="font-size:13px;color:var(--primary);text-decoration:none;">&larr; Back to <?= e($site_name) ?></a>
         <div style="display:flex; gap:6px;">
+            <a href="<?= url('/dashboard/write.php?site=' . (int)$filter_site . '&step=propose') ?>" class="btn btn-accent" style="text-decoration:none;font-weight:600;">+ Write New Post</a>
             <button onclick="fixLongSlugs(<?= (int)$filter_site ?>, this)" class="btn btn-outline btn-sm" style="font-size:11px;" title="One-time fix: shorten slugs over 80 chars (which the CMS truncates) and re-push as fresh CMS rows.">✂ Fix long slugs</button>
             <button onclick="republishAllNews(<?= (int)$filter_site ?>, this)" class="btn btn-outline btn-sm" style="font-size:11px;" title="Re-push every published news post to the CMS. Idempotent.">⟲ Re-push all news to CMS</button>
         </div>
@@ -629,7 +630,7 @@ if ($action === 'edit' && isset($_GET['id'])):
         $site_id = (int)$filter_site;
         $site = auth_get_accessible_site($db, $site_id);
         if ($site) {
-            $stepper_active = 'write';
+            $stepper_active = 'publish';
             include __DIR__ . '/_site_stepper.php';
         }
     ?>

@@ -337,21 +337,34 @@ function sidebar_active(string $page, array $pages_or_query = []): string {
 
         .form-control {
             width: 100%;
-            padding: 8px 10px;
-            border: 1px solid var(--border);
+            padding: 9px 12px;
+            background: #fff;
+            border: 1px solid #cbd5e1;
             border-radius: var(--radius);
             font-size: 13px;
+            font-family: inherit;
             color: var(--text);
-            transition: border-color 0.15s;
+            transition: border-color 0.15s, box-shadow 0.15s;
         }
+
+        .form-control:hover { border-color: #94a3b8; }
 
         .form-control:focus {
             outline: none;
             border-color: var(--primary);
-            box-shadow: 0 0 0 3px rgba(27, 58, 107, 0.1);
+            box-shadow: 0 0 0 3px rgba(27, 58, 107, 0.12);
         }
 
-        textarea.form-control { resize: vertical; min-height: 80px; }
+        .form-control::placeholder { color: #94a3b8; }
+
+        textarea.form-control { resize: vertical; min-height: 80px; line-height: 1.5; }
+
+        input[type="checkbox"], input[type="radio"] {
+            width: 16px;
+            height: 16px;
+            accent-color: var(--primary);
+            cursor: pointer;
+        }
 
         select.form-control {
             appearance: none;
