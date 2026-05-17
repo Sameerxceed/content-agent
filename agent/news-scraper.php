@@ -9,6 +9,7 @@
 
 require_once __DIR__ . '/../includes/helpers.php';
 require_once __DIR__ . '/../includes/rss.php';
+require_once __DIR__ . '/../includes/cms-connector.php';
 
 $db = require __DIR__ . '/../includes/db.php';
 
@@ -139,31 +140,74 @@ foreach ($sites as $site) {
     // ── Save top N as news posts ────────────────────────
     $to_save = array_slice($new_items, 0, $max_news_per_day);
     $saved = 0;
+    $pushed = 0;
+    $push_failed = 0;
+
+    $cms_ready = !empty($site['cms_url']) && !empty($site['cms_api_key']);
 
     foreach ($to_save as $item) {
         $slug = slugify($item['title']);
         $slug = ensure_news_slug($db, $site['id'], $slug);
 
         $body = format_news_body($item);
+        $title = mb_substr($item['title'], 0, 500);
+        $excerpt = truncate($item['description'], 200);
+        $seo_title = truncate($item['title'], 60, '');
+        $seo_desc = truncate($item['description'], 160);
+        $tags_json = json_encode($item['categories'] ?? []);
+        $source_url = mb_substr($item['link'], 0, 2048);
 
-        $stmt = $db->prepare('INSERT INTO posts (site_id, title, slug, body, excerpt, seo_title, seo_description, type, tags, status, source_url, published_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW())');
+        // Push to CMS FIRST (if configured). Only mark published locally if
+        // the push succeeded, otherwise leave as 'draft' with the error in the body
+        // so the user can see it on the posts page and retry.
+        $status = 'draft';
+        $push_error = null;
+
+        if ($cms_ready) {
+            $push_payload = [
+                'title'           => $title,
+                'slug'            => $slug,
+                'excerpt'         => $excerpt,
+                'body'            => $body,
+                'tags'            => $tags_json,
+                'seo_title'       => $seo_title,
+                'seo_description' => $seo_desc,
+                'seo_keywords'    => '',
+            ];
+            $result = cms_push_post($push_payload, $site['cms_url'], $site['cms_api_key']);
+            if (!empty($result['success'])) {
+                $status = 'published';
+                $pushed++;
+            } else {
+                $push_error = $result['error'] ?? 'Unknown CMS error';
+                $push_failed++;
+                echo "    ✗ CMS push failed for \"{$title}\": {$push_error}\n";
+            }
+        } else {
+            // No CMS configured — save as published locally (legacy behaviour)
+            $status = 'published';
+        }
+
+        $stmt = $db->prepare('INSERT INTO posts (site_id, title, slug, body, excerpt, seo_title, seo_description, type, tags, status, source_url, published_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)');
 
         $stmt->execute([
             $site['id'],
-            mb_substr($item['title'], 0, 500),
+            $title,
             $slug,
             $body,
-            truncate($item['description'], 200),
-            truncate($item['title'], 60, ''),
-            truncate($item['description'], 160),
+            $excerpt,
+            $seo_title,
+            $seo_desc,
             'news',
-            json_encode($item['categories'] ?? []),
-            'published', // News goes live immediately
-            mb_substr($item['link'], 0, 2048),
+            $tags_json,
+            $status,
+            $source_url,
+            $status === 'published' ? date('Y-m-d H:i:s') : null,
         ]);
 
         $saved++;
-        echo "    + {$item['title']}\n";
+        $marker = $status === 'published' ? '✓' : '⏸';
+        echo "    {$marker} {$title}" . ($push_error ? " (CMS error: {$push_error})" : '') . "\n";
     }
 
     $total_saved += $saved;

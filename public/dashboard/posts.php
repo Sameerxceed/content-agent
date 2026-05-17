@@ -103,6 +103,7 @@ if ($action === 'edit' && isset($_GET['id'])):
             <span class="text-muted text-sm"><?= e($post['domain']) ?></span>
             <?php if ($post['status'] === 'published'): ?>
                 <a href="https://<?= e($post['domain']) ?>/blog/<?= e($post['slug']) ?>" target="_blank" class="btn btn-outline btn-sm" style="color:var(--success);">View on site &rarr;</a>
+                <button type="button" onclick="republishCMS(<?= (int)$post['id'] ?>, this)" class="btn btn-outline btn-sm" title="If 'View on site' returns 'Post not found', re-push this post to the CMS.">⟲ Re-push to CMS</button>
             <?php endif; ?>
         </div>
         <div class="flex gap-2">
@@ -389,6 +390,27 @@ if ($action === 'edit' && isset($_GET['id'])):
         }
     }
 
+    async function republishCMS(postId, btn) {
+        const orig = btn.textContent;
+        btn.disabled = true; btn.textContent = 'Re-pushing…';
+        try {
+            const res = await fetch('<?= url('/api/republish-cms.php') ?>', {
+                method:'POST', headers:{'Content-Type':'application/json'},
+                body: JSON.stringify({post_id: postId})
+            });
+            const data = await res.json();
+            if (data.success) {
+                btn.textContent = '✓ Pushed';
+                btn.style.background = 'var(--success)';
+                btn.style.color = '#fff';
+                setTimeout(() => location.reload(), 800);
+            } else {
+                alert('Failed: ' + (data.error || 'Unknown error') + '\n\nCheck the site has CMS URL + API key set in its Edit page.');
+                btn.textContent = orig; btn.disabled = false;
+            }
+        } catch(e) { alert(e.message); btn.textContent = orig; btn.disabled = false; }
+    }
+
     async function publishToCMS(postId, btn) {
         if (!confirm('Publish this post to the live website?')) return;
         const orig = btn.textContent;
@@ -587,9 +609,30 @@ if ($action === 'edit' && isset($_GET['id'])):
     }
 ?>
     <?php if ($filter_site && $site_name): ?>
-    <div style="margin-bottom:10px;">
+    <div style="margin-bottom:10px; display:flex; justify-content:space-between; align-items:center;">
         <a href="<?= url('/dashboard/site.php?id=' . (int)$filter_site) ?>" style="font-size:13px;color:var(--primary);text-decoration:none;">&larr; Back to <?= e($site_name) ?></a>
+        <button onclick="republishAllNews(<?= (int)$filter_site ?>, this)" class="btn btn-outline btn-sm" style="font-size:11px;" title="Re-push every published news post to the CMS. Use this once after the auto-push bug fix to repair posts that never made it to the website.">⟲ Re-push all news to CMS</button>
     </div>
+    <script>
+    async function republishAllNews(siteId, btn) {
+        if (!confirm('Re-push every published news post on this site to the CMS? This is safe to run multiple times (existing posts get updated).')) return;
+        const orig = btn.textContent;
+        btn.disabled = true; btn.textContent = 'Re-pushing all…';
+        try {
+            const res = await fetch('<?= url('/api/republish-cms.php') ?>', {
+                method:'POST', headers:{'Content-Type':'application/json'},
+                body: JSON.stringify({site_id: siteId, all_news: true})
+            });
+            const data = await res.json();
+            if (data.success) {
+                alert('Done. Pushed: ' + data.pushed + ' / ' + data.total + (data.failed ? ' (failed: ' + data.failed + ')\n\nFirst errors:\n' + (data.errors || []).join('\n') : ''));
+                location.reload();
+            } else {
+                alert('Failed: ' + (data.error || 'Unknown')); btn.disabled = false; btn.textContent = orig;
+            }
+        } catch(e) { alert(e.message); btn.disabled = false; btn.textContent = orig; }
+    }
+    </script>
     <?php else: ?>
     <div style="margin-bottom:10px;">
         <a href="<?= url('/dashboard/index.php') ?>" style="font-size:13px;color:var(--primary);text-decoration:none;">&larr; Back to Dashboard</a>
