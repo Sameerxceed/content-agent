@@ -68,12 +68,41 @@ function cms_push_post(array $post, string $cms_url, string $cms_api_key): array
         ];
     }
 
-    // 409 = duplicate slug, try updating instead
+    // 409 = duplicate slug. The post is already on the CMS — try to update it
+    // with the latest body, but if the update fails, that's NOT a hard error:
+    // the content is still live on the site. We verify and report accordingly.
     if ($response['status'] === 409) {
         $upd = cms_update_post($post, $cms_url, $cms_api_key);
-        $upd['http_status'] = 409;
-        $upd['note']        = '409 on create → tried update';
-        return $upd;
+        if ($upd['success']) {
+            $upd['http_status'] = 200;
+            $upd['note']        = 'Already on CMS — updated in place';
+            return $upd;
+        }
+
+        // Update failed. Verify the post actually exists. If it does, treat as
+        // success (already published) and surface the update failure as a note,
+        // not an error — the CMS has the content, just couldn't refresh it.
+        $verify = cms_verify_post($post['slug'], $cms_url, $cms_api_key);
+        if ($verify['found']) {
+            return [
+                'success'    => true,
+                'error'      => null,
+                'remote_id'  => null,
+                'slug'       => $post['slug'],
+                'http_status'=> 409,
+                'note'       => 'Already on CMS (update skipped: ' . ($upd['error'] ?? 'unknown') . ')',
+                'raw'        => $upd['raw'] ?? '',
+            ];
+        }
+
+        // 409 said it existed, but verify says it doesn't — odd state. Bubble up.
+        return [
+            'success'    => false,
+            'error'      => '409 on create, but post not found on verify: ' . ($upd['error'] ?? 'update failed'),
+            'remote_id'  => null,
+            'http_status'=> 409,
+            'raw'        => $upd['raw'] ?? substr($response['body'] ?? '', 0, 500),
+        ];
     }
 
     return [
