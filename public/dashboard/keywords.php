@@ -115,6 +115,15 @@ $current_filters = ['site' => $filter_site, 'cluster' => $filter_cluster];
 <div style="margin-bottom:10px;">
     <a href="<?= url('/dashboard/site.php?id=' . (int)$filter_site) ?>" style="font-size:13px;color:var(--primary);text-decoration:none;">&larr; Back to <?= e($site_name_kw) ?></a>
 </div>
+<?php
+    // Persistent site workflow stepper
+    $site_id = (int)$filter_site;
+    $site = auth_get_accessible_site($db, $site_id);
+    if ($site) {
+        $stepper_active = 'keywords';
+        include __DIR__ . '/_site_stepper.php';
+    }
+?>
 <?php else: ?>
 <div style="margin-bottom:10px;">
     <a href="<?= url('/dashboard/index.php') ?>" style="font-size:13px;color:var(--primary);text-decoration:none;">&larr; Back to Dashboard</a>

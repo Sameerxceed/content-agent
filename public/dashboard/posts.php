@@ -625,6 +625,14 @@ if ($action === 'edit' && isset($_GET['id'])):
             <button onclick="republishAllNews(<?= (int)$filter_site ?>, this)" class="btn btn-outline btn-sm" style="font-size:11px;" title="Re-push every published news post to the CMS. Idempotent.">⟲ Re-push all news to CMS</button>
         </div>
     </div>
+    <?php
+        $site_id = (int)$filter_site;
+        $site = auth_get_accessible_site($db, $site_id);
+        if ($site) {
+            $stepper_active = 'write';
+            include __DIR__ . '/_site_stepper.php';
+        }
+    ?>
     <script>
     async function republishAllNews(siteId, btn) {
         if (!confirm('Re-push every published news post on this site to the CMS? This is safe to run multiple times (existing posts get updated).')) return;

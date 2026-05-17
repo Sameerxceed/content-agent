@@ -78,7 +78,11 @@ $page_title = 'SEO — ' . $site['name'];
 
 ob_start();
 
-// Tab bar — pass $filter_site so the include picks it up
+// Persistent site workflow stepper at top so user knows where they are.
+$stepper_active = 'seo';
+include __DIR__ . '/_site_stepper.php';
+
+// SEO sub-tabs (Snapshot / Issues / Approvals / AI Readiness / Full Report)
 $filter_site = $site_id;
 $active = 'snapshot';
 include __DIR__ . '/_health_tabs.php';

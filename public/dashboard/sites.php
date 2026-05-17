@@ -172,6 +172,9 @@ if ($action === 'add'):
         echo '<div class="alert alert-error">Site not found.</div>';
     else:
         $feeds = json_decode($site['rss_feeds'] ?? '[]', true) ?: [];
+        $site_id = (int)$site['id'];
+        $stepper_active = 'scan';
+        include __DIR__ . '/_site_stepper.php';
 ?>
     <div class="card" style="max-width: 600px;">
         <div class="card-header">Edit: <?= e($site['name']) ?></div>

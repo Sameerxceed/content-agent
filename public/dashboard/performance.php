@@ -37,6 +37,10 @@ $gsc_connected = (bool)$gsc->fetch();
 
 $page_title = 'Performance — ' . $site['name'];
 ob_start();
+
+// Persistent site workflow stepper at top
+$stepper_active = 'track';
+include __DIR__ . '/_site_stepper.php';
 ?>
 <style>
 .pf-summary { display:grid; grid-template-columns:repeat(auto-fit, minmax(160px, 1fr)); gap:12px; margin-bottom:18px; }

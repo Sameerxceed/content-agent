@@ -67,6 +67,8 @@ ob_start();
     <?php
     $site = auth_get_accessible_site($db, $site_id);
     if (!$site) { echo '<div class="alert alert-error">Site not found.</div>'; } else {
+        $stepper_active = 'write';
+        include __DIR__ . '/_site_stepper.php';
 
     // Gather signals
     $stmt = $db->prepare("SELECT keyword FROM keywords WHERE site_id = ? AND status = 'active' ORDER BY priority DESC LIMIT 15");
