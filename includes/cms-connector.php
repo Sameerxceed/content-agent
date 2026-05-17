@@ -50,22 +50,29 @@ function cms_push_post(array $post, string $cms_url, string $cms_api_key): array
 
     if ($response['status'] === 201 && !empty($data['id'])) {
         return [
-            'success'   => true,
-            'error'     => null,
-            'remote_id' => $data['id'],
-            'slug'      => $data['slug'] ?? $post['slug'],
+            'success'    => true,
+            'error'      => null,
+            'remote_id'  => $data['id'],
+            'slug'       => $data['slug'] ?? $post['slug'],
+            'http_status'=> 201,
+            'raw'        => substr($response['body'], 0, 500),
         ];
     }
 
     // 409 = duplicate slug, try updating instead
     if ($response['status'] === 409) {
-        return cms_update_post($post, $cms_url, $cms_api_key);
+        $upd = cms_update_post($post, $cms_url, $cms_api_key);
+        $upd['http_status'] = 409;
+        $upd['note']        = '409 on create → tried update';
+        return $upd;
     }
 
     return [
-        'success'   => false,
-        'error'     => $data['error'] ?? "HTTP {$response['status']}",
-        'remote_id' => null,
+        'success'    => false,
+        'error'      => $data['error'] ?? "HTTP {$response['status']}",
+        'remote_id'  => null,
+        'http_status'=> $response['status'],
+        'raw'        => substr($response['body'] ?? '', 0, 500),
     ];
 }
 
@@ -110,10 +117,39 @@ function cms_update_post(array $post, string $cms_url, string $cms_api_key): arr
 
     $data = json_decode($body, true);
     if ($status === 200 && !empty($data['updated'])) {
-        return ['success' => true, 'error' => null, 'remote_id' => null, 'slug' => $post['slug']];
+        return ['success' => true, 'error' => null, 'remote_id' => null, 'slug' => $post['slug'], 'http_status' => 200];
     }
 
-    return ['success' => false, 'error' => $data['error'] ?? "HTTP {$status}", 'remote_id' => null];
+    return [
+        'success'    => false,
+        'error'      => $data['error'] ?? "HTTP {$status}",
+        'remote_id'  => null,
+        'http_status'=> $status,
+        'raw'        => substr($body ?? '', 0, 500),
+    ];
+}
+
+/**
+ * Verify a post exists on the CMS by fetching it by slug.
+ * Returns ['found' => bool, 'http_status' => int, 'raw' => string].
+ */
+function cms_verify_post(string $slug, string $cms_url, string $cms_api_key): array
+{
+    $url = rtrim($cms_url, '/') . '/api/blog.php?slug=' . urlencode($slug);
+    $ch = curl_init($url);
+    curl_setopt_array($ch, [
+        CURLOPT_RETURNTRANSFER => true,
+        CURLOPT_HTTPHEADER => ['X-API-Key: ' . $cms_api_key],
+        CURLOPT_TIMEOUT => 15,
+    ]);
+    $body = curl_exec($ch);
+    $status = curl_getinfo($ch, CURLINFO_HTTP_CODE);
+    curl_close($ch);
+    return [
+        'found'       => $status === 200,
+        'http_status' => $status,
+        'raw'         => substr($body ?? '', 0, 500),
+    ];
 }
 
 /**

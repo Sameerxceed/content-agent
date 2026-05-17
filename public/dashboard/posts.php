@@ -399,13 +399,22 @@ if ($action === 'edit' && isset($_GET['id'])):
                 body: JSON.stringify({post_id: postId})
             });
             const data = await res.json();
+            // Always show diagnostic — easier to debug CMS issues
+            const lines = [
+                data.success ? '✓ Push succeeded AND verified on CMS' : '✗ Failed: ' + (data.error || 'Unknown'),
+                '',
+                'Push HTTP: ' + (data.http_status || '—'),
+                'Verify HTTP: ' + (data.verify && data.verify.http_status || '—'),
+                'Verify found: ' + (data.verify && data.verify.found ? 'YES' : 'NO'),
+            ];
+            if (data.raw) lines.push('', 'CMS push response:', data.raw);
+            if (data.verify && data.verify.raw) lines.push('', 'CMS verify response:', data.verify.raw);
+            alert(lines.join('\n'));
             if (data.success) {
                 btn.textContent = '✓ Pushed';
                 btn.style.background = 'var(--success)';
                 btn.style.color = '#fff';
-                setTimeout(() => location.reload(), 800);
             } else {
-                alert('Failed: ' + (data.error || 'Unknown error') + '\n\nCheck the site has CMS URL + API key set in its Edit page.');
                 btn.textContent = orig; btn.disabled = false;
             }
         } catch(e) { alert(e.message); btn.textContent = orig; btn.disabled = false; }

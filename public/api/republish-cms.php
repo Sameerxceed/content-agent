@@ -42,6 +42,19 @@ function _push_one(PDO $db, array $post): array
         'seo_keywords'    => $post['seo_keywords'] ?? '',
     ], $site['cms_url'], $site['cms_api_key']);
 
+    // Always verify after — even if push reported success, confirm the CMS
+    // actually serves the post by slug. This catches CMSes that 201 but don't
+    // really persist, or that store a different slug than we sent.
+    $verify = cms_verify_post($post['slug'], $site['cms_url'], $site['cms_api_key']);
+    $result['verify'] = $verify;
+
+    // If the CMS doesn't return the post by slug after a "successful" push,
+    // we should NOT call it a success.
+    if (!empty($result['success']) && !$verify['found']) {
+        $result['success'] = false;
+        $result['error']   = 'CMS accepted the push but the post is not retrievable by slug. Likely the CMS stored a different slug or rejected silently. Verify HTTP=' . $verify['http_status'];
+    }
+
     return $result;
 }
 
