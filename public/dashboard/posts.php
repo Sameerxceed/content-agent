@@ -101,8 +101,8 @@ if ($action === 'edit' && isset($_GET['id'])):
             <span class="badge badge-<?= $post['status'] ?>"><?= $post['status'] ?></span>
             <span class="badge badge-<?= $post['type'] === 'news' ? 'info' : 'draft' ?>"><?= $post['type'] ?></span>
             <span class="text-muted text-sm"><?= e($post['domain']) ?></span>
-            <?php if ($post['status'] === 'published'): ?>
-                <a href="https://<?= e($post['domain']) ?>/blog/<?= e($post['slug']) ?>" target="_blank" class="btn btn-outline btn-sm" style="color:var(--success);">View on site &rarr;</a>
+            <?php if ($post['status'] === 'published'): $public_path = $post['type'] === 'news' ? '/news/' : '/blog/'; ?>
+                <a href="https://<?= e($post['domain']) ?><?= $public_path ?><?= e($post['slug']) ?>" target="_blank" class="btn btn-outline btn-sm" style="color:var(--success);">View on site &rarr;</a>
                 <button type="button" onclick="republishCMS(<?= (int)$post['id'] ?>, this)" class="btn btn-outline btn-sm" title="If 'View on site' returns 'Post not found', re-push this post to the CMS.">⟲ Re-push to CMS</button>
             <?php endif; ?>
         </div>

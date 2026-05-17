@@ -25,7 +25,10 @@ function cms_push_post(array $post, string $cms_url, string $cms_api_key): array
         ? date('Y-m-d', strtotime($post['published_at']))
         : date('Y-m-d');
 
+    $type = ($post['type'] ?? 'blog') === 'news' ? 'news' : 'blog';
+
     $payload = [
+        'type'            => $type, // blog | news — Xceed CMS routes accordingly
         'title'           => $post['title'],
         'slug'            => $post['slug'],
         'excerpt'         => $post['excerpt'] ?? '',

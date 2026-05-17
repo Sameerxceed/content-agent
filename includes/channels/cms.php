@@ -48,11 +48,10 @@ class CmsChannel extends ChannelAdapter
         $result = cms_push_post($post, $site['cms_url'], $site['cms_api_key']);
 
         if (!empty($result['success'])) {
-            $external_url = rtrim($site['cms_url'], '/') . '/blog/' . ($result['slug'] ?? $post['slug']);
-            // Fallback: also try public domain if known
+            $public_path = ($post['type'] ?? 'blog') === 'news' ? '/news/' : '/blog/';
+            $external_url = rtrim($site['cms_url'], '/') . $public_path . ($result['slug'] ?? $post['slug']);
             if (!empty($site['domain'])) {
-                $public_url = 'https://' . ltrim($site['domain'], 'https://') . '/blog/' . ($result['slug'] ?? $post['slug']);
-                $external_url = $public_url;
+                $external_url = 'https://' . ltrim($site['domain'], 'https://') . $public_path . ($result['slug'] ?? $post['slug']);
             }
 
             return [

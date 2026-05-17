@@ -179,6 +179,7 @@ foreach ($sites as $site) {
                 'seo_description' => $seo_desc,
                 'seo_keywords'    => '',
                 'published_at'    => $article_date,
+                'type'            => 'news',
             ];
             $result = cms_push_post($push_payload, $site['cms_url'], $site['cms_api_key']);
             if (!empty($result['success'])) {
