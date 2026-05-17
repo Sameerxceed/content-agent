@@ -19,6 +19,12 @@ function cms_push_post(array $post, string $cms_url, string $cms_api_key): array
     $word_count = str_word_count(strip_tags($post['body']));
     $read_time = max(1, round($word_count / 200)) . ' min';
 
+    // Preserve the original publication date — re-pushing yesterday's post
+    // shouldn't make it look like a fresh post on the website.
+    $pub_date = !empty($post['published_at'])
+        ? date('Y-m-d', strtotime($post['published_at']))
+        : date('Y-m-d');
+
     $payload = [
         'title'           => $post['title'],
         'slug'            => $post['slug'],
@@ -29,7 +35,7 @@ function cms_push_post(array $post, string $cms_url, string $cms_api_key): array
         'read_time'       => $read_time,
         'author'          => 'Xceed Engineering',
         'is_published'    => 1,
-        'published_date'  => date('Y-m-d'),
+        'published_date'  => $pub_date,
         'seo_title'       => $post['seo_title'] ?? $post['title'],
         'seo_description' => $post['seo_description'] ?? '',
         'seo_keywords'    => $post['seo_keywords'] ?? '',
@@ -83,6 +89,10 @@ function cms_update_post(array $post, string $cms_url, string $cms_api_key): arr
 {
     $tags = json_decode($post['tags'] ?? '[]', true) ?: [];
 
+    $pub_date = !empty($post['published_at'])
+        ? date('Y-m-d', strtotime($post['published_at']))
+        : null;
+
     $payload = [
         'slug'            => $post['slug'],
         'title'           => $post['title'],
@@ -94,6 +104,7 @@ function cms_update_post(array $post, string $cms_url, string $cms_api_key): arr
         'seo_keywords'    => $post['seo_keywords'] ?? '',
         'is_published'    => 1,
     ];
+    if ($pub_date) $payload['published_date'] = $pub_date;
 
     $ch = curl_init(rtrim($cms_url, '/') . '/api/blog.php');
     curl_setopt_array($ch, [

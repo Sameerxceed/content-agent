@@ -157,6 +157,11 @@ foreach ($sites as $site) {
         $tags_json = json_encode($item['categories'] ?? []);
         $source_url = mb_substr($item['link'], 0, 2048);
 
+        // Use the RSS item's actual publication date when present so
+        // the post on the website shows when the news was originally
+        // published, not when we happened to scrape it.
+        $article_date = !empty($item['date']) ? $item['date'] : date('Y-m-d H:i:s');
+
         // Push to CMS FIRST (if configured). Only mark published locally if
         // the push succeeded, otherwise leave as 'draft' with the error in the body
         // so the user can see it on the posts page and retry.
@@ -173,6 +178,7 @@ foreach ($sites as $site) {
                 'seo_title'       => $seo_title,
                 'seo_description' => $seo_desc,
                 'seo_keywords'    => '',
+                'published_at'    => $article_date,
             ];
             $result = cms_push_post($push_payload, $site['cms_url'], $site['cms_api_key']);
             if (!empty($result['success'])) {
@@ -202,7 +208,7 @@ foreach ($sites as $site) {
             $tags_json,
             $status,
             $source_url,
-            $status === 'published' ? date('Y-m-d H:i:s') : null,
+            $status === 'published' ? $article_date : null,
         ]);
 
         $saved++;

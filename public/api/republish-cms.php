@@ -40,6 +40,7 @@ function _push_one(PDO $db, array $post): array
         'seo_title'       => $post['seo_title'] ?? $post['title'],
         'seo_description' => $post['seo_description'] ?? '',
         'seo_keywords'    => $post['seo_keywords'] ?? '',
+        'published_at'    => $post['published_at'] ?? null,
     ], $site['cms_url'], $site['cms_api_key']);
 
     // Always verify after — even if push reported success, confirm the CMS
