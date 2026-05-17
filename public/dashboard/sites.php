@@ -68,12 +68,16 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         // Brand fonts
         $brand_fonts = array_filter(array_map('trim', explode(',', $_POST['brand_fonts'] ?? '')));
 
-        $stmt = $db->prepare('UPDATE sites SET name = ?, agent_mode = ?, blog_path = ?, topics = ?, rss_feeds = ?, cms_url = ?, cms_api_key = ?, server_type = ?, server_host = ?, server_user = ?, server_pass = ?, server_path = ?, git_repo = ?, hosting_panel = ?, brand_colors = ?, brand_fonts = ?, is_active = ?, digest_email = ? WHERE id = ?');
+        $stmt = $db->prepare('UPDATE sites SET name = ?, agent_mode = ?, blog_path = ?, topics = ?, topics_confirmed = ?, business_description = ?, persona = ?, usp = ?, rss_feeds = ?, cms_url = ?, cms_api_key = ?, server_type = ?, server_host = ?, server_user = ?, server_pass = ?, server_path = ?, git_repo = ?, hosting_panel = ?, brand_colors = ?, brand_fonts = ?, is_active = ?, digest_email = ? WHERE id = ?');
         $stmt->execute([
             trim($_POST['name']),
             $_POST['agent_mode'] ?? 'manual',
             trim($_POST['blog_path'] ?? '/blog'),
             json_encode(array_values($topics_arr)),
+            isset($_POST['topics_confirmed']) ? 1 : 0,
+            trim($_POST['business_description'] ?? '') ?: null,
+            trim($_POST['persona'] ?? '') ?: null,
+            trim($_POST['usp'] ?? '') ?: null,
             json_encode(array_filter(array_map('trim', explode("\n", $_POST['rss_feeds'] ?? '')))),
             trim($_POST['cms_url'] ?? '') ?: null,
             trim($_POST['cms_api_key'] ?? '') ?: null,
@@ -217,10 +221,37 @@ if ($action === 'add'):
                 <input type="text" id="blog_path" name="blog_path" class="form-control" value="<?= e($site['blog_path']) ?>">
             </div>
 
-            <div class="form-group">
-                <label for="topics">Topics / Niche (comma-separated)</label>
-                <input type="text" id="topics" name="topics" class="form-control" value="<?= e(implode(', ', json_decode($site['topics'] ?? '[]', true) ?: [])) ?>" placeholder="e.g. software development, AI, web design">
-                <div class="text-sm text-muted mt-2">Used for news scraping relevance and content strategy.</div>
+            <div id="focus" style="margin-top:14px;padding-top:14px;border-top:1px solid var(--border);">
+                <div class="text-sm" style="font-weight:600;margin-bottom:10px;">🎯 Business Focus</div>
+                <p class="text-sm text-muted mb-2">This drives every AI decision — keyword research, content writing, SEO suggestions. <strong>If this is wrong, everything downstream will be wrong.</strong></p>
+
+                <div class="form-group">
+                    <label for="business_description">What does your business sell or offer?</label>
+                    <textarea id="business_description" name="business_description" class="form-control" rows="2" placeholder="Describe what your business actually sells or offers, in your own words."><?= e($site['business_description'] ?? '') ?></textarea>
+                </div>
+
+                <div class="form-group">
+                    <label for="topics">Main topics / products (comma-separated)</label>
+                    <input type="text" id="topics" name="topics" class="form-control" value="<?= e(implode(', ', json_decode($site['topics'] ?? '[]', true) ?: [])) ?>" placeholder="e.g. software development, AI, web design">
+                    <div class="text-sm text-muted mt-2">3–6 short phrases work best. Also used for news scraping relevance.</div>
+                </div>
+
+                <div class="form-group">
+                    <label for="persona">Who is your ideal customer? <span class="text-muted" style="font-weight:400;">(optional)</span></label>
+                    <textarea id="persona" name="persona" class="form-control" rows="2" placeholder="e.g. UK-based marketing managers at 50-200 person SaaS companies"><?= e($site['persona'] ?? '') ?></textarea>
+                </div>
+
+                <div class="form-group">
+                    <label for="usp">What makes you different from competitors? <span class="text-muted" style="font-weight:400;">(your USP)</span></label>
+                    <textarea id="usp" name="usp" class="form-control" rows="2" placeholder="e.g. Only platform that integrates GSC with AI-driven content briefs"><?= e($site['usp'] ?? '') ?></textarea>
+                </div>
+
+                <div class="form-group">
+                    <label style="display:flex;align-items:center;gap:8px;cursor:pointer;font-weight:normal;">
+                        <input type="checkbox" name="topics_confirmed" value="1" <?= !empty($site['topics_confirmed']) ? 'checked' : '' ?>>
+                        <span>I've reviewed the above and confirm AI can use it for content + SEO work</span>
+                    </label>
+                </div>
             </div>
 
             <div class="form-group">

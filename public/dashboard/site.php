@@ -1,10 +1,13 @@
 <?php
 /**
- * Site Command Center — Single page for everything.
- * This is THE page for a site. No other pages needed.
+ * Site Command Center — at-a-glance overview for one site.
  *
- * Flow: Scan → Audit → Fix → Keywords → Content → Monitor
- * Each section shows status + action button + results when done.
+ * The page is a scannable dashboard: every section the customer cares about
+ * is one row with a status summary; click the row to open the detail page.
+ * No accordions, no tabs, no banners — just rows.
+ *
+ * Top of page: hero (name + 2 buttons) → pipeline stepper → next-action CTA
+ *              → one-line metrics → row list.
  */
 require_once __DIR__ . '/../../includes/helpers.php';
 require_once __DIR__ . '/../../includes/auth.php';
@@ -93,66 +96,33 @@ try {
     $unread_alerts = (int)$stmt->fetchColumn();
 } catch (PDOException $e) {}
 
-// page_seo: SEO improvements ContentAgent has generated for individual pages
-// (titles, metas, canonicals, schema). These are *enhancements* served via
-// the snippet, not "fixes for broken things" — the SEO audit above measures
-// broken things separately. Break out by status so we can label honestly.
+// page_seo: SEO improvements ContentAgent has generated for individual pages.
 $stmt = $db->prepare("SELECT status, COUNT(*) AS cnt FROM page_seo WHERE site_id = ? GROUP BY status");
 $stmt->execute([$site_id]);
 $page_seo_by_status = ['pending' => 0, 'approved' => 0, 'rejected' => 0];
 foreach ($stmt->fetchAll() as $r) $page_seo_by_status[$r['status']] = (int)$r['cnt'];
 $improvements_pending  = $page_seo_by_status['pending'];
 $improvements_approved = $page_seo_by_status['approved'];
-$fixes_ready           = $improvements_pending + $improvements_approved; // legacy var, kept for callers below
-
-// Recent posts
-$stmt = $db->prepare('SELECT id, title, slug, type, status, created_at FROM posts WHERE site_id = ? ORDER BY created_at DESC LIMIT 5');
-$stmt->execute([$site_id]);
-$recent_posts = $stmt->fetchAll();
-
-// Top keywords
-$stmt = $db->prepare('SELECT keyword, priority, difficulty FROM keywords WHERE site_id = ? ORDER BY priority DESC LIMIT 8');
-$stmt->execute([$site_id]);
-$top_kws = $stmt->fetchAll();
-
-// Audit history for chart
-$stmt = $db->prepare('SELECT score, total_issues, DATE_FORMAT(run_at, "%d %b") as label FROM seo_audits WHERE site_id = ? ORDER BY run_at ASC');
-$stmt->execute([$site_id]);
-$score_history = $stmt->fetchAll();
-
-// Issues fixed vs open (all time)
-$stmt = $db->prepare('SELECT COUNT(*) FROM seo_issues WHERE site_id = ? AND status IN ("fix_proposed","fix_applied","resolved","fixed_by_snippet")');
-$stmt->execute([$site_id]);
-$issues_fixed = $stmt->fetchColumn();
+$fixes_ready           = $improvements_pending + $improvements_approved;
 
 // This week stats
 $stmt = $db->prepare('SELECT COUNT(*) FROM posts WHERE site_id = ? AND created_at > DATE_SUB(NOW(), INTERVAL 7 DAY)');
 $stmt->execute([$site_id]);
 $posts_this_week = $stmt->fetchColumn();
 
-$stmt = $db->prepare('SELECT COUNT(*) FROM keywords WHERE site_id = ? AND created_at > DATE_SUB(NOW(), INTERVAL 7 DAY)');
-$stmt->execute([$site_id]);
-$kw_this_week = $stmt->fetchColumn();
-
-// Score change since first audit
-$first_score = !empty($score_history) ? $score_history[0]['score'] : null;
-$latest_score = $audit ? $audit['score'] : null;
-$score_change = ($first_score !== null && $latest_score !== null && count($score_history) > 1) ? $latest_score - $first_score : null;
-
-// Determine what step user is on
-$has_scan = !empty($site['scanned_at']);
-$has_audit = !empty($audit);
-$has_fixes = $fixes_ready > 0;
+// Step flags
+$has_scan     = !empty($site['scanned_at']);
+$has_audit    = !empty($audit);
 $has_keywords = $kw_count > 0;
-$has_content = array_sum($pc) > 0;
+$has_content  = array_sum($pc) > 0;
+$has_publish  = !empty($pc['published']);
+$has_track    = !empty($gsc_integration) && !empty($gsc_last_sync);
 
-$page_title = $site['name'];
-
-// ── Performance buckets for action cards ─────────────
+// ── Performance buckets (for Performance row's status) ─────
 $buckets = ['winners' => [], 'decay' => [], 'dead_air' => []];
 try { $buckets = performance_buckets($db, $site_id); } catch (Throwable $e) {}
 
-// ── Per-site connections (richer than pills) ────────
+// ── Per-site OAuth connections (for Channels row) ──────────
 $site_connections = [
     'google_search_console' => ['active' => false, 'account' => null],
     'linkedin'              => ['active' => false, 'account' => null],
@@ -166,841 +136,353 @@ $stmt->execute([$site_id]);
 foreach ($stmt->fetchAll(PDO::FETCH_ASSOC) as $row) {
     $site_connections[$row['platform']] = ['active' => true, 'account' => $row['account_name']];
 }
-$integration_state = [
-    'linkedin' => $site_connections['linkedin']['active'],
-    'twitter'  => $site_connections['twitter']['active'],
-    'reddit'   => $site_connections['reddit']['active'],
-];
 
-$gsc_connected_top    = !empty($gsc_integration);
-$resend_ok            = !empty(config('resend_api_key'));
-$claude_ok            = !empty(config('haiku_api_key'));
-$cse_ok               = !empty(config('google_cse_api_key'));
+$page_title = $site['name'];
+
+// ── Pipeline definition ────────────────────────────────────
+$pipeline = [
+    'scan'     => ['label' => 'Scan',     'done' => $has_scan,    'href' => url('/dashboard/sites.php?action=edit&id=' . $site_id)],
+    'seo'      => ['label' => 'SEO',      'done' => $has_audit,   'href' => url('/dashboard/seo.php?site=' . $site_id)],
+    'keywords' => ['label' => 'Keywords', 'done' => $has_keywords,'href' => url('/dashboard/keywords.php?site=' . $site_id)],
+    'write'    => ['label' => 'Write',    'done' => $has_content, 'href' => url('/dashboard/write.php?site=' . $site_id . '&step=propose')],
+    'publish'  => ['label' => 'Publish',  'done' => $has_publish, 'href' => url('/dashboard/posts.php?site=' . $site_id)],
+    'track'    => ['label' => 'Track',    'done' => $has_track,   'href' => url('/dashboard/performance.php?site=' . $site_id)],
+];
+$current_step_key = null;
+foreach ($pipeline as $key => $step) {
+    if (!$step['done']) { $current_step_key = $key; break; }
+}
+
+$next_action_labels = [
+    'scan'     => 'Start: Scan your website',
+    'seo'      => 'Next: Run SEO audit',
+    'keywords' => 'Next: Find keywords',
+    'write'    => 'Next: Write your first post',
+    'publish'  => 'Next: Publish to your site',
+    'track'    => 'Next: Connect Google Search Console',
+];
+$next_action_label = $current_step_key ? $next_action_labels[$current_step_key] : null;
+$next_action_href  = $current_step_key ? $pipeline[$current_step_key]['href'] : null;
+
+// Business focus state
+$topics_arr       = json_decode($site['topics'] ?? '[]', true) ?: [];
+$topics_confirmed = !empty($site['topics_confirmed']);
+
+// Channels status
+$cms_push_on = !empty($site['cms_url']) && !empty($site['cms_api_key']);
+$socials_on  = (int)!!$site_connections['linkedin']['active']
+             + (int)!!$site_connections['twitter']['active']
+             + (int)!!$site_connections['reddit']['active'];
 
 ob_start();
 ?>
 
 <style>
-.section { background:#fff; border:1px solid var(--border); border-radius:8px; margin-bottom:10px; overflow:hidden; }
-.section-header { padding:12px 16px; display:flex; align-items:center; justify-content:space-between; cursor:pointer; }
-.section-header:hover { background:#f8fafb; }
-.section-status { display:flex; align-items:center; gap:8px; }
-.section-status .dot { width:10px; height:10px; border-radius:50%; flex-shrink:0; }
-.section-status .dot.done { background:#10b981; }
-.section-status .dot.pending { background:#f59e0b; }
-.section-status .dot.not-done { background:#e2e8f0; }
-.section-title { font-weight:600; font-size:14px; }
-.section-subtitle { font-size:12px; color:#94a3b8; }
-.section-body { padding:0 16px 14px; display:none; }
-.section.open .section-body { display:block; }
-.section-action { padding:8px 16px; border:none; border-radius:6px; font-size:13px; font-weight:600; cursor:pointer; color:#fff; text-decoration:none; display:inline-block; }
+.hero-bar { display:flex; justify-content:space-between; align-items:center; padding:14px 18px; background:#fff; border:1px solid var(--border); border-radius:8px; margin-bottom:10px; }
+.hero-bar h1 { margin:0; font-size:18px; font-weight:600; color:var(--primary); }
+.hero-bar .sub { font-size:12px; color:#64748b; margin-top:2px; }
+.hero-bar .actions { display:flex; gap:6px; align-items:center; }
+.hero-btn { padding:6px 12px; border:1px solid var(--border); background:#fff; color:var(--text); border-radius:6px; font-size:12px; text-decoration:none; cursor:pointer; display:inline-block; }
+.hero-btn:hover { background:#f8fafb; }
+.hero-btn.primary { background:var(--primary); color:#fff; border-color:var(--primary); }
 
-.next-action { background:var(--accent); color:#fff; border:none; border-radius:8px; padding:12px 24px; font-size:14px; font-weight:600; cursor:pointer; display:block; width:100%; text-align:center; margin-bottom:10px; }
-.next-action:hover { background:#a82a00; }
+.stepper { display:flex; align-items:center; background:#fff; border:1px solid var(--border); border-radius:8px; padding:14px 16px; margin-bottom:10px; gap:2px; flex-wrap:wrap; }
+.step { display:flex; align-items:center; gap:8px; padding:6px 10px; border-radius:6px; text-decoration:none; color:#64748b; font-size:13px; }
+.step:hover { background:#f8fafb; }
+.step .step-dot { width:22px; height:22px; border-radius:50%; display:inline-flex; align-items:center; justify-content:center; font-size:11px; font-weight:700; flex-shrink:0; }
+.step.done    .step-dot { background:#10b981; color:#fff; }
+.step.done    { color:#065f46; }
+.step.current .step-dot { background:var(--accent); color:#fff; box-shadow:0 0 0 4px rgba(204,51,0,0.15); }
+.step.current { color:var(--accent); font-weight:600; }
+.step.pending .step-dot { background:#e2e8f0; color:#94a3b8; }
+.step .arrow { color:#cbd5e1; margin:0 4px; user-select:none; }
 
-.mini-log { font-family:monospace; font-size:11px; background:#0f172a; color:#94a3b8; border-radius:6px; padding:12px; max-height:200px; overflow-y:auto; margin-top:10px; display:none; }
-.mini-log .s { color:#10b981; }
-.mini-log .i { color:#3b82f6; }
-.mini-log .w { color:#f59e0b; }
+.cta-next { display:block; background:var(--accent); color:#fff; padding:14px 20px; border-radius:8px; text-align:center; font-size:14px; font-weight:600; text-decoration:none; margin-bottom:10px; }
+.cta-next:hover { background:#a82a00; color:#fff; }
 
-.kw-list { display:flex; flex-wrap:wrap; gap:6px; margin-top:8px; }
-.kw-list span { background:#f1f5f9; padding:3px 10px; border-radius:12px; font-size:12px; color:#475569; }
-.edit-link { font-size:12px; color:var(--primary); text-decoration:none; }
-.edit-link:hover { text-decoration:underline; }
-.action-bar { display:flex; flex-wrap:wrap; gap:6px; margin-bottom:10px; }
+.metrics-strip { display:flex; gap:14px; justify-content:center; padding:10px 16px; background:#f8fafb; border:1px solid var(--border); border-radius:8px; margin-bottom:14px; font-size:13px; color:#475569; flex-wrap:wrap; }
+.metrics-strip strong { color:var(--primary); font-weight:600; }
+.metrics-strip .sep { color:#cbd5e1; }
+
+.row-card { display:flex; align-items:center; gap:14px; padding:14px 16px; background:#fff; border:1px solid var(--border); border-radius:8px; margin-bottom:8px; text-decoration:none; color:inherit; transition:background 0.1s, border-color 0.1s; }
+.row-card:hover { background:#f8fafb; border-color:#cbd5e1; }
+.row-card .row-icon { width:36px; height:36px; border-radius:8px; background:#f1f5f9; display:flex; align-items:center; justify-content:center; font-size:18px; flex-shrink:0; }
+.row-card .row-main { flex:1; min-width:0; }
+.row-card .row-title { font-size:14px; font-weight:600; color:var(--primary); }
+.row-card .row-sub { font-size:12px; color:#64748b; margin-top:2px; }
+.row-card .row-status { font-size:11px; padding:3px 9px; border-radius:10px; flex-shrink:0; font-weight:500; }
+.row-card .row-status.good    { background:#dcfce7; color:#166534; }
+.row-card .row-status.warn    { background:#fef3c7; color:#92400e; }
+.row-card .row-status.bad     { background:#fee2e2; color:#991b1b; }
+.row-card .row-status.neutral { background:#f1f5f9; color:#475569; }
+.row-card .row-arrow { color:#cbd5e1; font-size:18px; flex-shrink:0; }
+
+.report-menu { position:relative; }
+.report-menu summary { list-style:none; cursor:pointer; }
+.report-menu summary::-webkit-details-marker { display:none; }
+.report-menu .menu-items { position:absolute; right:0; top:calc(100% + 4px); background:#fff; border:1px solid var(--border); border-radius:6px; box-shadow:0 4px 12px rgba(0,0,0,0.08); padding:4px; z-index:50; min-width:180px; }
+.report-menu .menu-items a { display:block; padding:8px 12px; font-size:13px; color:var(--text); text-decoration:none; border-radius:4px; }
+.report-menu .menu-items a:hover { background:#f1f5f9; }
+
+.focus-warn { padding:12px 16px; background:#fef3c7; border:1px solid #fcd34d; border-radius:8px; margin-bottom:10px; }
+.focus-warn .title { font-size:13px; font-weight:600; color:#92400e; }
+.focus-warn .desc  { font-size:12px; color:#92400e; margin-top:3px; }
 </style>
 
-<?php
-$sc = $audit ? $audit['score'] : -1;
-$sc_cls = $sc < 0 ? '' : ($sc >= 80 ? 'score-good' : ($sc >= 50 ? 'score-ok' : 'score-bad'));
-?>
-
-<!-- Site Header -->
-<div class="card" style="margin-bottom:2px; border-bottom:3px solid var(--primary); border-radius:var(--radius) var(--radius) 0 0;">
-    <div class="flex justify-between items-center">
-        <div class="flex items-center gap-4">
-            <?php if ($sc >= 0): ?>
-                <span class="score-circle <?= $sc_cls ?>" style="width:48px;height:48px;font-size:18px;"><?= $sc ?></span>
-            <?php else: ?>
-                <span class="score-circle" style="width:48px;height:48px;font-size:12px;background:#f1f5f9;color:#94a3b8;">N/A</span>
+<!-- ── Hero strip ───────────────────────────────────────── -->
+<div class="hero-bar">
+    <div>
+        <h1><?= e($site['name']) ?></h1>
+        <div class="sub">
+            <?= e($site['domain']) ?>
+            <?php if (!$site['is_active']): ?>
+                <span style="color:#dc2626;margin-left:6px;font-weight:600;">· PAUSED</span>
             <?php endif; ?>
-            <div>
-                <div style="font-size:16px;font-weight:600;color:var(--primary);"><?= e($site['name']) ?></div>
-                <div class="text-sm text-muted">
-                    <?= e($site['domain']) ?>
-                    <?php if ($site['platform']): ?><span class="badge badge-info" style="margin-left:4px;"><?= e($site['platform']) ?></span><?php endif; ?>
-                    <span class="badge badge-<?= $site['is_active'] ? 'approved' : 'rejected' ?>"><?= $site['is_active'] ? 'Active' : 'Off' ?></span>
-                    <span class="badge badge-<?= $site['agent_mode'] === 'auto' ? 'approved' : 'draft' ?>"><?= $site['agent_mode'] ?> mode</span>
-                </div>
-            </div>
-        </div>
-        <div class="flex gap-2">
-            <a href="<?= url('/dashboard/report.php?site=' . $site_id) ?>" class="btn btn-sm" style="background:var(--primary);color:#fff;text-decoration:none;">Health Report</a>
-            <a href="<?= url('/api/export.php?site_id=' . $site_id . '&type=full') ?>" class="btn btn-outline btn-sm">Export CSV</a>
-            <a href="<?= url('/dashboard/sites.php?action=edit&id=' . $site_id) ?>" class="btn btn-outline btn-sm">Edit</a>
-            <a href="<?= url('/dashboard/seo-audit.php?site=' . $site_id) ?>" class="btn btn-outline btn-sm">Full Audit</a>
-        </div>
-    </div>
-</div>
-
-<!-- ── Page intro ─────────────────────────────────────── -->
-<?= page_intro('🏠', 'Site overview for ' . $site['name'],
-    'Quick health check + the next 1-2 things to do today. Every section below either celebrates progress or flags work.',
-    'system') ?>
-
-<!-- ── Hero metrics ───────────────────────────────────── -->
-<div style="display:grid; grid-template-columns:repeat(auto-fit, minmax(140px, 1fr)); gap:10px; margin-bottom:14px;">
-    <a href="<?= url('/dashboard/posts.php?site=' . $site_id) ?>" class="stat-card" style="text-decoration:none;color:inherit;">
-        <div class="stat-label">Published <?= tt('Total posts (blog + news) live on your website. Click to see them.') ?></div>
-        <div class="stat-value"><?= $pc['published'] ?? 0 ?></div>
-        <div class="stat-sub"><?= $posts_this_week ?> this week</div>
-    </a>
-    <a href="<?= url('/dashboard/performance.php?site=' . $site_id) ?>" class="stat-card" style="text-decoration:none;color:inherit;">
-        <div class="stat-label">Winners <?= tt('Posts trending up on Google in the last 28 days. ContentAgent suggests writing more on these themes.') ?></div>
-        <div class="stat-value" style="color:var(--success);"><?= count($buckets['winners']) ?></div>
-        <div class="stat-sub"><?= count($buckets['decay']) ?> slipping</div>
-    </a>
-    <a href="<?= url('/dashboard/keywords.php?site=' . $site_id . '&view=gsc') ?>" class="stat-card" style="text-decoration:none;color:inherit;">
-        <div class="stat-label">SEO Score <?= tt('Overall SEO health 0-100 from the last audit. 80+ green, 50-79 amber, below 50 red. Click for full audit.') ?></div>
-        <div class="stat-value" style="color:<?= $sc >= 80 ? 'var(--success)' : ($sc >= 50 ? 'var(--warning)' : 'var(--danger)') ?>;"><?= $sc >= 0 ? $sc : '—' ?></div>
-        <div class="stat-sub"><?= $open_issues ?> open issues</div>
-    </a>
-    <a href="<?= url('/dashboard/alerts.php?site=' . $site_id) ?>" class="stat-card" style="text-decoration:none;color:inherit;">
-        <div class="stat-label">Alerts <?= tt('Unread notifications from automated watchers: rank drops, broken links, new mentions, etc.') ?></div>
-        <div class="stat-value" style="color:<?= $unread_alerts > 0 ? '#3b82f6' : 'inherit' ?>;"><?= $unread_alerts ?></div>
-        <div class="stat-sub">unread</div>
-    </a>
-</div>
-
-<!-- ── Action cards: 3 things to do right now ────────── -->
-<div style="font-size:11px; color:var(--text-light); text-transform:uppercase; letter-spacing:0.5px; font-weight:600; margin:4px 0 6px;">What to do next <?= tt('Three suggested actions based on the current state of your site. Pick whichever matches your goal today.') ?></div>
-<div style="display:grid; grid-template-columns:repeat(auto-fit, minmax(260px, 1fr)); gap:12px; margin-bottom:14px;">
-    <!-- 1. Write a post -->
-    <div class="card" style="margin:0; border-left:3px solid var(--accent);">
-        <div style="font-weight:600; font-size:13px; color:var(--primary); margin-bottom:4px;">✍ Write a blog post</div>
-        <div style="font-size:11px; color:var(--text-light); margin-bottom:10px; line-height:1.5;">
-            Opens the AI Planner: proposes 4 topics from your keywords + winning themes, you pick one, AI writes a full draft, you edit and publish.
-        </div>
-        <a href="<?= url('/dashboard/write.php?site=' . $site_id . '&step=propose') ?>" class="btn btn-accent btn-sm" style="text-decoration:none;">Open Planner →</a>
-    </div>
-
-    <!-- 2. What's working -->
-    <div class="card" style="margin:0; border-left:3px solid var(--success);">
-        <div style="font-weight:600; font-size:13px; color:var(--primary); margin-bottom:4px;">🔥 What's working</div>
-        <?php if (!empty($buckets['winners'])): ?>
-            <div style="font-size:11px; color:var(--text-light); margin-bottom:8px;">Top winning posts (last 28 days):</div>
-            <?php foreach (array_slice($buckets['winners'], 0, 3) as $w): ?>
-                <div style="font-size:12px; padding:4px 0; border-bottom:1px solid #f1f5f9;">
-                    <a href="<?= url('/dashboard/performance.php?site=' . $site_id) ?>" style="color:var(--text); text-decoration:none;"><?= e(mb_strimwidth($w['title'], 0, 55, '…')) ?></a>
-                </div>
-            <?php endforeach; ?>
-            <a href="<?= url('/dashboard/performance.php?site=' . $site_id) ?>" style="font-size:11px; color:var(--accent); text-decoration:none; display:inline-block; margin-top:6px;">View all →</a>
-        <?php else: ?>
-            <div style="font-size:11px; color:var(--text-light); line-height:1.5;">
-                No winners yet. Once posts get traction in GSC, they'll appear here.
-            </div>
-        <?php endif; ?>
-    </div>
-
-    <!-- 3. Needs attention -->
-    <div class="card" style="margin:0; border-left:3px solid var(--warning);">
-        <div style="font-weight:600; font-size:13px; color:var(--primary); margin-bottom:4px;">⚠ Needs attention</div>
-        <?php
-        $attention = [];
-        if (count($buckets['decay']) > 0) $attention[] = ['label' => count($buckets['decay']) . ' post' . (count($buckets['decay']) === 1 ? '' : 's') . ' slipping', 'href' => url('/dashboard/performance.php?site=' . $site_id)];
-        if ($pending_approvals > 0)       $attention[] = ['label' => $pending_approvals . ' SEO approval' . ($pending_approvals === 1 ? '' : 's') . ' pending', 'href' => url('/dashboard/seo-approvals.php?site=' . $site_id)];
-        if ($open_gaps > 0)               $attention[] = ['label' => $open_gaps . ' content gap' . ($open_gaps === 1 ? '' : 's') . ' open', 'href' => url('/dashboard/content-gaps.php?site=' . $site_id)];
-        if ($unread_alerts > 0)           $attention[] = ['label' => $unread_alerts . ' unread alert' . ($unread_alerts === 1 ? '' : 's'), 'href' => url('/dashboard/alerts.php?site=' . $site_id)];
-        ?>
-        <?php if (!empty($attention)): ?>
-            <?php foreach ($attention as $a): ?>
-                <div style="font-size:12px; padding:4px 0; border-bottom:1px solid #f1f5f9;">
-                    <a href="<?= e($a['href']) ?>" style="color:var(--text); text-decoration:none;">→ <?= e($a['label']) ?></a>
-                </div>
-            <?php endforeach; ?>
-        <?php else: ?>
-            <div style="font-size:11px; color:var(--text-light); line-height:1.5;">
-                ✓ Nothing urgent. Keep shipping content.
-            </div>
-        <?php endif; ?>
-    </div>
-</div>
-
-<!-- ── Per-site connections card ───────────────────────── -->
-<?php
-$connect_specs = [
-    'google_search_console' => [
-        'name'    => 'Google Search Console',
-        'color'   => '#4285F4',
-        'icon'    => 'G',
-        'why'     => 'Real keyword rankings, impressions, clicks, CTR for this site.',
-        'app_ok'  => !empty(config('google_client_id')),
-        'auth_url'=> !empty(config('google_client_id')) ? google_get_auth_url($site_id) : null,
-    ],
-    'linkedin' => [
-        'name'    => 'LinkedIn',
-        'color'   => '#0A66C2',
-        'icon'    => 'in',
-        'why'     => 'Auto-post AI-tailored versions of blog posts to LinkedIn.',
-        'app_ok'  => !empty(config('linkedin_client_id')),
-        'auth_url'=> !empty(config('linkedin_client_id')) ? linkedin_get_auth_url($site_id) : null,
-    ],
-    'twitter' => [
-        'name'    => 'Twitter / X',
-        'color'   => '#000000',
-        'icon'    => 'X',
-        'why'     => 'Auto-post AI-generated tweet threads from blog posts.',
-        'app_ok'  => !empty(config('twitter_client_id')),
-        'auth_url'=> !empty(config('twitter_client_id')) ? twitter_get_auth_url($site_id) : null,
-    ],
-    'reddit' => [
-        'name'    => 'Reddit',
-        'color'   => '#FF4500',
-        'icon'    => 'R',
-        'why'     => 'Search Reddit for relevant discussions + post replies.',
-        'app_ok'  => !empty(config('reddit_client_id')),
-        'auth_url'=> !empty(config('reddit_client_id')) ? reddit_get_auth_url($site_id) : null,
-    ],
-];
-?>
-<div class="card" style="margin-bottom:14px;">
-    <div class="card-header" style="display:flex;justify-content:space-between;align-items:center;">
-        <span>Connect this site's accounts</span>
-        <span style="font-size:11px; color:var(--text-light); font-weight:normal;">Per-site OAuth — only authorises THIS site</span>
-    </div>
-    <div style="display:grid; grid-template-columns:repeat(auto-fill, minmax(240px, 1fr)); gap:8px; padding-top:6px;">
-        <?php foreach ($connect_specs as $key => $spec):
-            $conn   = $site_connections[$key] ?? ['active' => false, 'account' => null];
-            $active = $conn['active'];
-        ?>
-        <div style="border:1px solid var(--border); border-left:3px solid <?= $active ? '#10b981' : '#cbd5e1' ?>; border-radius:6px; padding:10px 12px; display:flex; align-items:center; gap:10px;">
-            <span style="display:inline-block; width:28px; height:28px; border-radius:5px; background:<?= $spec['color'] ?>; color:#fff; text-align:center; line-height:28px; font-size:12px; font-weight:700; flex-shrink:0;"><?= $spec['icon'] ?></span>
-            <div style="flex:1; min-width:0;">
-                <div style="font-size:13px; font-weight:600; color:var(--primary);"><?= e($spec['name']) ?></div>
-                <?php if ($active): ?>
-                    <div style="font-size:11px; color:#10b981;">✓ <?= e($conn['account'] ?: 'Connected') ?></div>
-                <?php elseif (!$spec['app_ok']): ?>
-                    <div style="font-size:11px; color:#f59e0b;">App keys missing<?= auth_is_super_admin() ? ' — set up in Hub' : ' — contact admin' ?></div>
-                <?php else: ?>
-                    <div style="font-size:11px; color:#94a3b8;">Not connected</div>
-                <?php endif; ?>
-            </div>
-            <?php if (!$spec['app_ok']): ?>
-                <?php if (auth_is_super_admin()): ?>
-                    <a href="<?= url('/dashboard/integrations.php') ?>" style="font-size:11px; color:var(--primary); text-decoration:none; white-space:nowrap;">Setup</a>
-                <?php endif; ?>
-            <?php else: ?>
-                <div style="display:flex; flex-direction:column; gap:4px; align-items:flex-end;">
-                    <a href="<?= e($spec['auth_url']) ?>" style="font-size:11px; padding:4px 10px; background:<?= $active ? 'transparent' : $spec['color'] ?>; color:<?= $active ? $spec['color'] : '#fff' ?>; border:1px solid <?= $spec['color'] ?>; border-radius:4px; text-decoration:none; white-space:nowrap;">
-                        <?= $active ? 'Reconnect' : 'Connect' ?>
-                    </a>
-                    <?php if ($active && $key === 'linkedin'): ?>
-                        <a href="<?= url('/dashboard/linkedin-author.php?site=' . $site_id) ?>" style="font-size:10px; color:var(--text-light); text-decoration:none;">Change target →</a>
-                    <?php endif; ?>
-                </div>
+            <?php if (($site['agent_mode'] ?? '') === 'auto'): ?>
+                <span style="color:#10b981;margin-left:6px;">· Auto mode</span>
             <?php endif; ?>
         </div>
-        <?php endforeach; ?>
+    </div>
+    <div class="actions">
+        <a href="<?= url('/dashboard/sites.php?action=edit&id=' . $site_id) ?>" class="hero-btn primary">⚙ Edit</a>
+        <details class="report-menu">
+            <summary class="hero-btn">⋯ Reports</summary>
+            <div class="menu-items">
+                <a href="<?= url('/dashboard/report.php?site=' . $site_id) ?>">Health Report</a>
+                <a href="<?= url('/dashboard/seo-audit.php?site=' . $site_id) ?>">Full SEO Audit</a>
+                <a href="<?= url('/api/export.php?site_id=' . $site_id . '&type=full') ?>">Export CSV</a>
+            </div>
+        </details>
     </div>
 </div>
 
-<!-- Business Focus — source of truth for all AI work -->
-<?php
-$topics_arr = json_decode($site['topics'] ?? '[]', true) ?: [];
-$topics_confirmed = !empty($site['topics_confirmed']);
-$has_description = !empty($site['business_description']);
-?>
-<div id="business-focus" class="card" style="margin-bottom:10px;border-left:4px solid <?= $topics_confirmed ? '#10b981' : '#f59e0b' ?>;">
-    <div class="card-header" style="display:flex;justify-content:space-between;align-items:center;<?= $topics_confirmed ? 'cursor:pointer;' : '' ?>" <?= $topics_confirmed ? "onclick=\"document.getElementById('bf-body').style.display = document.getElementById('bf-body').style.display === 'none' ? 'block' : 'none';\"" : '' ?>>
-        <div>
-            <div style="font-weight:600;font-size:14px;color:<?= $topics_confirmed ? '#065f46' : '#92400e' ?>;">
-                <?= $topics_confirmed ? '✓ Business Focus confirmed' : '⚠ Tell ContentAgent what your business sells' ?>
-            </div>
-            <div style="font-size:12px;color:#64748b;margin-top:2px;">
-                <?= $topics_confirmed
-                    ? 'Topics: ' . e(implode(', ', $topics_arr))
-                    : 'Fill in the form below so AI knows what your business actually does.' ?>
-            </div>
-        </div>
-        <?php if ($topics_confirmed): ?>
-            <span style="font-size:11px;color:var(--primary);">Edit ▾</span>
+<!-- ── Pipeline stepper ─────────────────────────────────── -->
+<div class="stepper">
+    <?php $step_keys = array_keys($pipeline); $last_key = end($step_keys); ?>
+    <?php foreach ($pipeline as $key => $step):
+        $state = $step['done'] ? 'done' : ($key === $current_step_key ? 'current' : 'pending');
+        $glyph = $step['done'] ? '✓' : ($key === $current_step_key ? '●' : ((string)(array_search($key, $step_keys) + 1)));
+    ?>
+        <a href="<?= e($step['href']) ?>" class="step <?= $state ?>">
+            <span class="step-dot"><?= $glyph ?></span>
+            <span><?= e($step['label']) ?></span>
+        </a>
+        <?php if ($key !== $last_key): ?>
+            <span class="arrow">──</span>
         <?php endif; ?>
-    </div>
-    <div id="bf-body" style="padding:14px;border-top:1px solid var(--border);display:<?= $topics_confirmed ? 'none' : 'block' ?>;">
-        <p style="font-size:12px;color:#64748b;margin-bottom:10px;">
-            This tells the AI what you actually sell. Used for keyword research, content writing, and SEO suggestions.
-            <strong>If this is wrong, everything downstream will be wrong.</strong>
-        </p>
-
-        <div class="form-group" style="margin-bottom:10px;">
-            <label style="font-size:12px;font-weight:600;">What does your business sell or offer?</label>
-            <textarea id="bf-description" class="form-control" rows="2" placeholder="Describe what your business actually sells or offers, in your own words." style="font-size:13px;"><?= e($site['business_description'] ?? '') ?></textarea>
-        </div>
-
-        <div class="form-group" style="margin-bottom:10px;">
-            <label style="font-size:12px;font-weight:600;display:flex;justify-content:space-between;align-items:center;">
-                <span>Main topics / products (comma-separated)</span>
-                <button type="button" onclick="suggestTopics()" id="suggest-btn" class="btn btn-sm" style="background:transparent;border:1px solid var(--primary);color:var(--primary);font-size:11px;padding:2px 8px;">Suggest from homepage</button>
-            </label>
-            <input type="text" id="bf-topics" class="form-control" value="<?= e(implode(', ', $topics_arr)) ?>" placeholder="Comma-separated topics specific to your business" style="font-size:13px;">
-            <div style="font-size:11px;color:#94a3b8;margin-top:4px;">3-6 short phrases work best (2-3 words each).</div>
-        </div>
-
-        <div class="form-group" style="margin-bottom:10px;">
-            <label style="font-size:12px;font-weight:600;">Who is your ideal customer? <span style="color:#94a3b8;font-weight:400;">(optional, sharpens AI tone &amp; messaging)</span></label>
-            <textarea id="bf-persona" class="form-control" rows="2" placeholder="e.g. UK-based marketing managers at 50-200 person SaaS companies who own SEO and content" style="font-size:13px;"><?= e($site['persona'] ?? '') ?></textarea>
-        </div>
-
-        <div class="form-group" style="margin-bottom:10px;">
-            <label style="font-size:12px;font-weight:600;">What makes you different from competitors? <span style="color:#94a3b8;font-weight:400;">(your USP)</span></label>
-            <textarea id="bf-usp" class="form-control" rows="2" placeholder="e.g. Only platform that integrates GSC with AI-driven content briefs out of the box" style="font-size:13px;"><?= e($site['usp'] ?? '') ?></textarea>
-        </div>
-
-        <div style="display:flex;gap:8px;flex-wrap:wrap;">
-            <button type="button" onclick="saveFocus(false)" class="btn btn-outline" style="padding:8px 18px;">Save & Stay</button>
-            <button type="button" onclick="saveFocus(true)" class="btn btn-accent" style="padding:8px 18px;">Save & Find Keywords →</button>
-        </div>
-        <div id="bf-msg" style="margin-top:8px;font-size:12px;"></div>
-    </div>
+    <?php endforeach; ?>
 </div>
 
-<script>
-async function suggestTopics() {
-    const btn = document.getElementById('suggest-btn');
-    btn.disabled = true; btn.textContent = 'Scanning homepage...';
-    try {
-        const res = await fetch('<?= url('/api/business-focus.php') ?>', {
-            method:'POST', headers:{'Content-Type':'application/json'},
-            body: JSON.stringify({action:'suggest', site_id: <?= $site_id ?>})
-        });
-        const data = await res.json();
-        if (data.success && data.suggestion) {
-            if (data.suggestion.description && !document.getElementById('bf-description').value.trim()) {
-                document.getElementById('bf-description').value = data.suggestion.description;
-            }
-            if (data.suggestion.topics && data.suggestion.topics.length) {
-                document.getElementById('bf-topics').value = data.suggestion.topics.join(', ');
-            }
-            document.getElementById('bf-msg').innerHTML = '<span style="color:#065f46;">✓ Suggestions filled in. Review and edit before saving.</span>';
-        } else {
-            document.getElementById('bf-msg').innerHTML = '<span style="color:#dc2626;">' + (data.error || 'Could not generate suggestions — please type your own.') + '</span>';
-        }
-    } catch(e) {
-        document.getElementById('bf-msg').innerHTML = '<span style="color:#dc2626;">Error: ' + e.message + '</span>';
-    }
-    btn.disabled = false; btn.textContent = 'Suggest from homepage';
-}
-
-async function saveFocus(goToKeywords) {
-    const description = document.getElementById('bf-description').value.trim();
-    const persona = document.getElementById('bf-persona').value.trim();
-    const usp = document.getElementById('bf-usp').value.trim();
-    const topicsRaw = document.getElementById('bf-topics').value.trim();
-    const topics = topicsRaw.split(',').map(s => s.trim()).filter(Boolean);
-    if (!topics.length) {
-        document.getElementById('bf-msg').innerHTML = '<span style="color:#dc2626;">Please add at least 1 topic so AI knows what to focus on.</span>';
-        return;
-    }
-    try {
-        const res = await fetch('<?= url('/api/business-focus.php') ?>', {
-            method:'POST', headers:{'Content-Type':'application/json'},
-            body: JSON.stringify({action:'save', site_id: <?= $site_id ?>, business_description: description, topics, persona, usp})
-        });
-        const data = await res.json();
-        if (data.success) {
-            if (goToKeywords) {
-                document.getElementById('bf-msg').innerHTML = '<span style="color:#065f46;">✓ Saved. Opening Find Keywords...</span>';
-                window.location.href = '<?= url('/dashboard/agent-run.php?agent=keyword-research&site=' . $site_id) ?>';
-            } else {
-                location.reload();
-            }
-        } else {
-            document.getElementById('bf-msg').innerHTML = '<span style="color:#dc2626;">' + (data.error || 'Failed') + '</span>';
-        }
-    } catch(e) {
-        document.getElementById('bf-msg').innerHTML = '<span style="color:#dc2626;">Error: ' + e.message + '</span>';
-    }
-}
-</script>
-
-<?php $gsc_connected = !empty($gsc_integration); ?>
-
-
-<!-- What to do next -->
-<?php
-$next_step = 'scan';
-$next_label = 'Start: Scan Your Website';
-if ($has_scan && !$has_audit) { $next_step = 'audit'; $next_label = 'Next: Run SEO Audit'; }
-elseif ($has_audit && $open_issues > 0) { $next_step = 'fix'; $next_label = "Next: Auto-Fix {$open_issues} Issues"; }
-elseif ($has_audit && !$has_keywords) { $next_step = 'keywords'; $next_label = 'Next: Find Keywords'; }
-elseif ($has_keywords && !$has_content) { $next_step = 'content'; $next_label = 'Next: Write Your First Blog Post'; }
-else { $next_step = 'done'; $next_label = ''; }
-
-// Audit + fix steps now live on the SEO page; route the next-action there
-// instead of calling runStep() (which used to drive sections that no longer
-// exist on this overview).
-$next_routes_to_seo = in_array($next_step, ['audit', 'fix'], true);
-
-if ($next_step !== 'done'):
-?>
-<?php if ($next_routes_to_seo): ?>
-<a class="next-action" href="<?= url('/dashboard/seo.php?site=' . $site_id) ?>" style="text-decoration:none;"><?= $next_label ?></a>
-<?php else: ?>
-<button class="next-action" onclick="runStep('<?= $next_step ?>')"><?= $next_label ?></button>
-<?php endif; ?>
+<!-- ── Next action CTA ──────────────────────────────────── -->
+<?php if ($next_action_label): ?>
+    <a href="<?= e($next_action_href) ?>" class="cta-next"><?= e($next_action_label) ?> →</a>
 <?php endif; ?>
 
-<!-- ═══════════════════════════════════════════════ -->
-<!-- SECTIONS (click to expand) -->
-<!-- ═══════════════════════════════════════════════ -->
+<!-- ── Business Focus warning (only when not confirmed) ─── -->
+<?php if (!$topics_confirmed): ?>
+    <div class="focus-warn">
+        <div class="title">⚠ Tell ContentAgent what your business sells</div>
+        <div class="desc">AI keyword research and content writing depend on this. <a href="<?= url('/dashboard/sites.php?action=edit&id=' . $site_id . '#focus') ?>" style="color:#92400e;font-weight:600;">Set business focus →</a></div>
+    </div>
+<?php endif; ?>
 
-<!-- 1. Scan -->
-<div class="section <?= !$has_scan ? 'open' : '' ?>" id="sec-scan">
-    <div class="section-header" onclick="toggleSection('scan')">
-        <div class="section-status">
-            <div class="dot <?= $has_scan ? 'done' : 'not-done' ?>"></div>
-            <div>
-                <div class="section-title">🔍 Website Scan</div>
-                <div class="section-subtitle"><?= $has_scan ? 'Scanned ' . format_date($site['scanned_at'], 'd M Y') . ' — ' . ($site['platform'] ?: 'custom') : 'Not scanned yet' ?></div>
-            </div>
-        </div>
-        <?php if ($has_scan): ?>
-            <button class="section-action" style="background:var(--primary);" onclick="event.stopPropagation();runStep('scan')">Re-scan</button>
-        <?php endif; ?>
-    </div>
-    <div class="section-body">
-        <?php if ($has_scan): ?>
-            <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;font-size:13px;">
-                <div><span class="text-muted">Platform:</span> <?= e($site['platform'] ?: 'Unknown') ?></div>
-                <div><span class="text-muted">Tone:</span> <?= e($site['brand_tone'] ?: 'Not analyzed') ?></div>
-                <div><span class="text-muted">Blog:</span> <?= e($site['blog_path'] ?: 'None') ?></div>
-                <div><span class="text-muted">Colors:</span>
-                    <?php foreach (json_decode($site['brand_colors'] ?? '[]', true) ?: [] as $c): ?>
-                        <span style="display:inline-block;width:16px;height:16px;background:<?= e($c) ?>;border-radius:3px;vertical-align:middle;border:1px solid #ddd;margin-right:2px;"></span>
-                    <?php endforeach; ?>
-                </div>
-            </div>
-        <?php else: ?>
-            <p class="text-sm text-muted">Click the button above to scan your website. We'll detect the platform, brand, content structure, and more.</p>
-        <?php endif; ?>
-        <div class="mini-log" id="log-scan"></div>
-    </div>
+<!-- ── One-line metrics strip ───────────────────────────── -->
+<div class="metrics-strip">
+    <span><strong><?= $posts_this_week ?></strong> post<?= $posts_this_week === 1 ? '' : 's' ?> this week</span>
+    <span class="sep">·</span>
+    <span>SEO <strong><?= $audit ? (int)$audit['score'] . '/100' : '—' ?></strong></span>
+    <span class="sep">·</span>
+    <span><strong><?= $kw_count ?></strong> keywords</span>
+    <span class="sep">·</span>
+    <span><strong><?= $unread_alerts ?></strong> alert<?= $unread_alerts === 1 ? '' : 's' ?></span>
 </div>
 
-<!-- 2. SEO (single tile — deep-dive lives at /dashboard/seo.php) -->
-<?php
-// One compact SEO tile that replaces the former Audit / Auto-Fix / Fix Files
-// trio. Click anywhere on it to land on the SEO Snapshot page.
-$seo_summary_parts = [];
-if ($has_audit) {
-    $seo_summary_parts[] = "Score {$audit['score']}/100";
-    $seo_summary_parts[] = "{$open_issues} issues";
-    $seo_summary_parts[] = "{$audit['pages_crawled']} pages";
-}
-if ($improvements_pending > 0)  $seo_summary_parts[] = "{$improvements_pending} pending review";
-if ($improvements_approved > 0) $seo_summary_parts[] = "{$improvements_approved} approved";
-$seo_summary = $seo_summary_parts ? implode(' · ', $seo_summary_parts) : 'Not audited yet';
+<!-- ── Dashboard rows ───────────────────────────────────── -->
 
-$seo_dot = !$has_audit
-    ? 'not-done'
-    : ($open_issues > 0 || $improvements_pending > 0 ? 'pending' : 'done');
-$seo_last_scan = $has_audit ? ' · Last scan ' . format_date($audit['run_at'], 'd M Y') : '';
+<!-- Site Identity -->
+<?php
+$identity_bits = [];
+$identity_bits[] = $site['platform'] ? e($site['platform']) : 'custom platform';
+$identity_bits[] = $has_scan ? 'scanned ' . format_date($site['scanned_at'], 'd M Y') : 'not scanned';
+if ($topics_confirmed && !empty($topics_arr)) {
+    $identity_bits[] = count($topics_arr) . ' topic' . (count($topics_arr) === 1 ? '' : 's');
+}
+$identity_status_cls = $topics_confirmed && $has_scan ? 'good' : 'warn';
+$identity_status_lbl = $topics_confirmed && $has_scan ? 'Ready' : 'Setup needed';
 ?>
-<a href="<?= url('/dashboard/seo.php?site=' . $site_id) ?>" style="text-decoration:none;color:inherit;display:block;">
-    <div class="section" id="sec-seo" style="cursor:pointer;">
-        <div class="section-header">
-            <div class="section-status">
-                <div class="dot <?= $seo_dot ?>"></div>
-                <div>
-                    <div class="section-title">📊 SEO</div>
-                    <div class="section-subtitle"><?= e($seo_summary) ?><?= e($seo_last_scan) ?></div>
-                </div>
-            </div>
-            <span class="edit-link">Open SEO →</span>
-        </div>
+<a href="<?= url('/dashboard/sites.php?action=edit&id=' . $site_id) ?>" class="row-card">
+    <div class="row-icon">🔍</div>
+    <div class="row-main">
+        <div class="row-title">Site Identity</div>
+        <div class="row-sub"><?= e(implode(' · ', $identity_bits)) ?></div>
     </div>
+    <span class="row-status <?= $identity_status_cls ?>"><?= $identity_status_lbl ?></span>
+    <span class="row-arrow">›</span>
 </a>
 
-<!-- 4. Keywords -->
-<div class="section <?= $has_keywords ? 'open' : '' ?>" id="sec-keywords">
-    <div class="section-header" onclick="toggleSection('keywords')">
-        <div class="section-status">
-            <div class="dot <?= $has_keywords ? 'done' : 'not-done' ?>"></div>
-            <div>
-                <div class="section-title">🔑 Keywords</div>
-                <div class="section-subtitle"><?= $has_keywords ? "{$kw_count} keywords found" : 'No keywords yet' ?></div>
-            </div>
-        </div>
-        <?php if ($has_keywords): ?>
-            <a href="<?= url('/dashboard/keywords.php?site=' . $site_id) ?>" class="edit-link" onclick="event.stopPropagation()">View all →</a>
-        <?php endif; ?>
+<!-- SEO -->
+<?php
+$seo_bits = [];
+if ($audit) {
+    $seo_bits[] = "Score {$audit['score']}/100";
+    $seo_bits[] = "{$open_issues} open issue" . ($open_issues === 1 ? '' : 's');
+    if ($fixes_ready > 0) $seo_bits[] = "{$fixes_ready} improvement" . ($fixes_ready === 1 ? '' : 's');
+} else {
+    $seo_bits[] = 'Not audited yet';
+}
+$seo_status_cls = !$audit ? 'neutral' : ($open_issues > 0 ? 'warn' : 'good');
+$seo_status_lbl = !$audit ? 'Pending' : ($open_issues > 0 ? "{$open_issues} to fix" : ($audit['score'] . '/100'));
+?>
+<a href="<?= url('/dashboard/seo.php?site=' . $site_id) ?>" class="row-card">
+    <div class="row-icon">📊</div>
+    <div class="row-main">
+        <div class="row-title">SEO</div>
+        <div class="row-sub"><?= e(implode(' · ', $seo_bits)) ?></div>
     </div>
-    <div class="section-body">
-        <?php if (!empty($top_kws)): ?>
-            <div class="kw-list">
-                <?php foreach ($top_kws as $kw): ?>
-                    <span><?= e($kw['keyword']) ?></span>
-                <?php endforeach; ?>
-            </div>
-        <?php endif; ?>
-        <div class="mini-log" id="log-keywords"></div>
-    </div>
-</div>
+    <span class="row-status <?= $seo_status_cls ?>"><?= e($seo_status_lbl) ?></span>
+    <span class="row-arrow">›</span>
+</a>
 
-<!-- 5. Content -->
-<div class="section <?= $has_content ? 'open' : '' ?>" id="sec-content">
-    <div class="section-header" onclick="toggleSection('content')">
-        <div class="section-status">
-            <div class="dot <?= $has_content ? 'done' : 'not-done' ?>"></div>
-            <div>
-                <div class="section-title">Content</div>
-                <div class="section-subtitle"><?= $has_content ? (($pc['published'] ?? 0) . ' published, ' . ($pc['draft'] ?? 0) . ' drafts') : 'No content yet' ?></div>
-            </div>
-        </div>
-        <div style="display:flex;gap:6px;" onclick="event.stopPropagation()">
-            <a href="<?= url('/dashboard/write.php?site=' . $site_id . '&step=propose') ?>" class="edit-link" style="color:var(--accent);">Write New →</a>
-            <?php if ($has_content): ?>
-                <a href="<?= url('/dashboard/write.php?site=' . $site_id . '&step=propose') ?>" class="edit-link">View All →</a>
+<!-- Keywords -->
+<a href="<?= url('/dashboard/keywords.php?site=' . $site_id) ?>" class="row-card">
+    <div class="row-icon">🔑</div>
+    <div class="row-main">
+        <div class="row-title">Keywords</div>
+        <div class="row-sub">
+            <?php if ($kw_count > 0): ?>
+                <?= $kw_count ?> keyword<?= $kw_count === 1 ? '' : 's' ?> tracked
+                <?php if ($gsc_integration): ?>· GSC connected<?php endif; ?>
+            <?php else: ?>
+                No keywords yet — run keyword research
             <?php endif; ?>
         </div>
     </div>
-    <div class="section-body">
-        <!-- Publishing settings -->
-        <?php $cms_enabled = !empty($site['cms_url']) && !empty($site['cms_api_key']); ?>
-        <div style="padding:10px;background:<?= $cms_enabled ? '#fef3c7' : '#f8fafc' ?>;border:1px solid <?= $cms_enabled ? '#fcd34d' : 'var(--border)' ?>;border-radius:6px;margin-bottom:10px;display:flex;justify-content:space-between;align-items:center;gap:10px;">
-            <div style="flex:1;min-width:0;">
-                <div style="font-size:13px;font-weight:600;color:<?= $cms_enabled ? '#92400e' : '#475569' ?>;">
-                    <?= $cms_enabled ? '⚠ Auto-publish to ' . e($site['domain']) . ' is ENABLED' : '✓ Auto-publish to live site is DISABLED' ?>
-                </div>
-                <div style="font-size:11px;color:#64748b;margin-top:2px;">
-                    <?= $cms_enabled ? 'New posts can be pushed live via "Publish to CMS" option in the Writer.' : 'Posts will only save as drafts or publish locally on ContentAgent. Nothing goes live on ' . e($site['domain']) . '.' ?>
-                </div>
-            </div>
-            <button onclick="togglePublish(<?= $site_id ?>, <?= $cms_enabled ? 'false' : 'true' ?>)" class="btn btn-sm" style="background:<?= $cms_enabled ? '#dc2626' : '#10b981' ?>;color:#fff;border:none;font-size:11px;white-space:nowrap;flex-shrink:0;">
-                <?= $cms_enabled ? 'Disable CMS Push' : 'Enable CMS Push' ?>
-            </button>
-        </div>
+    <span class="row-status <?= $kw_count > 0 ? 'good' : 'neutral' ?>"><?= $kw_count > 0 ? $kw_count . ' found' : 'Empty' ?></span>
+    <span class="row-arrow">›</span>
+</a>
 
-        <!-- Pending SEO Approvals -->
-        <?php if ($pending_approvals > 0): ?>
-        <div style="padding:10px;background:#fef3c7;border:1px solid #fcd34d;border-radius:6px;margin-bottom:10px;display:flex;justify-content:space-between;align-items:center;gap:10px;">
-            <div style="flex:1;min-width:0;">
-                <div style="font-size:13px;font-weight:600;color:#92400e;">
-                    📝 <?= $pending_approvals ?> SEO change<?= $pending_approvals > 1 ? 's' : '' ?> waiting for your approval
-                </div>
-                <div style="font-size:11px;color:#64748b;margin-top:2px;">
-                    ContentAgent proposed new page titles and descriptions. Review and approve before they go live.
-                </div>
-            </div>
-            <a href="<?= url('/dashboard/seo-approvals.php?site=' . $site_id) ?>" class="btn btn-sm btn-accent" style="text-decoration:none;white-space:nowrap;flex-shrink:0;">Review →</a>
-        </div>
-        <?php endif; ?>
+<!-- Content -->
+<?php
+$content_bits = [];
+$content_bits[] = ($pc['published'] ?? 0) . ' published';
+if (($pc['draft'] ?? 0) > 0) $content_bits[] = ($pc['draft']) . ' draft' . ($pc['draft'] === 1 ? '' : 's');
+$content_bits[] = $posts_this_week . ' this week';
+?>
+<a href="<?= url('/dashboard/posts.php?site=' . $site_id) ?>" class="row-card">
+    <div class="row-icon">📝</div>
+    <div class="row-main">
+        <div class="row-title">Content</div>
+        <div class="row-sub"><?= e(implode(' · ', $content_bits)) ?></div>
+    </div>
+    <span class="row-status <?= ($pc['published'] ?? 0) > 0 ? 'good' : 'neutral' ?>"><?= ($pc['published'] ?? 0) > 0 ? 'Live' : 'Empty' ?></span>
+    <span class="row-arrow">›</span>
+</a>
 
-        <!-- SEO Snippet master kill switch -->
-        <?php
-        $snippet_on = !empty($site['snippet_enabled']);
-        $override_mode = ($site['snippet_mode'] ?? 'fill_only') === 'override';
-        ?>
-        <div style="padding:10px;background:<?= $snippet_on ? ($override_mode ? '#fef2f2' : '#fef3c7') : '#f0fdf4' ?>;border:1px solid <?= $snippet_on ? ($override_mode ? '#fca5a5' : '#fcd34d') : '#86efac' ?>;border-radius:6px;margin-bottom:10px;">
-            <div style="display:flex;justify-content:space-between;align-items:center;gap:10px;">
-                <div style="flex:1;min-width:0;">
-                    <div style="font-size:13px;font-weight:600;color:<?= $snippet_on ? ($override_mode ? '#991b1b' : '#92400e') : '#065f46' ?>;">
-                        <?php if (!$snippet_on): ?>
-                            ✓ SEO snippet is OFF — nothing is injected on <?= e($site['domain']) ?>
-                        <?php elseif ($override_mode): ?>
-                            ⚠ SEO snippet is ON in OVERRIDE mode — DANGER: live site tags are being replaced
-                        <?php else: ?>
-                            ⚠ SEO snippet is ON in Safe mode — fills missing tags only
-                        <?php endif; ?>
-                    </div>
-                    <div style="font-size:11px;color:#64748b;margin-top:2px;">
-                        <?php if (!$snippet_on): ?>
-                            The ContentAgent script (if embedded) will NOT inject any titles, schema, OG tags, or descriptions. Your live site is fully under your own control.
-                        <?php elseif ($override_mode): ?>
-                            Snippet is replacing existing titles/descriptions on <?= e($site['domain']) ?>. Wrong data here changes how your site appears in Google.
-                        <?php else: ?>
-                            Snippet adds missing tags only on <?= e($site['domain']) ?>. Existing titles/descriptions are kept. Schema and OG data may still be added — review before enabling.
-                        <?php endif; ?>
-                    </div>
-                </div>
-                <button onclick="toggleSnippetEnabled(<?= $site_id ?>, <?= $snippet_on ? 'false' : 'true' ?>)" class="btn btn-sm" style="background:<?= $snippet_on ? '#dc2626' : '#10b981' ?>;color:#fff;border:none;font-size:11px;white-space:nowrap;flex-shrink:0;">
-                    <?= $snippet_on ? 'Turn OFF Snippet' : 'Turn ON Snippet' ?>
-                </button>
-            </div>
+<!-- Channels -->
+<?php
+$channels_bits = [];
+$channels_bits[] = 'CMS push ' . ($cms_push_on ? 'ON' : 'OFF');
+$channels_bits[] = $socials_on . '/3 socials connected';
+$channels_cls = ($cms_push_on || $socials_on > 0) ? 'good' : 'warn';
+$channels_lbl = ($cms_push_on || $socials_on > 0) ? 'Active' : 'Not set up';
+?>
+<a href="<?= url('/dashboard/integrations.php') ?>" class="row-card">
+    <div class="row-icon">🚀</div>
+    <div class="row-main">
+        <div class="row-title">Channels</div>
+        <div class="row-sub"><?= e(implode(' · ', $channels_bits)) ?></div>
+    </div>
+    <span class="row-status <?= $channels_cls ?>"><?= e($channels_lbl) ?></span>
+    <span class="row-arrow">›</span>
+</a>
 
-            <?php if ($snippet_on): ?>
-            <div style="margin-top:8px;padding-top:8px;border-top:1px solid rgba(0,0,0,0.06);display:flex;justify-content:space-between;align-items:center;gap:10px;">
-                <div style="font-size:11px;color:#64748b;">
-                    Mode: <strong><?= $override_mode ? 'Override (replaces existing tags)' : 'Safe (fills missing only)' ?></strong>
-                </div>
-                <button onclick="toggleSnippetMode(<?= $site_id ?>, <?= $override_mode ? "'fill_only'" : "'override'" ?>)" class="btn btn-sm" style="background:transparent;color:<?= $override_mode ? '#10b981' : '#dc2626' ?>;border:1px solid <?= $override_mode ? '#10b981' : '#dc2626' ?>;font-size:10px;white-space:nowrap;flex-shrink:0;">
-                    <?= $override_mode ? 'Switch to Safe Mode' : 'Switch to Override (risky)' ?>
-                </button>
-            </div>
+<!-- AI Discoverability -->
+<a href="<?= url('/dashboard/ai-seo.php?site=' . $site_id) ?>" class="row-card">
+    <div class="row-icon">🤖</div>
+    <div class="row-main">
+        <div class="row-title">AI Discoverability</div>
+        <div class="row-sub">llms.txt, AI crawlers, schema markup for ChatGPT / Perplexity</div>
+    </div>
+    <span class="row-arrow">›</span>
+</a>
+
+<!-- Brand Presence -->
+<a href="<?= url('/dashboard/ai-presence.php?site=' . $site_id) ?>" class="row-card">
+    <div class="row-icon">🏢</div>
+    <div class="row-main">
+        <div class="row-title">Brand Presence</div>
+        <div class="row-sub">Find conversations on Reddit, Quora, LinkedIn — join with AI-powered replies</div>
+    </div>
+    <span class="row-arrow">›</span>
+</a>
+
+<!-- AEO Tracker (Perplexity citation tracking) -->
+<a href="<?= url('/dashboard/aeo.php?site=' . $site_id) ?>" class="row-card">
+    <div class="row-icon">🎯</div>
+    <div class="row-main">
+        <div class="row-title">AEO Tracker</div>
+        <div class="row-sub">Track when Perplexity, ChatGPT and other answer engines cite your site</div>
+    </div>
+    <span class="row-arrow">›</span>
+</a>
+
+<!-- Competitors -->
+<a href="<?= url('/dashboard/competitors.php?site=' . $site_id) ?>" class="row-card">
+    <div class="row-icon">⚔️</div>
+    <div class="row-main">
+        <div class="row-title">Competitors</div>
+        <div class="row-sub">
+            <?php if ($competitors_active > 0): ?>
+                <?= $competitors_active ?> tracked
+                <?php if ($open_gaps > 0): ?> · <?= $open_gaps ?> content gap<?= $open_gaps === 1 ? '' : 's' ?> open<?php endif; ?>
+            <?php else: ?>
+                No competitors tracked yet
             <?php endif; ?>
         </div>
-
-        <?php if (!empty($recent_posts)): ?>
-            <?php foreach ($recent_posts as $rp): ?>
-            <div style="padding:6px 0;border-bottom:1px solid #f1f5f9;display:flex;justify-content:space-between;align-items:center;">
-                <a href="<?= url('/dashboard/posts.php?action=edit&id=' . $rp['id'] . '&site=' . $site_id) ?>" style="font-size:13px;color:var(--text);text-decoration:none;"><?= e(truncate($rp['title'], 50)) ?></a>
-                <div style="display:flex;gap:4px;align-items:center;">
-                    <span class="badge badge-<?= $rp['status'] ?>" style="font-size:10px;"><?= $rp['status'] ?></span>
-                    <span style="font-size:10px;color:#94a3b8;"><?= format_date($rp['created_at'], 'd M') ?></span>
-                </div>
-            </div>
-            <?php endforeach; ?>
-        <?php else: ?>
-            <p class="text-sm text-muted">Click "Write New" above to create your first blog post.</p>
-        <?php endif; ?>
     </div>
-</div>
+    <span class="row-status <?= $competitors_active > 0 ? 'good' : 'neutral' ?>"><?= $competitors_active > 0 ? $competitors_active . ' active' : 'Empty' ?></span>
+    <span class="row-arrow">›</span>
+</a>
 
-<script>
-async function togglePublish(siteId, enable) {
-    const action = enable ? 'enable CMS auto-publish' : 'DISABLE CMS auto-publish';
-    const msg = enable
-        ? 'This will allow new posts to go LIVE on the website when "Publish to CMS" is selected. You will need to enter CMS credentials. Continue?'
-        : 'This will clear CMS credentials. No new posts will go live on the website. Existing live posts are NOT affected. Continue?';
-    if (!confirm(msg)) return;
-
-    if (enable) {
-        window.location.href = '<?= url('/dashboard/sites.php?action=edit&id=') ?>' + siteId + '#cms';
-        return;
-    }
-
-}
-
-async function toggleSnippetEnabled(siteId, enable) {
-    var msg = enable
-        ? '⚠ Turning ON the SEO snippet allows ContentAgent to inject tags into your LIVE website (where the script is embedded). Wrong data could mis-represent your business. Continue?'
-        : 'Turning OFF the SEO snippet. ContentAgent will inject NOTHING into your live website. Your existing tags stay as they are. Continue?';
-    if (!confirm(msg)) return;
-    try {
-        const res = await fetch('<?= url('/api/toggle-publish.php') ?>', {
-            method: 'POST',
-            headers: {'Content-Type': 'application/json'},
-            body: JSON.stringify({site_id: siteId, snippet_enabled: enable})
-        });
-        const data = await res.json();
-        if (data.success) location.reload();
-        else alert('Failed: ' + (data.error || 'unknown error'));
-    } catch(e) { alert('Error: ' + e.message); }
-}
-
-async function toggleSnippetMode(siteId, newMode) {
-    var msg = newMode === 'override'
-        ? '⚠ WARNING: Override mode will REPLACE the existing page titles and meta descriptions on the live site with ContentAgent versions. This affects how your site looks in Google. Are you sure?'
-        : 'Switching to Safe mode. The snippet will only add missing tags — existing titles and descriptions on the live site will be preserved. Continue?';
-    if (!confirm(msg)) return;
-
-    try {
-        const res = await fetch('<?= url('/api/toggle-publish.php') ?>', {
-            method: 'POST',
-            headers: {'Content-Type': 'application/json'},
-            body: JSON.stringify({site_id: siteId, snippet_mode: newMode})
-        });
-        const data = await res.json();
-        if (data.success) {
-            location.reload();
-        } else {
-            alert('Failed: ' + (data.error || 'unknown error'));
-        }
-    } catch(e) {
-        alert('Error: ' + e.message);
-    }
-
-    try {
-        const res = await fetch('<?= url('/api/toggle-publish.php') ?>', {
-            method: 'POST',
-            headers: {'Content-Type': 'application/json'},
-            body: JSON.stringify({site_id: siteId, enable: false})
-        });
-        const data = await res.json();
-        if (data.success) {
-            location.reload();
-        } else {
-            alert('Failed: ' + (data.error || 'unknown error'));
-        }
-    } catch(e) {
-        alert('Error: ' + e.message);
-    }
-}
-</script>
-
-<!-- 6. AI SEO -->
-<div class="section" id="sec-aiseo">
-    <div class="section-header" onclick="toggleSection('aiseo')">
-        <div class="section-status">
-            <div class="dot not-done"></div>
-            <div>
-                <div class="section-title">AI Discoverability</div>
-                <div class="section-subtitle">llms.txt, AI crawlers, schema markup</div>
-            </div>
-        </div>
-        <div style="display:flex;gap:6px;" onclick="event.stopPropagation()">
-            <a href="<?= url('/dashboard/ai-seo.php?site=' . $site_id) ?>" class="edit-link">AI SEO →</a>
-            <a href="<?= url('/dashboard/ai-visibility.php?site=' . $site_id) ?>" class="edit-link" style="color:var(--accent);">Visibility Check →</a>
+<!-- Performance -->
+<?php
+$perf_winners = count($buckets['winners']);
+$perf_decay   = count($buckets['decay']);
+$perf_cls = !$gsc_integration ? 'warn' : ($perf_decay > 0 ? 'warn' : 'good');
+$perf_lbl = !$gsc_integration ? 'GSC needed' : ($perf_decay > 0 ? $perf_decay . ' slipping' : 'OK');
+?>
+<a href="<?= url('/dashboard/performance.php?site=' . $site_id) ?>" class="row-card">
+    <div class="row-icon">📈</div>
+    <div class="row-main">
+        <div class="row-title">Performance</div>
+        <div class="row-sub">
+            <?php if (!$gsc_integration): ?>
+                Connect Google Search Console to see clicks, impressions and rankings
+            <?php else: ?>
+                <?= $perf_winners ?> winner<?= $perf_winners === 1 ? '' : 's' ?> · <?= $perf_decay ?> slipping
+            <?php endif; ?>
         </div>
     </div>
-</div>
+    <span class="row-status <?= $perf_cls ?>"><?= e($perf_lbl) ?></span>
+    <span class="row-arrow">›</span>
+</a>
 
-<!-- 6b. AI Presence -->
-<div class="section" id="sec-presence">
-    <div class="section-header" onclick="toggleSection('presence')">
-        <div class="section-status">
-            <div class="dot not-done"></div>
-            <div>
-                <div class="section-title">AI Presence Builder</div>
-                <div class="section-subtitle">Find conversations on Reddit, Quora, LinkedIn & more — join with AI-powered replies</div>
-            </div>
+<!-- Alerts -->
+<a href="<?= url('/dashboard/alerts.php?site=' . $site_id) ?>" class="row-card">
+    <div class="row-icon">🔔</div>
+    <div class="row-main">
+        <div class="row-title">Alerts</div>
+        <div class="row-sub">
+            <?php if ($unread_alerts > 0): ?>
+                <?= $unread_alerts ?> unread notification<?= $unread_alerts === 1 ? '' : 's' ?>
+            <?php else: ?>
+                All clear — nothing needs your attention
+            <?php endif; ?>
         </div>
-        <a href="<?= url('/dashboard/ai-presence.php?site=' . $site_id) ?>" class="edit-link" onclick="event.stopPropagation()" style="color:var(--accent);">Build Presence →</a>
     </div>
-</div>
-
-<!-- 7. Social Media -->
-<div class="section" id="sec-social">
-    <div class="section-header" onclick="toggleSection('social')">
-        <div class="section-status">
-            <div class="dot not-done"></div>
-            <div>
-                <div class="section-title">📱 Social Media</div>
-                <div class="section-subtitle">Connect & auto-post to LinkedIn, Twitter, Instagram</div>
-            </div>
-        </div>
-        <a href="<?= url('/dashboard/integrations.php') ?>" class="edit-link" onclick="event.stopPropagation()">Connect →</a>
-    </div>
-</div>
-
-<script>
-const API = '<?= url('/api') ?>';
-const siteId = <?= $site_id ?>;
-
-function toggleSection(name) {
-    document.getElementById('sec-' + name).classList.toggle('open');
-}
-
-async function deployFix(type) {
-    const result = document.getElementById('deploy-result');
-    result.style.display = 'block';
-    result.style.background = '#eff6ff';
-    result.style.color = '#1e40af';
-    result.textContent = 'Deploying ' + type + ' via FTP...';
-    try {
-        const res = await fetch(API + '/deploy-fixes.php', {
-            method: 'POST',
-            headers: {'Content-Type': 'application/json'},
-            body: JSON.stringify({site_id: siteId, type: type})
-        });
-        const data = await res.json();
-        if (data.success) {
-            result.style.background = '#ecfdf5';
-            result.style.color = '#065f46';
-            result.textContent = '✓ ' + type + ' deployed successfully to ' + (data.path || 'server');
-        } else {
-            result.style.background = '#fef2f2';
-            result.style.color = '#991b1b';
-            result.textContent = '✗ Deploy failed: ' + (data.error || 'Unknown error');
-        }
-    } catch (e) {
-        result.style.background = '#fef2f2';
-        result.style.color = '#991b1b';
-        result.textContent = '✗ Deploy failed: ' + e.message;
-    }
-}
-
-function log(id, text, cls) {
-    const el = document.getElementById('log-' + id);
-    el.style.display = 'block';
-    const prefix = cls === 's' ? '✓ ' : cls === 'i' ? '→ ' : cls === 'w' ? '⚠ ' : '  ';
-    el.innerHTML += '<div class="' + cls + '">' + prefix + text + '</div>';
-    el.scrollTop = el.scrollHeight;
-}
-
-async function runStep(step) {
-    // Open the section
-    document.getElementById('sec-' + step).classList.add('open');
-
-    if (step === 'scan') {
-        log('scan', 'Scanning website...', 'i');
-        const res = await fetch(API + '/onboarding.php', {
-            method: 'POST', headers: {'Content-Type': 'application/json'},
-            body: JSON.stringify({action: 'scan', site_id: siteId})
-        });
-        const data = await res.json();
-        if (data.success) {
-            log('scan', 'Platform: ' + (data.platform || 'custom'), 's');
-            log('scan', 'Pages: ' + data.internal_links + ' | Images: ' + data.images, 'i');
-            log('scan', 'SSL: ' + (data.ssl_valid ? 'Valid' : 'Invalid'), data.ssl_valid ? 's' : 'w');
-            log('scan', 'Sitemap: ' + (data.sitemap ? 'Found' : 'Missing'), data.sitemap ? 's' : 'w');
-            log('scan', 'Scan complete! Refresh to see results.', 's');
-            setTimeout(() => location.reload(), 2000);
-        } else {
-            log('scan', 'Error: ' + (data.error || 'Unknown'), 'w');
-        }
-    }
-
-    else if (step === 'audit') {
-        log('audit', 'Running SEO audit (up to 30 pages)...', 'i');
-        const res = await fetch(API + '/onboarding.php', {
-            method: 'POST', headers: {'Content-Type': 'application/json'},
-            body: JSON.stringify({action: 'audit', site_id: siteId})
-        });
-        const data = await res.json();
-        if (data.success) {
-            log('audit', 'Score: ' + data.score + '/100 | Issues: ' + data.issues + ' | Pages: ' + data.pages, 's');
-            setTimeout(() => location.reload(), 2000);
-        } else {
-            log('audit', 'Error: ' + (data.error || 'Unknown'), 'w');
-        }
-    }
-
-    else if (step === 'fix') {
-        document.getElementById('fix-progress').style.display = 'block';
-        log('fix', 'Starting auto-fixer...', 'i');
-
-        let offset = 0, totalFixed = 0, totalSkipped = 0, totalIssues = 0, hasMore = true;
-        while (hasMore) {
-            const res = await fetch(API + '/auto-fix-all.php', {
-                method: 'POST', headers: {'Content-Type': 'application/json'},
-                body: JSON.stringify({site_id: siteId, batch_size: 10, offset: offset})
-            });
-            const data = await res.json();
-            if (!data.success) { log('fix', data.error || 'Error', 'w'); break; }
-            totalFixed += data.fixed; totalSkipped += data.skipped;
-            totalIssues = data.total_issues; hasMore = data.has_more;
-            offset = data.next_offset || offset + 10;
-            const pct = totalIssues > 0 ? Math.round((Math.min(offset, totalIssues) / totalIssues) * 100) : 100;
-            document.getElementById('fix-bar').style.width = pct + '%';
-            document.getElementById('fix-counter').textContent = Math.min(offset, totalIssues) + ' / ' + totalIssues + ' processed';
-            if (data.applied) data.applied.forEach(a => log('fix', a, 's'));
-        }
-        log('fix', totalFixed + ' fixes ready to deploy, ' + totalSkipped + ' skipped.', 's');
-        setTimeout(() => location.reload(), 2000);
-    }
-
-    else if (step === 'keywords') {
-        log('keywords', 'Researching keywords...', 'i');
-        const res = await fetch(API + '/onboarding.php', {
-            method: 'POST', headers: {'Content-Type': 'application/json'},
-            body: JSON.stringify({action: 'keywords', site_id: siteId})
-        });
-        const data = await res.json();
-        if (data.success) {
-            log('keywords', 'Found ' + data.total + ' keywords', 's');
-            if (data.samples) data.samples.forEach(k => log('keywords', '  ' + k, 'i'));
-            setTimeout(() => location.reload(), 2000);
-        } else {
-            log('keywords', data.error || 'Error', 'w');
-        }
-    }
-
-    else if (step === 'content') {
-        window.location.href = '<?= url('/dashboard/write.php?site=' . $site_id . '&step=propose') ?>';
-    }
-}
-</script>
+    <span class="row-status <?= $unread_alerts > 0 ? 'warn' : 'good' ?>"><?= $unread_alerts > 0 ? $unread_alerts . ' unread' : '✓' ?></span>
+    <span class="row-arrow">›</span>
+</a>
 
 <?php
 $page_content = ob_get_clean();
