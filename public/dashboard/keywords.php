@@ -239,6 +239,53 @@ endif; ?>
     </div>
     <div id="add-msg" style="font-size:11px;margin-top:6px;"></div>
 </div>
+
+<?php $_dfso_ok = !empty(config('dataforseo_login')) && !empty(config('dataforseo_password')); ?>
+<div class="card" style="margin-bottom:10px; padding:12px 14px; border-left:3px solid <?= $_dfso_ok ? '#10b981' : '#94a3b8' ?>;">
+    <div style="display:flex; justify-content:space-between; align-items:center; gap:10px; flex-wrap:wrap;">
+        <div style="flex:1; min-width:240px;">
+            <div style="font-weight:600; font-size:13px; color:var(--primary);">🔮 Enrich keywords with DataForSEO</div>
+            <div style="font-size:11px; color:#64748b; margin-top:2px;">Fills in real search volume + difficulty for keywords that don't yet have GSC data. ~$0.0001 per keyword.</div>
+        </div>
+        <?php if ($_dfso_ok): ?>
+            <div style="display:flex; gap:6px;">
+                <button onclick="enrichKeywords(<?= (int)$filter_site ?>, true, this)" class="btn btn-primary btn-sm" title="Only enrich keywords missing volume/difficulty">Enrich missing</button>
+                <button onclick="enrichKeywords(<?= (int)$filter_site ?>, false, this)" class="btn btn-outline btn-sm" title="Refresh ALL active keywords with fresh data">Refresh all</button>
+            </div>
+        <?php else: ?>
+            <a href="<?= url('/dashboard/integrations.php') ?>" class="btn btn-outline btn-sm" style="font-size:11px;">Set up DataForSEO</a>
+        <?php endif; ?>
+    </div>
+    <div id="enrich-msg" style="font-size:11px; margin-top:6px;"></div>
+</div>
+<script>
+async function enrichKeywords(siteId, onlyMissing, btn) {
+    const orig = btn.textContent;
+    btn.disabled = true;
+    document.querySelectorAll('button[onclick^="enrichKeywords"]').forEach(b => b.disabled = true);
+    btn.textContent = 'Enriching…';
+    document.getElementById('enrich-msg').innerHTML = '<span style="color:#64748b;">Calling DataForSEO… can take 5-20 seconds depending on keyword count.</span>';
+    try {
+        const res = await fetch('<?= url('/api/keywords-enrich.php') ?>', {
+            method: 'POST', headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({ site_id: siteId, only_missing: onlyMissing })
+        });
+        const data = await res.json();
+        if (data.success) {
+            document.getElementById('enrich-msg').innerHTML = '<span style="color:#065f46;">✓ ' + (data.message || ('Enriched ' + (data.enriched||0) + ' of ' + (data.requested||0) + ' keywords. ' + (data.with_volume||0) + ' had real volume data.')) + '</span>';
+            setTimeout(() => location.reload(), 1200);
+        } else {
+            document.getElementById('enrich-msg').innerHTML = '<span style="color:#dc2626;">✗ ' + (data.error || 'Failed') + '</span>';
+            document.querySelectorAll('button[onclick^="enrichKeywords"]').forEach(b => b.disabled = false);
+            btn.textContent = orig;
+        }
+    } catch (e) {
+        document.getElementById('enrich-msg').innerHTML = '<span style="color:#dc2626;">✗ ' + e.message + '</span>';
+        document.querySelectorAll('button[onclick^="enrichKeywords"]').forEach(b => b.disabled = false);
+        btn.textContent = orig;
+    }
+}
+</script>
 <?php endif; ?>
 
 <!-- Filters: site + cluster -->
