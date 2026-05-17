@@ -96,7 +96,10 @@ function cms_update_post(array $post, string $cms_url, string $cms_api_key): arr
         ? date('Y-m-d', strtotime($post['published_at']))
         : null;
 
+    $type = ($post['type'] ?? 'blog') === 'news' ? 'news' : 'blog';
+
     $payload = [
+        'type'            => $type, // MUST be in update too — Xceed CMS routes by (type, slug)
         'slug'            => $post['slug'],
         'title'           => $post['title'],
         'excerpt'         => $post['excerpt'] ?? '',
