@@ -60,6 +60,7 @@ $next_action_labels = [
     'keywords' => 'Next: Find keywords',
     'publish'  => 'Next: Write & publish your first post',
     'track'    => 'Next: Connect Google Search Console',
+    'grow'    => 'Next: Set up Competitors, AEO and more',
 ];
 $next_action_label = $_stp_current_key ? $next_action_labels[$_stp_current_key] : null;
 $next_action_href  = $_stp_current_key ? $_stp_steps[$_stp_current_key]['href'] : null;
@@ -97,44 +98,7 @@ $next_action_href  = $_stp_current_key ? $_stp_steps[$_stp_current_key]['href'] 
     </div>
 <?php endif; ?>
 
-<div class="aside-section-label">More for this site</div>
-<div class="aside-strip">
-    <a href="<?= url('/dashboard/competitors.php?site=' . $site_id) ?>" class="aside-link">
-        <span class="icon">⚔️</span>
-        <div>
-            <div class="label">Competitors</div>
-            <div class="meta"><?= $competitors_active ?> tracked</div>
-        </div>
-    </a>
-    <a href="<?= url('/dashboard/ai-presence.php?site=' . $site_id) ?>" class="aside-link">
-        <span class="icon">🏢</span>
-        <div>
-            <div class="label">Brand Presence</div>
-            <div class="meta">Reddit, Quora, LinkedIn</div>
-        </div>
-    </a>
-    <a href="<?= url('/dashboard/aeo.php?site=' . $site_id) ?>" class="aside-link">
-        <span class="icon">🎯</span>
-        <div>
-            <div class="label">AEO Tracker</div>
-            <div class="meta">Answer-engine citations</div>
-        </div>
-    </a>
-    <a href="<?= url('/dashboard/ai-seo.php?site=' . $site_id) ?>" class="aside-link">
-        <span class="icon">🤖</span>
-        <div>
-            <div class="label">AI Discoverability</div>
-            <div class="meta">llms.txt, schema, AI crawlers</div>
-        </div>
-    </a>
-    <a href="<?= url('/dashboard/alerts.php?site=' . $site_id) ?>" class="aside-link">
-        <span class="icon">🔔</span>
-        <div>
-            <div class="label">Alerts</div>
-            <div class="meta"><?= $unread_alerts > 0 ? $unread_alerts . ' unread' : 'All clear' ?></div>
-        </div>
-    </a>
-</div>
+<?php // The "More for this site" strip moved into the new Grow step in the stepper. ?>
 
 <?php
 $page_content = ob_get_clean();

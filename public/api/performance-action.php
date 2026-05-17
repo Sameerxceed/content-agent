@@ -8,15 +8,34 @@
  *   - dismiss        : mark post as acknowledged (no more nagging)
  *   - fetch_now      : trigger an on-demand performance snapshot for the site
  */
+// JSON endpoint — never let warnings/notices leak into the response body.
+// Anything dumped to stdout before our json_encode call would break the
+// client's JSON.parse (which is exactly what "fetch_now" was hitting).
+ini_set('display_errors', '0');
+ob_start();
+
 require_once __DIR__ . '/../../includes/helpers.php';
 require_once __DIR__ . '/../../includes/auth.php';
 require_once __DIR__ . '/../../includes/performance.php';
 require_once __DIR__ . '/../../includes/haiku.php';
 
 auth_start();
-if (!auth_check()) { http_response_code(401); echo json_encode(['error' => 'Unauthorized']); exit; }
+if (!auth_check()) { http_response_code(401); ob_end_clean(); echo json_encode(['error' => 'Unauthorized']); exit; }
 
 header('Content-Type: application/json');
+
+/** Send a JSON response and exit, discarding any stray output. */
+function pa_respond(array $payload, int $status = 200): void {
+    if (ob_get_length()) {
+        $stray = ob_get_clean();
+        if (trim($stray) !== '') {
+            error_log('[performance-action] stray output before json: ' . substr($stray, 0, 500));
+        }
+    }
+    http_response_code($status);
+    echo json_encode($payload);
+    exit;
+}
 
 $db      = require __DIR__ . '/../../includes/db.php';
 $user_id = auth_user_id();
@@ -27,27 +46,25 @@ $action = $input['action'] ?? '';
 try {
     if ($action === 'fetch_now') {
         $site_id = (int)($input['site_id'] ?? 0);
-        if (!auth_can_access_site($db, $site_id)) { http_response_code(404); echo json_encode(['error' => 'Site not found']); exit; }
+        if (!auth_can_access_site($db, $site_id)) pa_respond(['error' => 'Site not found'], 404);
         $org = performance_snapshot_organic($db, $site_id);
         $soc = performance_snapshot_social($db, $site_id);
-        echo json_encode(['success' => true, 'organic' => $org, 'social' => $soc]);
-        exit;
+        pa_respond(['success' => true, 'organic' => $org, 'social' => $soc]);
     }
 
     $post_id = (int)($input['post_id'] ?? 0);
-    if (!$post_id) { http_response_code(400); echo json_encode(['error' => 'post_id required']); exit; }
+    if (!$post_id) pa_respond(['error' => 'post_id required'], 400);
 
     $stmt = $db->prepare('SELECT p.*, s.user_id, s.name AS site_name, s.domain
                           FROM posts p JOIN sites s ON p.site_id = s.id
                           WHERE p.id = ? AND s.user_id = ?');
     $stmt->execute([$post_id, $user_id]);
     $post = $stmt->fetch();
-    if (!$post) { http_response_code(404); echo json_encode(['error' => 'Post not found']); exit; }
+    if (!$post) pa_respond(['error' => 'Post not found'], 404);
 
     if ($action === 'dismiss') {
         performance_log_action($db, $post_id, 'dismiss', $input['note'] ?? null);
-        echo json_encode(['success' => true]);
-        exit;
+        pa_respond(['success' => true]);
     }
 
     if ($action === 'refresh') {
@@ -158,16 +175,14 @@ try {
 
         $resp = haiku_chat($system, $why, 4000);
         if (empty($resp['success'])) {
-            echo json_encode(['success' => false, 'error' => $resp['error'] ?? 'AI call failed']);
-            exit;
+            pa_respond(['success' => false, 'error' => $resp['error'] ?? 'AI call failed']);
         }
 
         $content = trim($resp['content']);
         $content = preg_replace('/^```(?:json)?\s*|\s*```$/m', '', $content);
         $data = json_decode($content, true);
         if (!is_array($data) || empty($data['body'])) {
-            echo json_encode(['success' => false, 'error' => 'AI returned unparseable response', 'raw' => $content]);
-            exit;
+            pa_respond(['success' => false, 'error' => 'AI returned unparseable response', 'raw' => $content]);
         }
 
         // Save as a new draft tied to the same site — original stays live until user re-publishes
@@ -188,7 +203,7 @@ try {
         $new_id = (int)$db->lastInsertId();
 
         performance_log_action($db, $post_id, 'refresh_queued', 'New draft #' . $new_id);
-        echo json_encode([
+        pa_respond([
             'success'     => true,
             'new_post_id' => $new_id,
             'used_signals' => [
@@ -198,7 +213,6 @@ try {
             ],
             'cannibals' => $cannibals,
         ]);
-        exit;
     }
 
     if ($action === 'queue_similar') {
@@ -209,14 +223,11 @@ try {
                               ON DUPLICATE KEY UPDATE priority = GREATEST(priority, 80), status = "active"');
         $stmt->execute([$post['site_id'], $kw]);
         performance_log_action($db, $post_id, 'queue_similar', 'Keyword queued: ' . $kw);
-        echo json_encode(['success' => true]);
-        exit;
+        pa_respond(['success' => true]);
     }
 
-    http_response_code(400);
-    echo json_encode(['error' => 'Unknown action: ' . $action]);
+    pa_respond(['error' => 'Unknown action: ' . $action], 400);
 } catch (Throwable $e) {
     error_log('[performance-action] ' . $e->getMessage());
-    http_response_code(500);
-    echo json_encode(['error' => $e->getMessage()]);
+    pa_respond(['error' => $e->getMessage()], 500);
 }

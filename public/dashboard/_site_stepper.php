@@ -47,6 +47,22 @@ $_stp_has_kw      = $_stp_kw > 0;
 $_stp_has_publish = $_stp_posts['published'] > 0;
 $_stp_has_track   = $_stp_gsc && $_stp_gsc_sync;
 
+// "Grow" step = engagement with any of the advanced/intel features
+// (competitors, brand presence, AEO tracking, AI discoverability).
+$_stp_grow_competitors = 0;
+try {
+    $stmt = $db->prepare("SELECT COUNT(*) FROM competitors WHERE site_id = ? AND status = 'active'");
+    $stmt->execute([$site_id]);
+    $_stp_grow_competitors = (int)$stmt->fetchColumn();
+} catch (PDOException $e) {}
+$_stp_grow_aeo = 0;
+try {
+    $stmt = $db->prepare("SELECT COUNT(*) FROM aeo_queries WHERE site_id = ?");
+    $stmt->execute([$site_id]);
+    $_stp_grow_aeo = (int)$stmt->fetchColumn();
+} catch (PDOException $e) {}
+$_stp_has_grow = $_stp_grow_competitors > 0 || $_stp_grow_aeo > 0;
+
 // Write and Publish used to be separate steps, but for most sites they happen
 // together (auto-publish or write-then-publish-immediately) and the two
 // metrics ended up identical on the stepper. Merged into one "Publish" step
@@ -85,6 +101,14 @@ $_stp_steps = [
         'metric' => $_stp_has_track ? 'GSC OK' : ($_stp_gsc ? 'syncing' : 'GSC needed'),
         'done'   => $_stp_has_track,
         'href'   => url('/dashboard/performance.php?site=' . $site_id),
+    ],
+    'grow' => [
+        'label'  => 'Grow',
+        'metric' => $_stp_has_grow
+            ? ($_stp_grow_competitors . ' competitors' . ($_stp_grow_aeo > 0 ? ' · ' . $_stp_grow_aeo . ' AEO' : ''))
+            : 'intel, AEO, brand',
+        'done'   => $_stp_has_grow,
+        'href'   => url('/dashboard/grow.php?site=' . $site_id),
     ],
 ];
 

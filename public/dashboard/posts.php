@@ -618,13 +618,8 @@ if ($action === 'edit' && isset($_GET['id'])):
     }
 ?>
     <?php if ($filter_site && $site_name): ?>
-    <div style="margin-bottom:10px; display:flex; justify-content:space-between; align-items:center; gap:6px; flex-wrap:wrap;">
+    <div style="margin-bottom:8px;">
         <a href="<?= url('/dashboard/site.php?id=' . (int)$filter_site) ?>" style="font-size:13px;color:var(--primary);text-decoration:none;">&larr; Back to <?= e($site_name) ?></a>
-        <div style="display:flex; gap:6px;">
-            <a href="<?= url('/dashboard/write.php?site=' . (int)$filter_site . '&step=propose') ?>" class="btn btn-accent" style="text-decoration:none;font-weight:600;">+ Write New Post</a>
-            <button onclick="fixLongSlugs(<?= (int)$filter_site ?>, this)" class="btn btn-outline btn-sm" style="font-size:11px;" title="One-time fix: shorten slugs over 80 chars (which the CMS truncates) and re-push as fresh CMS rows.">✂ Fix long slugs</button>
-            <button onclick="republishAllNews(<?= (int)$filter_site ?>, this)" class="btn btn-outline btn-sm" style="font-size:11px;" title="Re-push every published news post to the CMS. Idempotent.">⟲ Re-push all news to CMS</button>
-        </div>
     </div>
     <?php
         $site_id = (int)$filter_site;
@@ -634,6 +629,11 @@ if ($action === 'edit' && isset($_GET['id'])):
             include __DIR__ . '/_site_stepper.php';
         }
     ?>
+    <div style="margin-bottom:14px; display:flex; justify-content:flex-end; align-items:center; gap:6px; flex-wrap:wrap;">
+        <a href="<?= url('/dashboard/write.php?site=' . (int)$filter_site . '&step=propose') ?>" class="btn btn-accent" style="text-decoration:none;font-weight:600;">+ Write New Post</a>
+        <button onclick="fixLongSlugs(<?= (int)$filter_site ?>, this)" class="btn btn-outline btn-sm" style="font-size:11px;" title="One-time fix: shorten slugs over 80 chars (which the CMS truncates) and re-push as fresh CMS rows.">✂ Fix long slugs</button>
+        <button onclick="republishAllNews(<?= (int)$filter_site ?>, this)" class="btn btn-outline btn-sm" style="font-size:11px;" title="Re-push every published news post to the CMS. Idempotent.">⟲ Re-push all news to CMS</button>
+    </div>
     <script>
     async function republishAllNews(siteId, btn) {
         if (!confirm('Re-push every published news post on this site to the CMS? This is safe to run multiple times (existing posts get updated).')) return;
