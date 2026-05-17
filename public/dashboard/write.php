@@ -129,8 +129,12 @@ Output ONLY valid JSON array:
     }
     ?>
 
-    <div class="mb-4">
-        <span class="text-muted">Writing for:</span> <strong><?= e($site['name']) ?></strong> (<?= e($site['domain']) ?>)
+    <?= page_intro('✍', 'AI Content Planner',
+        'Propose blog topics tailored to ' . $site['name'] . '\'s keywords and business focus. Pick one, AI writes the full draft, you edit + publish.',
+        'content') ?>
+
+    <div class="mb-4" style="font-size:12px; color:var(--text-light);">
+        Writing for: <strong style="color:var(--text);"><?= e($site['name']) ?></strong> (<?= e($site['domain']) ?>)
     </div>
 
     <?php if (!empty($winners_filtered)): ?>
@@ -248,7 +252,7 @@ Output ONLY valid JSON array:
     <?php if (!empty($prev_posts)): ?>
     <div class="card mb-4">
         <div class="card-header" style="display:flex;justify-content:space-between;align-items:center;">
-            <span>📝 Previous Posts (<?= count($prev_posts) ?>)</span>
+            <span>📝 Previous Posts (<?= count($prev_posts) ?>) <?= tt('Your most recent drafts and published posts on this site. Quick way to find a post you started and want to finish.') ?></span>
             <a href="<?= url('/dashboard/posts.php?site=' . $site_id) ?>" style="font-size:12px;color:var(--primary);">View All →</a>
         </div>
         <div style="max-height:240px;overflow-y:auto;">
@@ -270,14 +274,15 @@ Output ONLY valid JSON array:
     <?php endif; ?>
 
     <?php if (!empty($proposals)): ?>
-    <div class="card">
+    <div class="card" style="border-left:3px solid #7c3aed;">
         <div class="card-header">
-            🧠 AI Proposed Topics — Pick one or write your own
-            <?php if ($winner_titles || $dead_titles): ?>
-                <span style="font-size:11px;color:var(--text-light);font-weight:normal;display:block;margin-top:2px;">
-                    Informed by <?= count($winner_titles) ?> winning theme<?= count($winner_titles) === 1 ? '' : 's' ?><?php if ($dead_titles): ?> and avoiding <?= count($dead_titles) ?> dead topic<?= count($dead_titles) === 1 ? '' : 's' ?><?php endif; ?>.
-                </span>
-            <?php endif; ?>
+            🧠 AI Proposed Topics <?= tt('Claude generated these from your active keywords, competitor gaps, and posts that are already getting traction. Click "Write this" to have AI draft the full post for your review.') ?>
+            <span style="font-size:11px;color:var(--text-light);font-weight:normal;display:block;margin-top:2px;">
+                Pick one — AI writes the full draft for you to edit and publish.
+                <?php if ($winner_titles || $dead_titles): ?>
+                    Informed by <?= count($winner_titles) ?> winning theme<?= count($winner_titles) === 1 ? '' : 's' ?><?php if ($dead_titles): ?>, avoiding <?= count($dead_titles) ?> dead topic<?= count($dead_titles) === 1 ? '' : 's' ?><?php endif; ?>.
+                <?php endif; ?>
+            </span>
         </div>
         <?php foreach ($proposals as $i => $prop): ?>
         <div style="padding:12px 0;border-bottom:1px solid #f1f5f9;<?= $i === 0 ? '' : '' ?>">
@@ -306,7 +311,7 @@ Output ONLY valid JSON array:
 
     <!-- Custom topic -->
     <div class="card">
-        <div class="card-header">Or write about your own topic</div>
+        <div class="card-header">Or write about your own topic <?= tt('Skip the AI suggestions and type any topic you want. AI will still write the full draft, just using your title and keywords as the brief.') ?></div>
         <form method="POST">
             <input type="hidden" name="step" value="write">
             <input type="hidden" name="site_id" value="<?= $site_id ?>">

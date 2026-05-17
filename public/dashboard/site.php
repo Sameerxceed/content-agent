@@ -236,37 +236,43 @@ $sc_cls = $sc < 0 ? '' : ($sc >= 80 ? 'score-good' : ($sc >= 50 ? 'score-ok' : '
     </div>
 </div>
 
+<!-- ── Page intro ─────────────────────────────────────── -->
+<?= page_intro('🏠', 'Site overview for ' . $site['name'],
+    'Quick health check + the next 1-2 things to do today. Every section below either celebrates progress or flags work.',
+    'system') ?>
+
 <!-- ── Hero metrics ───────────────────────────────────── -->
 <div style="display:grid; grid-template-columns:repeat(auto-fit, minmax(140px, 1fr)); gap:10px; margin-bottom:14px;">
     <a href="<?= url('/dashboard/posts.php?site=' . $site_id) ?>" class="stat-card" style="text-decoration:none;color:inherit;">
-        <div class="stat-label">Published</div>
+        <div class="stat-label">Published <?= tt('Total posts (blog + news) live on your website. Click to see them.') ?></div>
         <div class="stat-value"><?= $pc['published'] ?? 0 ?></div>
         <div class="stat-sub"><?= $posts_this_week ?> this week</div>
     </a>
     <a href="<?= url('/dashboard/performance.php?site=' . $site_id) ?>" class="stat-card" style="text-decoration:none;color:inherit;">
-        <div class="stat-label">Winners</div>
+        <div class="stat-label">Winners <?= tt('Posts trending up on Google in the last 28 days. ContentAgent suggests writing more on these themes.') ?></div>
         <div class="stat-value" style="color:var(--success);"><?= count($buckets['winners']) ?></div>
         <div class="stat-sub"><?= count($buckets['decay']) ?> slipping</div>
     </a>
     <a href="<?= url('/dashboard/keywords.php?site=' . $site_id . '&view=gsc') ?>" class="stat-card" style="text-decoration:none;color:inherit;">
-        <div class="stat-label">SEO Score</div>
+        <div class="stat-label">SEO Score <?= tt('Overall SEO health 0-100 from the last audit. 80+ green, 50-79 amber, below 50 red. Click for full audit.') ?></div>
         <div class="stat-value" style="color:<?= $sc >= 80 ? 'var(--success)' : ($sc >= 50 ? 'var(--warning)' : 'var(--danger)') ?>;"><?= $sc >= 0 ? $sc : '—' ?></div>
         <div class="stat-sub"><?= $open_issues ?> open issues</div>
     </a>
     <a href="<?= url('/dashboard/alerts.php?site=' . $site_id) ?>" class="stat-card" style="text-decoration:none;color:inherit;">
-        <div class="stat-label">Alerts</div>
+        <div class="stat-label">Alerts <?= tt('Unread notifications from automated watchers: rank drops, broken links, new mentions, etc.') ?></div>
         <div class="stat-value" style="color:<?= $unread_alerts > 0 ? '#3b82f6' : 'inherit' ?>;"><?= $unread_alerts ?></div>
         <div class="stat-sub">unread</div>
     </a>
 </div>
 
 <!-- ── Action cards: 3 things to do right now ────────── -->
+<div style="font-size:11px; color:var(--text-light); text-transform:uppercase; letter-spacing:0.5px; font-weight:600; margin:4px 0 6px;">What to do next <?= tt('Three suggested actions based on the current state of your site. Pick whichever matches your goal today.') ?></div>
 <div style="display:grid; grid-template-columns:repeat(auto-fit, minmax(260px, 1fr)); gap:12px; margin-bottom:14px;">
     <!-- 1. Write a post -->
     <div class="card" style="margin:0; border-left:3px solid var(--accent);">
-        <div style="font-weight:600; font-size:13px; color:var(--primary); margin-bottom:4px;">✍ Write a post</div>
+        <div style="font-weight:600; font-size:13px; color:var(--primary); margin-bottom:4px;">✍ Write a blog post</div>
         <div style="font-size:11px; color:var(--text-light); margin-bottom:10px; line-height:1.5;">
-            AI proposes topics from your keywords, winning themes, and competitor gaps.
+            Opens the AI Planner: proposes 4 topics from your keywords + winning themes, you pick one, AI writes a full draft, you edit and publish.
         </div>
         <a href="<?= url('/dashboard/write.php?site=' . $site_id . '&step=propose') ?>" class="btn btn-accent btn-sm" style="text-decoration:none;">Open Planner →</a>
     </div>

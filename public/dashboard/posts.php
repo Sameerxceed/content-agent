@@ -618,9 +618,12 @@ if ($action === 'edit' && isset($_GET['id'])):
     }
 ?>
     <?php if ($filter_site && $site_name): ?>
-    <div style="margin-bottom:10px; display:flex; justify-content:space-between; align-items:center;">
+    <div style="margin-bottom:10px; display:flex; justify-content:space-between; align-items:center; gap:6px; flex-wrap:wrap;">
         <a href="<?= url('/dashboard/site.php?id=' . (int)$filter_site) ?>" style="font-size:13px;color:var(--primary);text-decoration:none;">&larr; Back to <?= e($site_name) ?></a>
-        <button onclick="republishAllNews(<?= (int)$filter_site ?>, this)" class="btn btn-outline btn-sm" style="font-size:11px;" title="Re-push every published news post to the CMS. Use this once after the auto-push bug fix to repair posts that never made it to the website.">⟲ Re-push all news to CMS</button>
+        <div style="display:flex; gap:6px;">
+            <button onclick="fixLongSlugs(<?= (int)$filter_site ?>, this)" class="btn btn-outline btn-sm" style="font-size:11px;" title="One-time fix: shorten slugs over 80 chars (which the CMS truncates) and re-push as fresh CMS rows.">✂ Fix long slugs</button>
+            <button onclick="republishAllNews(<?= (int)$filter_site ?>, this)" class="btn btn-outline btn-sm" style="font-size:11px;" title="Re-push every published news post to the CMS. Idempotent.">⟲ Re-push all news to CMS</button>
+        </div>
     </div>
     <script>
     async function republishAllNews(siteId, btn) {

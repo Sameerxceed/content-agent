@@ -147,6 +147,14 @@ foreach ($sites as $site) {
 
     foreach ($to_save as $item) {
         $slug = slugify($item['title']);
+        // Cap at 80 chars to avoid CMSes that silently truncate (breaks the
+        // PUT-by-slug update path on re-pushes). Cut at the last hyphen so
+        // we don't slice mid-word.
+        if (strlen($slug) > 80) {
+            $slug = substr($slug, 0, 80);
+            $last_dash = strrpos($slug, '-');
+            if ($last_dash !== false && $last_dash > 40) $slug = substr($slug, 0, $last_dash);
+        }
         $slug = ensure_news_slug($db, $site['id'], $slug);
 
         $body = format_news_body($item);

@@ -405,6 +405,45 @@ function sidebar_active(string $page, array $pages_or_query = []): string {
         .gap-4 { gap: 16px; }
         .grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
 
+        /* ── Inline tooltip (data-tip + .tt class) ─────── */
+        .tt {
+            display: inline-block;
+            margin-left: 4px;
+            color: #94a3b8;
+            cursor: help;
+            font-size: 12px;
+            line-height: 1;
+            position: relative;
+            vertical-align: middle;
+        }
+        .tt:hover, .tt:focus {
+            color: var(--primary);
+            outline: none;
+        }
+        .tt::after {
+            content: attr(data-tip);
+            position: absolute;
+            left: 50%;
+            transform: translateX(-50%) translateY(-2px);
+            bottom: calc(100% + 4px);
+            background: #1f2937;
+            color: #fff;
+            font-size: 11px;
+            font-weight: 400;
+            line-height: 1.45;
+            padding: 6px 10px;
+            border-radius: 5px;
+            min-width: 200px;
+            max-width: 320px;
+            white-space: normal;
+            text-align: left;
+            pointer-events: none;
+            opacity: 0;
+            transition: opacity 0.1s ease;
+            z-index: 50;
+        }
+        .tt:hover::after, .tt:focus::after { opacity: 1; }
+
         @media (max-width: 768px) {
             .sidebar { display: none; }
             .main { margin-left: 0; }

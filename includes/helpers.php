@@ -91,6 +91,64 @@ function csrf_verify(): bool
 }
 
 /**
+ * ── UI helpers — inline explainers, page intros, section headers ────
+ *
+ * These give every page a consistent "what is this, what do I do" pattern
+ * without each page rolling its own markup. CSS for these classes lives in
+ * templates/dashboard/layout.php.
+ */
+
+/**
+ * Inline tooltip: <span class="tt" data-tip="...">ⓘ</span>
+ * Renders a small info icon that shows the explanation on hover/tap.
+ */
+function tt(string $text): string
+{
+    return '<span class="tt" tabindex="0" data-tip="' . e($text) . '">&#9432;</span>';
+}
+
+/**
+ * Page intro hero band. Use at the top of dashboard pages right after the
+ * back-link, BEFORE the page content. Tints to one of: accent (Content),
+ * primary (SEO/Setup), success (Performance), purple (AI), gray (System).
+ *
+ * @param string $area One of: content / seo / performance / ai / system
+ */
+function page_intro(string $icon, string $title, string $description, string $area = 'system', string $cta_html = ''): string
+{
+    $areas = [
+        'content'     => ['#CC3300', '#fff4ef'],
+        'seo'         => ['#1B3A6B', '#eef2f9'],
+        'performance' => ['#10b981', '#ecfdf5'],
+        'ai'          => ['#7c3aed', '#f5f0ff'],
+        'system'      => ['#64748b', '#f1f5f9'],
+    ];
+    [$accent, $bg] = $areas[$area] ?? $areas['system'];
+
+    $cta = $cta_html ? '<div style="margin-top:8px;">' . $cta_html . '</div>' : '';
+    return '<div class="page-intro" style="background:' . $bg . '; border-left:3px solid ' . $accent . '; padding:12px 16px; border-radius:6px; margin-bottom:14px;">'
+        . '<div style="display:flex; align-items:center; gap:8px; font-weight:600; font-size:15px; color:' . $accent . ';">'
+        . '<span>' . $icon . '</span><span>' . e($title) . '</span>'
+        . '</div>'
+        . '<div style="font-size:12px; color:var(--text-light); margin-top:3px; line-height:1.5;">' . e($description) . '</div>'
+        . $cta
+        . '</div>';
+}
+
+/**
+ * Compact section header with optional explainer subtitle.
+ * Use INSIDE a card to label a subsection cleanly.
+ */
+function section_intro(string $title, string $description = '', string $icon = ''): string
+{
+    $i = $icon ? '<span style="margin-right:6px;">' . $icon . '</span>' : '';
+    $d = $description
+        ? '<div style="font-size:11px; color:var(--text-light); margin-top:2px;">' . e($description) . '</div>'
+        : '';
+    return '<div style="margin-bottom:8px;"><div style="font-weight:600; font-size:13px; color:var(--primary);">' . $i . e($title) . '</div>' . $d . '</div>';
+}
+
+/**
  * Return JSON response and exit.
  */
 function json_response(array $data, int $status = 200): void
