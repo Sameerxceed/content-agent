@@ -32,7 +32,7 @@ $pending = array_filter($all, fn($p) => $p['status'] === 'pending');
 $approved = array_filter($all, fn($p) => $p['status'] === 'approved');
 $rejected = array_filter($all, fn($p) => $p['status'] === 'rejected');
 
-$page_title = 'SEO — Approvals';
+$page_title = 'SEO/AEO — Approvals';
 ob_start();
 
 $active = 'approvals';

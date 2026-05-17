@@ -74,7 +74,7 @@ if ($open_issues > 0) {
 }
 $fix_dot = $open_issues > 0 ? 'pending' : ($fixes_ready > 0 ? 'done' : 'not-done');
 
-$page_title = 'SEO — ' . $site['name'];
+$page_title = 'SEO/AEO — ' . $site['name'];
 
 ob_start();
 

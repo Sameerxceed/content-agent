@@ -79,7 +79,7 @@ $_stp_steps = [
         'href'   => url('/dashboard/sites.php?action=edit&id=' . $site_id),
     ],
     'seo' => [
-        'label'  => 'SEO',
+        'label'  => 'SEO/AEO',
         'metric' => $_stp_has_audit ? ((int)$_stp_audit['score'] . '/100') : 'not audited',
         'done'   => $_stp_has_audit,
         'href'   => url('/dashboard/seo.php?site=' . $site_id),
