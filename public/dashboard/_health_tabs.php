@@ -6,8 +6,9 @@
 $health_site = isset($site_id) ? (int)$site_id : (int)($filter_site ?? 0);
 if (!$health_site) return;
 
-$health_active = $active ?? 'audit';
+$health_active = $active ?? 'snapshot';
 $health_tabs = [
+    'snapshot'  => ['Snapshot',     url('/dashboard/seo.php?site=' . $health_site)],
     'audit'     => ['Issues',       url('/dashboard/seo-audit.php?site=' . $health_site)],
     'approvals' => ['Approvals',    url('/dashboard/seo-approvals.php?site=' . $health_site)],
     'ai'        => ['AI Readiness', url('/dashboard/ai-seo.php?site=' . $health_site)],

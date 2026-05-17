@@ -94,7 +94,7 @@ if ($homepage['status'] === 200) {
 
 $seo_score = $audit ? $audit['score'] : null;
 
-$page_title = 'SEO Health — Full Report';
+$page_title = 'SEO — Full Report';
 ob_start();
 
 $active = 'report';

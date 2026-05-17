@@ -14,7 +14,7 @@ $user_id = auth_user_id();
 $filter_site = $_GET['site'] ?? '';
 $audit_id = $_GET['audit'] ?? '';
 
-$page_title = 'SEO Health — Issues';
+$page_title = 'SEO — Issues';
 
 ob_start();
 

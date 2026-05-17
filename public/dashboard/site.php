@@ -536,9 +536,18 @@ elseif ($has_audit && !$has_keywords) { $next_step = 'keywords'; $next_label = '
 elseif ($has_keywords && !$has_content) { $next_step = 'content'; $next_label = 'Next: Write Your First Blog Post'; }
 else { $next_step = 'done'; $next_label = ''; }
 
+// Audit + fix steps now live on the SEO page; route the next-action there
+// instead of calling runStep() (which used to drive sections that no longer
+// exist on this overview).
+$next_routes_to_seo = in_array($next_step, ['audit', 'fix'], true);
+
 if ($next_step !== 'done'):
 ?>
+<?php if ($next_routes_to_seo): ?>
+<a class="next-action" href="<?= url('/dashboard/seo.php?site=' . $site_id) ?>" style="text-decoration:none;"><?= $next_label ?></a>
+<?php else: ?>
 <button class="next-action" onclick="runStep('<?= $next_step ?>')"><?= $next_label ?></button>
+<?php endif; ?>
 <?php endif; ?>
 
 <!-- ═══════════════════════════════════════════════ -->
@@ -578,168 +587,39 @@ if ($next_step !== 'done'):
     </div>
 </div>
 
-<!-- 2. SEO Audit -->
-<div class="section <?= $has_audit ? 'open' : '' ?>" id="sec-audit">
-    <div class="section-header" onclick="toggleSection('audit')">
-        <div class="section-status">
-            <div class="dot <?= $has_audit ? 'done' : 'not-done' ?>"></div>
-            <div>
-                <div class="section-title">📊 SEO Audit</div>
-                <div class="section-subtitle"><?= $has_audit ? "Score: {$audit['score']}/100 — {$audit['total_issues']} issues, {$audit['pages_crawled']} pages" : 'Not audited yet' ?></div>
-            </div>
-        </div>
-        <?php if ($has_audit): ?>
-            <a href="<?= url('/dashboard/seo-audit.php?audit=' . $audit['id']) ?>" class="edit-link" onclick="event.stopPropagation()">View details →</a>
-        <?php endif; ?>
-    </div>
-    <div class="section-body">
-        <?php if (!empty($score_history) && count($score_history) > 1): ?>
-            <div style="display:flex;align-items:flex-end;gap:4px;height:60px;margin-bottom:10px;">
-                <?php foreach ($score_history as $h):
-                    $bh = max(8, ($h['score'] / 100) * 55);
-                    $bc = $h['score'] >= 80 ? '#10b981' : ($h['score'] >= 50 ? '#f59e0b' : '#ef4444');
-                ?>
-                <div style="flex:1;display:flex;flex-direction:column;align-items:center;gap:2px;">
-                    <span style="font-size:10px;font-weight:700;color:<?= $bc ?>;"><?= $h['score'] ?></span>
-                    <div style="width:100%;max-width:40px;height:<?= $bh ?>px;background:<?= $bc ?>;border-radius:3px 3px 0 0;"></div>
-                    <span style="font-size:8px;color:#94a3b8;"><?= $h['label'] ?></span>
-                </div>
-                <?php endforeach; ?>
-            </div>
-        <?php endif; ?>
-        <div class="mini-log" id="log-audit"></div>
-    </div>
-</div>
-
-<!-- 3. Auto-Fix -->
+<!-- 2. SEO (single tile — deep-dive lives at /dashboard/seo.php) -->
 <?php
-// Subtitle priority: open issues from the audit > pending improvements awaiting
-// review > approved improvements ready to serve > nothing.
-if ($open_issues > 0) {
-    $fix_subtitle = "{$open_issues} live-site issues to fix";
-} elseif ($improvements_pending > 0 && $improvements_approved > 0) {
-    $fix_subtitle = "{$improvements_pending} improvements awaiting review · {$improvements_approved} approved & live in snippet";
-} elseif ($improvements_pending > 0) {
-    $fix_subtitle = "{$improvements_pending} SEO improvements awaiting your review";
-} elseif ($improvements_approved > 0) {
-    $fix_subtitle = "{$improvements_approved} approved improvements live in snippet";
-} else {
-    $fix_subtitle = 'Nothing to fix or improve';
+// One compact SEO tile that replaces the former Audit / Auto-Fix / Fix Files
+// trio. Click anywhere on it to land on the SEO Snapshot page.
+$seo_summary_parts = [];
+if ($has_audit) {
+    $seo_summary_parts[] = "Score {$audit['score']}/100";
+    $seo_summary_parts[] = "{$open_issues} issues";
+    $seo_summary_parts[] = "{$audit['pages_crawled']} pages";
 }
-$fix_dot = $open_issues > 0 ? 'pending' : ($fixes_ready > 0 ? 'done' : 'not-done');
-?>
-<div class="section" id="sec-fix">
-    <div class="section-header" onclick="toggleSection('fix')">
-        <div class="section-status">
-            <div class="dot <?= $fix_dot ?>"></div>
-            <div>
-                <div class="section-title">🤖 Auto-Fix &amp; SEO Improvements</div>
-                <div class="section-subtitle"><?= $fix_subtitle ?></div>
-            </div>
-        </div>
-        <?php if ($open_issues > 0): ?>
-            <button class="section-action" style="background:#ef4444;" onclick="event.stopPropagation();runStep('fix')">Fix All</button>
-        <?php endif; ?>
-    </div>
-    <div class="section-body">
-        <?php if ($open_issues === 0 && $fixes_ready > 0): ?>
-            <div style="background:#ecfdf5;border-left:3px solid #10b981;padding:8px 12px;border-radius:4px;font-size:12px;margin-bottom:10px;color:#065f46;">
-                ✓ The SEO audit shows <strong>0 broken issues</strong> on your live site. The numbers below are <em>enhancements</em> ContentAgent generated to push your SEO further — not bugs.
-            </div>
-        <?php endif; ?>
-        <?php if ($fixes_ready > 0):
-            $breakdown_parts = [];
-            if ($improvements_pending > 0)  $breakdown_parts[] = $improvements_pending . ' pending review';
-            if ($improvements_approved > 0) $breakdown_parts[] = $improvements_approved . ' approved';
-            $breakdown = $breakdown_parts ? ' (' . implode(', ', $breakdown_parts) . ')' : '';
-        ?>
-            <div style="font-size:13px;margin-bottom:10px;">
-                <strong><?= $fixes_ready ?></strong> page-level SEO rules saved<?= $breakdown ?>.
-                To serve them on your live site, add this snippet:
-            </div>
-            <div style="background:#1a1a2e;color:#10b981;padding:10px 14px;border-radius:6px;font-family:monospace;font-size:11px;cursor:pointer;word-break:break-all;" onclick="navigator.clipboard.writeText(this.innerText.trim());alert('Copied!')">
-                &lt;script src="<?= e(config('app_url')) ?>/snippet/contentagent.js" data-site="<?= e($site['domain']) ?>"&gt;&lt;/script&gt;
-            </div>
-            <div class="text-sm text-muted mt-2">Click to copy. Or add FTP credentials in <a href="<?= url('/dashboard/sites.php?action=edit&id=' . $site_id) ?>">Edit Settings</a> for direct deployment.</div>
-        <?php endif; ?>
-        <div class="mini-log" id="log-fix"></div>
-        <div id="fix-progress" style="display:none;margin-top:10px;">
-            <div style="height:6px;background:#e5e7eb;border-radius:3px;overflow:hidden;">
-                <div id="fix-bar" style="height:100%;width:0%;background:#10b981;border-radius:3px;transition:width 0.3s;"></div>
-            </div>
-            <div class="text-sm text-muted mt-2" id="fix-counter"></div>
-        </div>
-    </div>
-</div>
+if ($improvements_pending > 0)  $seo_summary_parts[] = "{$improvements_pending} pending review";
+if ($improvements_approved > 0) $seo_summary_parts[] = "{$improvements_approved} approved";
+$seo_summary = $seo_summary_parts ? implode(' · ', $seo_summary_parts) : 'Not audited yet';
 
-<!-- 3b. Fix Files — Download/Deploy -->
-<?php if ($has_audit): ?>
-<?php
-    require_once __DIR__ . '/../../includes/fix-generator.php';
-    $platform_info = fix_get_platform_info($site);
-    $has_ftp = !empty($site['server_host']);
+$seo_dot = !$has_audit
+    ? 'not-done'
+    : ($open_issues > 0 || $improvements_pending > 0 ? 'pending' : 'done');
+$seo_last_scan = $has_audit ? ' · Last scan ' . format_date($audit['run_at'], 'd M Y') : '';
 ?>
-<div class="section" id="sec-fixfiles">
-    <div class="section-header" onclick="toggleSection('fixfiles')">
-        <div class="section-status">
-            <div class="dot <?= $fixes_ready > 0 ? 'done' : 'not-done' ?>"></div>
-            <div>
-                <div class="section-title">📦 Fix Files</div>
-                <div class="section-subtitle">Download or deploy fix files for <?= e($site['platform'] ?: 'your site') ?></div>
+<a href="<?= url('/dashboard/seo.php?site=' . $site_id) ?>" style="text-decoration:none;color:inherit;display:block;">
+    <div class="section" id="sec-seo" style="cursor:pointer;">
+        <div class="section-header">
+            <div class="section-status">
+                <div class="dot <?= $seo_dot ?>"></div>
+                <div>
+                    <div class="section-title">📊 SEO</div>
+                    <div class="section-subtitle"><?= e($seo_summary) ?><?= e($seo_last_scan) ?></div>
+                </div>
             </div>
+            <span class="edit-link">Open SEO →</span>
         </div>
-        <a href="<?= url('/api/download-fix.php?site_id=' . $site_id . '&type=all') ?>" class="section-action" style="background:#3b82f6;text-decoration:none;" onclick="event.stopPropagation()">Download All (ZIP)</a>
     </div>
-    <div class="section-body">
-        <div style="font-size:13px;margin-bottom:6px;color:#6b7280;">Platform: <strong><?= e($site['platform'] ?: 'custom') ?></strong> | Theme: <strong><?= e($site['theme_name'] ?: 'default') ?></strong></div>
-        <table style="width:100%;font-size:13px;border-collapse:collapse;">
-            <thead>
-                <tr style="text-align:left;border-bottom:1px solid #e5e7eb;">
-                    <th style="padding:6px 8px;">File</th>
-                    <th style="padding:6px 8px;">Upload To</th>
-                    <th style="padding:6px 8px;">Action</th>
-                </tr>
-            </thead>
-            <tbody>
-                <tr style="border-bottom:1px solid #f3f4f6;">
-                    <td style="padding:6px 8px;">🔧 Header SEO Snippet</td>
-                    <td style="padding:6px 8px;font-family:monospace;font-size:11px;color:#6b7280;"><?= e($platform_info['header_path']) ?></td>
-                    <td style="padding:6px 8px;">
-                        <a href="<?= url('/api/download-fix.php?site_id=' . $site_id . '&type=header') ?>" style="background:#3b82f6;color:#fff;padding:3px 10px;border-radius:4px;font-size:12px;text-decoration:none;">Download</a>
-                        <?php if ($has_ftp): ?>
-                            <button onclick="deployFix('header')" style="background:#10b981;color:#fff;padding:3px 10px;border-radius:4px;font-size:12px;border:none;cursor:pointer;margin-left:4px;">Deploy</button>
-                        <?php endif; ?>
-                    </td>
-                </tr>
-                <tr style="border-bottom:1px solid #f3f4f6;">
-                    <td style="padding:6px 8px;">🗺️ sitemap.xml</td>
-                    <td style="padding:6px 8px;font-family:monospace;font-size:11px;color:#6b7280;"><?= e($platform_info['sitemap_path']) ?></td>
-                    <td style="padding:6px 8px;">
-                        <a href="<?= url('/api/download-fix.php?site_id=' . $site_id . '&type=sitemap') ?>" style="background:#3b82f6;color:#fff;padding:3px 10px;border-radius:4px;font-size:12px;text-decoration:none;">Download</a>
-                        <?php if ($has_ftp): ?>
-                            <button onclick="deployFix('sitemap')" style="background:#10b981;color:#fff;padding:3px 10px;border-radius:4px;font-size:12px;border:none;cursor:pointer;margin-left:4px;">Deploy</button>
-                        <?php endif; ?>
-                    </td>
-                </tr>
-                <tr>
-                    <td style="padding:6px 8px;">🤖 robots.txt</td>
-                    <td style="padding:6px 8px;font-family:monospace;font-size:11px;color:#6b7280;"><?= e($platform_info['robots_path']) ?></td>
-                    <td style="padding:6px 8px;">
-                        <a href="<?= url('/api/download-fix.php?site_id=' . $site_id . '&type=robots') ?>" style="background:#3b82f6;color:#fff;padding:3px 10px;border-radius:4px;font-size:12px;text-decoration:none;">Download</a>
-                        <?php if ($has_ftp): ?>
-                            <button onclick="deployFix('robots')" style="background:#10b981;color:#fff;padding:3px 10px;border-radius:4px;font-size:12px;border:none;cursor:pointer;margin-left:4px;">Deploy</button>
-                        <?php endif; ?>
-                    </td>
-                </tr>
-            </tbody>
-        </table>
-        <?php if (!$has_ftp): ?>
-            <div class="text-sm text-muted mt-2">Add FTP/SFTP credentials in <a href="<?= url('/dashboard/sites.php?action=edit&id=' . $site_id) ?>">Edit Settings</a> to enable one-click deploy.</div>
-        <?php endif; ?>
-        <div id="deploy-result" style="display:none;margin-top:8px;padding:8px 12px;border-radius:6px;font-size:13px;"></div>
-    </div>
-</div>
-<?php endif; ?>
+</a>
 
 <!-- 4. Keywords -->
 <div class="section <?= $has_keywords ? 'open' : '' ?>" id="sec-keywords">

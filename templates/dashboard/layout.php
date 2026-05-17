@@ -477,8 +477,8 @@ function sidebar_active(string $page, array $pages_or_query = []): string {
             <a href="<?= url('/dashboard/keywords.php?site=' . $ctx_site_id) ?>" class="<?= sidebar_active('', ['keywords', 'search-console']) ?>">
                 <span class="nav-icon">&#128269;</span> Keywords
             </a>
-            <a href="<?= url('/dashboard/seo-audit.php?site=' . $ctx_site_id) ?>" class="<?= sidebar_active('', ['seo-audit', 'report', 'ai-seo', 'seo-approvals']) ?>">
-                <span class="nav-icon">&#9874;</span> SEO Health
+            <a href="<?= url('/dashboard/seo.php?site=' . $ctx_site_id) ?>" class="<?= sidebar_active('', ['seo', 'seo-audit', 'report', 'ai-seo', 'seo-approvals']) ?>">
+                <span class="nav-icon">&#9874;</span> SEO
             </a>
             <a href="<?= url('/dashboard/competitors.php?site=' . $ctx_site_id) ?>" class="<?= sidebar_active('', ['competitors', 'content-gaps']) ?>">
                 <span class="nav-icon">&#127919;</span> Competitors

@@ -579,7 +579,7 @@ if ($action === 'add'):
                     </div>
                     <div style="text-align: center;">
                         <div style="font-size: 20px; font-weight: 700; color: <?= $audit ? ($audit['score'] >= 50 ? 'var(--success)' : 'var(--danger)') : '#94a3b8' ?>;"><?= $audit ? $audit['score'] . '%' : '—' ?></div>
-                        <div style="font-size: 10px; color: #94a3b8; text-transform: uppercase;">SEO Health</div>
+                        <div style="font-size: 10px; color: #94a3b8; text-transform: uppercase;">SEO Score</div>
                     </div>
                 </div>
             </div>

@@ -17,7 +17,7 @@ $user_id = auth_user_id();
 $filter_site = $_GET['site'] ?? '';
 $action = $_GET['action'] ?? '';
 
-$page_title = 'SEO Health — AI Readiness';
+$page_title = 'SEO — AI Readiness';
 
 ob_start();
 

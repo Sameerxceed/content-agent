@@ -19,6 +19,7 @@
  *   0 22 * * 0 /usr/bin/php8.3 /opt/contentagent/agent/cron-runner.php gsc-sync
  *   30 22 * * 0 /usr/bin/php8.3 /opt/contentagent/agent/cron-runner.php competitor-redetect
  *   0 23 * * 0 /usr/bin/php8.3 /opt/contentagent/agent/cron-runner.php ai-visibility
+ *   30 17 * * 0 /usr/bin/php8.3 /opt/contentagent/agent/cron-runner.php seo-audit   # Sun 11 PM IST
  *   0 4 * * 1 /usr/bin/php8.3 /opt/contentagent/agent/cron-runner.php weekly-digest
  *
  *   # Monthly 1st 5 AM IST
@@ -75,7 +76,7 @@ foreach (array_slice($argv, 1) as $a) {
 $valid_jobs = [
     'gsc-sync', 'competitor-redetect', 'competitor-pages-check', 'brand-monitor',
     'ai-visibility', 'gap-analysis', 'weekly-digest', 'news-scrape',
-    'publish', 'performance-fetch', 'serp-tracking',
+    'publish', 'performance-fetch', 'serp-tracking', 'seo-audit',
 ];
 
 if (!in_array($job, $valid_jobs, true)) {
