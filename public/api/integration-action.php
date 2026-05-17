@@ -69,11 +69,12 @@ function progress_save(PDO $db, int $progress_id, array $fields): void
 {
     $set = []; $vals = [];
     foreach ($fields as $k => $v) {
-        if ($k === 'state')            { $set[] = 'state_json = ?';        $vals[] = json_encode($v); }
-        elseif ($k === 'last_test')    { $set[] = 'last_test_result = ?';  $vals[] = json_encode($v); }
-        elseif ($k === 'current_step') { $set[] = 'current_step = ?';      $vals[] = (int)$v; }
-        elseif ($k === 'status')       { $set[] = 'status = ?';            $vals[] = $v; }
-        elseif ($k === 'touch')        { $set[] = 'last_attempted_at = NOW()'; }
+        if ($k === 'state')              { $set[] = 'state_json = ?';        $vals[] = json_encode($v); }
+        elseif ($k === 'last_test')      { $set[] = 'last_test_result = ?';  $vals[] = json_encode($v); }
+        elseif ($k === 'clear_last_test'){ $set[] = 'last_test_result = NULL'; }
+        elseif ($k === 'current_step')   { $set[] = 'current_step = ?';      $vals[] = (int)$v; }
+        elseif ($k === 'status')         { $set[] = 'status = ?';            $vals[] = $v; }
+        elseif ($k === 'touch')          { $set[] = 'last_attempted_at = NOW()'; }
     }
     if (!$set) return;
     $vals[] = $progress_id;
@@ -142,10 +143,14 @@ try {
         }
         $next = $step_idx + 1;
         $is_final = $next > count($steps);
+        // Clear any stale last_test_result — credentials just changed, the old
+        // result is no longer meaningful. Otherwise the wizard's final screen
+        // would briefly show the previous failure before the new test runs.
         progress_save($db, (int)$progress['id'], [
-            'state'        => $merged_state,
-            'current_step' => $is_final ? $step_idx : $next,
-            'touch'        => true,
+            'state'           => $merged_state,
+            'current_step'    => $is_final ? $step_idx : $next,
+            'clear_last_test' => true,
+            'touch'           => true,
         ]);
 
         echo json_encode([
