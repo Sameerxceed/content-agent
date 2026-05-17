@@ -214,6 +214,9 @@ ob_start();
         <?php if ($comp['shared_keywords'] > 0): ?>
             <button onclick="toggleDrawer(<?= (int)$comp['id'] ?>)">View shared keywords ▾</button>
         <?php endif; ?>
+        <?php if (!$is_ignored && !empty(config('dataforseo_login'))): ?>
+            <button onclick="importCompetitorKeywords(<?= (int)$comp['id'] ?>, this)" title="Pull every keyword this competitor ranks for on Google (DataForSEO) and add them as target keywords for your site.">⬇ Import their keywords</button>
+        <?php endif; ?>
         <?php if ($is_ignored): ?>
             <button onclick="restoreOne(<?= (int)$comp['id'] ?>)" class="restore-btn">↺ Restore</button>
         <?php else: ?>
@@ -325,6 +328,26 @@ async function call(body) {
 function ignoreOne(id)  { if (confirm('Ignore this competitor? AI will skip them in analyses. You can restore later.')) call({action:'ignore', ids:[id]}); }
 function restoreOne(id) { call({action:'restore', ids:[id]}); }
 function deleteOne(id)  { if (confirm('Delete this competitor permanently? Their shared keyword data will also be removed.')) call({action:'delete', ids:[id]}); }
+
+async function importCompetitorKeywords(id, btn) {
+    if (!confirm('Pull every keyword this competitor ranks for on Google (top 100) and add them as YOUR target keywords?\n\nCost: ~$0.05 (DataForSEO charges ~$0.0001 per keyword × ~500).')) return;
+    const orig = btn.textContent;
+    btn.disabled = true; btn.textContent = 'Importing…';
+    try {
+        const res = await fetch('<?= url('/api/competitor-keywords-import.php') ?>', {
+            method:'POST', headers:{'Content-Type':'application/json'},
+            body: JSON.stringify({ site_id: SITE_ID, competitor_id: id })
+        });
+        const data = await res.json();
+        if (data.success) {
+            alert('Done.\n\nCompetitor: ' + data.competitor + '\nKeywords returned by DataForSEO: ' + data.returned + '\nImported as new targets: ' + data.imported + '\nSkipped (already tracked): ' + data.skipped);
+            location.reload();
+        } else {
+            alert('Failed: ' + (data.error || 'unknown'));
+            btn.disabled = false; btn.textContent = orig;
+        }
+    } catch(e) { alert('Error: ' + e.message); btn.disabled = false; btn.textContent = orig; }
+}
 </script>
 
 <style>
