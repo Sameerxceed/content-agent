@@ -93,10 +93,17 @@ try {
     $unread_alerts = (int)$stmt->fetchColumn();
 } catch (PDOException $e) {}
 
-// Fixed issues
-$stmt = $db->prepare('SELECT COUNT(*) FROM page_seo WHERE site_id = ?');
+// page_seo: SEO improvements ContentAgent has generated for individual pages
+// (titles, metas, canonicals, schema). These are *enhancements* served via
+// the snippet, not "fixes for broken things" — the SEO audit above measures
+// broken things separately. Break out by status so we can label honestly.
+$stmt = $db->prepare("SELECT status, COUNT(*) AS cnt FROM page_seo WHERE site_id = ? GROUP BY status");
 $stmt->execute([$site_id]);
-$fixes_ready = $stmt->fetchColumn();
+$page_seo_by_status = ['pending' => 0, 'approved' => 0, 'rejected' => 0];
+foreach ($stmt->fetchAll() as $r) $page_seo_by_status[$r['status']] = (int)$r['cnt'];
+$improvements_pending  = $page_seo_by_status['pending'];
+$improvements_approved = $page_seo_by_status['approved'];
+$fixes_ready           = $improvements_pending + $improvements_approved; // legacy var, kept for callers below
 
 // Recent posts
 $stmt = $db->prepare('SELECT id, title, slug, type, status, created_at FROM posts WHERE site_id = ? ORDER BY created_at DESC LIMIT 5');
@@ -605,13 +612,29 @@ if ($next_step !== 'done'):
 </div>
 
 <!-- 3. Auto-Fix -->
+<?php
+// Subtitle priority: open issues from the audit > pending improvements awaiting
+// review > approved improvements ready to serve > nothing.
+if ($open_issues > 0) {
+    $fix_subtitle = "{$open_issues} live-site issues to fix";
+} elseif ($improvements_pending > 0 && $improvements_approved > 0) {
+    $fix_subtitle = "{$improvements_pending} improvements awaiting review · {$improvements_approved} approved & live in snippet";
+} elseif ($improvements_pending > 0) {
+    $fix_subtitle = "{$improvements_pending} SEO improvements awaiting your review";
+} elseif ($improvements_approved > 0) {
+    $fix_subtitle = "{$improvements_approved} approved improvements live in snippet";
+} else {
+    $fix_subtitle = 'Nothing to fix or improve';
+}
+$fix_dot = $open_issues > 0 ? 'pending' : ($fixes_ready > 0 ? 'done' : 'not-done');
+?>
 <div class="section" id="sec-fix">
     <div class="section-header" onclick="toggleSection('fix')">
         <div class="section-status">
-            <div class="dot <?= $fixes_ready > 0 ? 'done' : ($open_issues > 0 ? 'pending' : 'not-done') ?>"></div>
+            <div class="dot <?= $fix_dot ?>"></div>
             <div>
-                <div class="section-title">🤖 Auto-Fix</div>
-                <div class="section-subtitle"><?= $fixes_ready > 0 ? "{$fixes_ready} fixes ready to deploy" : ($open_issues > 0 ? "{$open_issues} issues to fix" : 'No issues to fix') ?></div>
+                <div class="section-title">🤖 Auto-Fix &amp; SEO Improvements</div>
+                <div class="section-subtitle"><?= $fix_subtitle ?></div>
             </div>
         </div>
         <?php if ($open_issues > 0): ?>
@@ -619,9 +642,20 @@ if ($next_step !== 'done'):
         <?php endif; ?>
     </div>
     <div class="section-body">
-        <?php if ($fixes_ready > 0): ?>
+        <?php if ($open_issues === 0 && $fixes_ready > 0): ?>
+            <div style="background:#ecfdf5;border-left:3px solid #10b981;padding:8px 12px;border-radius:4px;font-size:12px;margin-bottom:10px;color:#065f46;">
+                ✓ The SEO audit shows <strong>0 broken issues</strong> on your live site. The numbers below are <em>enhancements</em> ContentAgent generated to push your SEO further — not bugs.
+            </div>
+        <?php endif; ?>
+        <?php if ($fixes_ready > 0):
+            $breakdown_parts = [];
+            if ($improvements_pending > 0)  $breakdown_parts[] = $improvements_pending . ' pending review';
+            if ($improvements_approved > 0) $breakdown_parts[] = $improvements_approved . ' approved';
+            $breakdown = $breakdown_parts ? ' (' . implode(', ', $breakdown_parts) . ')' : '';
+        ?>
             <div style="font-size:13px;margin-bottom:10px;">
-                <strong><?= $fixes_ready ?></strong> SEO rules saved. To apply them to your live site, add this snippet:
+                <strong><?= $fixes_ready ?></strong> page-level SEO rules saved<?= $breakdown ?>.
+                To serve them on your live site, add this snippet:
             </div>
             <div style="background:#1a1a2e;color:#10b981;padding:10px 14px;border-radius:6px;font-family:monospace;font-size:11px;cursor:pointer;word-break:break-all;" onclick="navigator.clipboard.writeText(this.innerText.trim());alert('Copied!')">
                 &lt;script src="<?= e(config('app_url')) ?>/snippet/contentagent.js" data-site="<?= e($site['domain']) ?>"&gt;&lt;/script&gt;
