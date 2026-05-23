@@ -11,7 +11,7 @@ require_once __DIR__ . '/../../includes/helpers.php';
 require_once __DIR__ . '/../../includes/auth.php';
 require_once __DIR__ . '/../../includes/business_profile.php';
 require_once __DIR__ . '/../../includes/haiku.php';
-require_once __DIR__ . '/../../includes/dataforseo.php';
+require_once __DIR__ . '/../../includes/serp.php';
 
 auth_start();
 if (!auth_check()) { http_response_code(401); echo json_encode(['error' => 'Unauthorized']); exit; }
@@ -30,12 +30,11 @@ $site    = auth_get_accessible_site($db, $site_id);
 if (!$site) { http_response_code(404); echo json_encode(['error' => 'Site not found']); exit; }
 $profile = profile_get($db, $site_id);
 
-// DataForSEO replaces Google CSE here. CSE deprecated "Search the entire web"
-// for free engines (2024/2025), so it can only search restricted site lists.
-// DataForSEO hits Google's real SERP for ~$0.001/query — cheaper than CSE's
-// paid tier and not subject to the deprecation.
-if (empty(config('dataforseo_login')) || empty(config('dataforseo_password'))) {
-    echo json_encode(['error' => 'DataForSEO not configured. Go to Integrations Hub to set it up.']);
+// SERP queries go through the provider abstraction in includes/serp.php.
+// Brave Search is tried first (free 2k/month), DataForSEO is the paid fallback.
+// At least one provider must be configured.
+if (!serp_active_provider()) {
+    echo json_encode(['error' => 'No SERP provider configured. Set up Brave Search (free) or DataForSEO in Integrations Hub.']);
     exit;
 }
 
@@ -114,6 +113,7 @@ function is_excluded(string $domain, string $own, array $excl): bool {
 $domain_data = []; // domain => ['keywords' => [...], 'shared' => N]
 $cse_calls = 0;            // kept name for back-compat with downstream logging
 $failed_lookups = 0;
+$provider_tally = []; // which provider actually served each query
 
 // Track the FIRST error we see so the UI can show a real reason instead of
 // just "0 competitors found" — insufficient balance, auth failure, etc.
@@ -124,20 +124,27 @@ foreach ($keywords as $kw) {
     $query = $kw['keyword'];
     $cse_calls++;
 
-    try {
-        // 30 organic results per query is enough — we only need the top of
-        // the SERP to spot which domains keep recurring as competitors.
-        $items = dataforseo_serp_results($query, 30);
-    } catch (Throwable $e) {
+    // serp_search() tries providers in priority order (Brave first, DataForSEO
+    // fallback) and returns whichever one succeeded plus a per-provider error log.
+    $serp = serp_search($query, 30);
+    $items = $serp['results'];
+    if (!empty($serp['provider'])) {
+        $provider_tally[$serp['provider']] = ($provider_tally[$serp['provider']] ?? 0) + 1;
+    }
+
+    if (empty($items)) {
         $failed_lookups++;
-        if ($first_error_status === null) {
-            $first_error_status = 0;
-            $first_error_message = $e->getMessage();
+        // Record the first error message from any provider so we can surface it
+        if ($first_error_message === null && !empty($serp['errors'])) {
+            $first_error_status  = 0;
+            $first_error_message = implode(' / ', array_map(
+                fn($p, $msg) => "{$p}: {$msg}",
+                array_keys($serp['errors']),
+                array_values($serp['errors'])
+            ));
         }
         continue;
     }
-
-    if (empty($items)) continue;
 
     foreach ($items as $item) {
         $url = $item['url'] ?? '';
@@ -269,43 +276,54 @@ foreach ($candidates as $domain => $info) {
 }
 
 // Build a useful headline message — if every SERP call failed, surface the
-// real reason (DataForSEO balance, auth, etc.) instead of "0 found".
+// real reason (no provider configured, quota, balance, auth, etc.) instead
+// of "0 found".
 $headline = null;
 $fix_hint = null;
 if ($cse_calls > 0 && $failed_lookups === $cse_calls) {
     $msg = $first_error_message ?: 'unknown error';
-    $headline = "All {$cse_calls} DataForSEO SERP calls failed: {$msg}";
-    if (stripos($msg, 'insufficient') !== false || stripos($msg, 'balance') !== false || stripos($msg, '40200') !== false || stripos($msg, '40201') !== false) {
-        $fix_hint = 'DataForSEO balance is empty. Top up at https://app.dataforseo.com/billing — $5 covers thousands of SERP calls.';
-    } elseif (stripos($msg, 'auth') !== false || stripos($msg, '401') !== false || stripos($msg, 'login') !== false || stripos($msg, 'password') !== false) {
-        $fix_hint = 'DataForSEO credentials are invalid. Re-enter them in Integrations Hub → DataForSEO.';
-    } elseif (stripos($msg, 'rate') !== false || stripos($msg, '429') !== false) {
-        $fix_hint = 'DataForSEO rate limit hit. Wait a minute and retry.';
+    $headline = "All {$cse_calls} SERP calls failed: {$msg}";
+    if (stripos($msg, 'not configured') !== false) {
+        $fix_hint = 'Configure Brave Search (free, 2k queries/month) or DataForSEO in Integrations Hub.';
+    } elseif (stripos($msg, 'rate') !== false || stripos($msg, '429') !== false || stripos($msg, 'quota') !== false) {
+        $fix_hint = 'Provider rate limit / quota hit. Brave free tier is 2k/month + 1 req/sec — wait, or set up DataForSEO as a paid fallback.';
+    } elseif (stripos($msg, 'balance') !== false || stripos($msg, '40200') !== false || stripos($msg, '40201') !== false || stripos($msg, 'insufficient') !== false) {
+        $fix_hint = 'DataForSEO balance is empty. Top up at https://app.dataforseo.com/billing — or rely on Brave Search (free) if you have a key configured.';
+    } elseif (stripos($msg, 'auth') !== false || stripos($msg, '401') !== false || stripos($msg, '403') !== false) {
+        $fix_hint = 'A SERP provider rejected the credentials. Re-enter the key in Integrations Hub.';
     }
+}
+
+$provider_summary = '';
+foreach ($provider_tally as $p => $n) {
+    $provider_summary .= ($provider_summary === '' ? '' : ', ') . "{$p}={$n}";
 }
 
 // Log
 $db->prepare('INSERT INTO agent_log (site_id, action, details, status, duration_ms) VALUES (?, ?, ?, ?, ?)')->execute([
     $site_id, 'competitors_discover',
     json_encode([
-        'keywords_analysed' => $total_kw,
-        'cse_calls'         => $cse_calls,
-        'failed_lookups'    => $failed_lookups,
-        'candidates_found'  => count($candidates),
-        'rankings_saved'    => $updated_rankings,
-        'first_error'       => $first_error_status ? ['status' => $first_error_status, 'message' => $first_error_message] : null,
-        'by_user'           => $user_id,
+        'keywords_analysed'  => $total_kw,
+        'cse_calls'          => $cse_calls,
+        'failed_lookups'     => $failed_lookups,
+        'candidates_found'   => count($candidates),
+        'rankings_saved'     => $updated_rankings,
+        'provider_breakdown' => $provider_tally,
+        'first_error'        => $first_error_message ? ['status' => $first_error_status, 'message' => $first_error_message] : null,
+        'by_user'            => $user_id,
     ]),
     $headline ? 'fail' : 'success', 0,
 ]);
 
 echo json_encode([
-    'success'           => true,
-    'keywords_analysed' => $total_kw,
-    'cse_calls'         => $cse_calls,
-    'failed_lookups'    => $failed_lookups,
-    'competitors_found' => $inserted,
-    'rankings_saved'    => $updated_rankings,
-    'error_headline'    => $headline,
-    'fix_hint'          => $fix_hint,
+    'success'            => true,
+    'keywords_analysed'  => $total_kw,
+    'cse_calls'          => $cse_calls,
+    'failed_lookups'     => $failed_lookups,
+    'competitors_found'  => $inserted,
+    'rankings_saved'     => $updated_rankings,
+    'provider_breakdown' => $provider_tally,
+    'provider_summary'   => $provider_summary,
+    'error_headline'     => $headline,
+    'fix_hint'           => $fix_hint,
 ]);

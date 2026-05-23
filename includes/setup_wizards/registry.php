@@ -8,6 +8,7 @@ function setup_wizards_all(): array
 
     $cache = [];
     $files = [
+        'brave_search.php' => 'BraveSearchWizard',
         'google_cse.php'   => 'GoogleCseWizard',
         'resend.php'       => 'ResendWizard',
         'reddit_app.php'   => 'RedditAppWizard',

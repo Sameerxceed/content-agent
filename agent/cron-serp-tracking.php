@@ -1,26 +1,27 @@
 <?php
 /**
- * Weekly SERP rank tracking via DataForSEO.
+ * Weekly SERP rank tracking via the serp_search() abstraction.
  *
  * For every active keyword on each site, fetches the current Google SERP
  * and stores our domain's position. Complements GSC sync: GSC only shows
  * impressions Google actually served, so keywords with no impressions yet
- * stay '—'. This cron fills those in by asking DFSO for the live SERP.
+ * stay '—'. This cron fills those in by asking the SERP provider live.
+ *
+ * Routed via includes/serp.php so it tries Brave (free) first and falls
+ * back to DataForSEO (paid) when Brave rate-limits or runs out of monthly
+ * quota.
  *
  * Run via: cron-runner.php serp-tracking
- *
- * Cost: ~$0.005 per keyword. 200 keywords/site × 4 sites × 4 weeks = ~$16/month
- * at scale. Throttles 200ms between calls.
  */
 
-require_once __DIR__ . '/../includes/dataforseo.php';
+require_once __DIR__ . '/../includes/serp.php';
 
 /** @var PDO $db */
 /** @var ?int $site_id_filter */
 /** @var string $job_type */
 
-if (empty(config('dataforseo_login')) || empty(config('dataforseo_password'))) {
-    echo "DataForSEO not configured — skipping SERP tracking.\n";
+if (!serp_active_provider()) {
+    echo "No SERP provider configured (need Brave Search or DataForSEO) — skipping.\n";
     return;
 }
 
@@ -53,22 +54,52 @@ foreach ($sites as $site) {
 
         $upd = $db->prepare('UPDATE keywords SET gsc_position = ?, last_checked = NOW() WHERE id = ?');
 
+        // Normalize our own domain once so we can scan SERP URLs for it.
+        $own = strtolower(preg_replace('#^(https?://)?(www\.)?#i', '', $domain));
+        $own = rtrim($own, '/');
+
         $checked = 0; $ranked = 0; $errors = 0;
+        $provider_tally = [];
         foreach ($rows as $r) {
-            $pos = dataforseo_serp_position($r['keyword'], $domain);
+            $serp = serp_search($r['keyword'], 100);
+            if (!empty($serp['provider'])) {
+                $provider_tally[$serp['provider']] = ($provider_tally[$serp['provider']] ?? 0) + 1;
+            }
+            if (empty($serp['results'])) {
+                $errors++;
+                $checked++;
+                continue;
+            }
+
+            // Find our domain in the SERP and grab the position.
+            $pos = null;
+            foreach ($serp['results'] as $item) {
+                $host = strtolower(preg_replace('#^https?://#i', '', $item['url'] ?? ''));
+                $host = preg_replace('#^www\.#', '', $host);
+                $host = strtolower(rtrim(explode('/', $host)[0], '/'));
+                if ($host === $own || str_ends_with($host, '.' . $own)) {
+                    $pos = (int)$item['position'];
+                    break;
+                }
+            }
+
             if ($pos !== null) {
                 $upd->execute([$pos, $r['id']]);
                 $ranked++;
             } else {
-                // Not in top 100 — clear stale rank, mark as checked
                 $upd->execute([null, $r['id']]);
             }
             $checked++;
-            usleep(200000); // 200ms between SERP calls
+
+            // Brave free tier: 1 req/sec. The provider itself paces page-fetches
+            // internally; we add a small extra gap between keywords to be safe.
+            usleep(200000);
         }
 
-        echo "    checked {$checked} | ranked in top 100: {$ranked}\n";
-        return ['checked' => $checked, 'ranked' => $ranked, 'errors' => $errors];
+        $tally_str = '';
+        foreach ($provider_tally as $p => $n) $tally_str .= "{$p}={$n} ";
+        echo "    checked {$checked} | ranked top 100: {$ranked} | providers: {$tally_str}\n";
+        return ['checked' => $checked, 'ranked' => $ranked, 'errors' => $errors, 'providers' => $provider_tally];
     });
 }
 
