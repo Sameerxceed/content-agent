@@ -285,12 +285,43 @@ function google_page_performance(PDO $db, int $site_id, int $days = 30): ?array
 
     $stmt = $db->prepare('SELECT domain FROM sites WHERE id = ?');
     $stmt->execute([$site_id]);
-    $domain = $stmt->fetchColumn();
+    $domain = (string)$stmt->fetchColumn();
 
     $end_date = date('Y-m-d', strtotime('-2 days'));
     $start_date = date('Y-m-d', strtotime("-{$days} days"));
 
-    return google_search_analytics($access_token, "sc-domain:{$domain}", $start_date, $end_date, 'page', 100);
+    // GSC properties can be sc-domain: or URL-prefix (http/https, with/without
+    // www) — try them in turn and use whichever returns data. Hard-coding
+    // sc-domain: caused empty page tables for accounts that only have the
+    // URL-prefix property verified (e.g. xceedtech.in).
+    foreach (_google_property_candidates($domain) as $candidate) {
+        $resp = google_search_analytics($access_token, $candidate, $start_date, $end_date, 'page', 100);
+        if ($resp && !empty($resp['rows'])) return $resp;
+    }
+    return null;
+}
+
+/**
+ * GSC verifies properties independently — a single account can have any of:
+ *   sc-domain:xceedtech.in        (domain property)
+ *   https://www.xceedtech.in/     (URL-prefix, https + www)
+ *   https://xceedtech.in/         (URL-prefix, https, no www)
+ *   http://www.xceedtech.in/      (URL-prefix, http + www)
+ *   http://xceedtech.in/          (URL-prefix, http, no www)
+ * Returns all five so callers can try each until one returns data.
+ */
+function _google_property_candidates(string $domain): array
+{
+    $bare = preg_replace('#^https?://#i', '', trim($domain));
+    $bare = preg_replace('#^www\.#i', '', $bare);
+    $bare = rtrim($bare, '/');
+    return [
+        'sc-domain:' . $bare,
+        'https://www.' . $bare . '/',
+        'https://' . $bare . '/',
+        'http://www.' . $bare . '/',
+        'http://' . $bare . '/',
+    ];
 }
 
 /**
@@ -303,35 +334,39 @@ function google_performance_summary(PDO $db, int $site_id, int $days = 30): ?arr
 
     $stmt = $db->prepare('SELECT domain FROM sites WHERE id = ?');
     $stmt->execute([$site_id]);
-    $domain = $stmt->fetchColumn();
+    $domain = (string)$stmt->fetchColumn();
 
     $end_date = date('Y-m-d', strtotime('-2 days'));
     $start_date = date('Y-m-d', strtotime("-{$days} days"));
 
-    $encoded = urlencode("sc-domain:{$domain}");
-    $api = "https://www.googleapis.com/webmasters/v3/sites/{$encoded}/searchAnalytics/query";
+    // Same multi-property fallback as page_performance / update_rankings.
+    foreach (_google_property_candidates($domain) as $candidate) {
+        $encoded = urlencode($candidate);
+        $api = "https://www.googleapis.com/webmasters/v3/sites/{$encoded}/searchAnalytics/query";
 
-    $ch = curl_init($api);
-    curl_setopt_array($ch, [
-        CURLOPT_RETURNTRANSFER => true,
-        CURLOPT_POST           => true,
-        CURLOPT_POSTFIELDS     => json_encode(['startDate' => $start_date, 'endDate' => $end_date]),
-        CURLOPT_HTTPHEADER     => [
-            'Authorization: Bearer ' . $access_token,
-            'Content-Type: application/json',
-        ],
-    ]);
-    $body = curl_exec($ch);
-    curl_close($ch);
+        $ch = curl_init($api);
+        curl_setopt_array($ch, [
+            CURLOPT_RETURNTRANSFER => true,
+            CURLOPT_POST           => true,
+            CURLOPT_POSTFIELDS     => json_encode(['startDate' => $start_date, 'endDate' => $end_date]),
+            CURLOPT_HTTPHEADER     => [
+                'Authorization: Bearer ' . $access_token,
+                'Content-Type: application/json',
+            ],
+            CURLOPT_TIMEOUT => 15,
+        ]);
+        $body = curl_exec($ch);
+        curl_close($ch);
 
-    $data = json_decode($body, true);
-    if (!empty($data['rows'][0])) {
-        return [
-            'clicks'      => $data['rows'][0]['clicks'] ?? 0,
-            'impressions' => $data['rows'][0]['impressions'] ?? 0,
-            'ctr'         => round(($data['rows'][0]['ctr'] ?? 0) * 100, 1),
-            'position'    => round($data['rows'][0]['position'] ?? 0, 1),
-        ];
+        $data = json_decode($body, true);
+        if (!empty($data['rows'][0])) {
+            return [
+                'clicks'      => $data['rows'][0]['clicks'] ?? 0,
+                'impressions' => $data['rows'][0]['impressions'] ?? 0,
+                'ctr'         => round(($data['rows'][0]['ctr'] ?? 0) * 100, 1),
+                'position'    => round($data['rows'][0]['position'] ?? 0, 1),
+            ];
+        }
     }
     return null;
 }
