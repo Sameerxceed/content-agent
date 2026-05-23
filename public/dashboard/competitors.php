@@ -280,6 +280,17 @@ async function discoverCompetitors() {
         const res = await fetch(DISCOVER_API, {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({site_id: SITE_ID})});
         const data = await res.json();
         if (data.success) {
+            // If the CSE itself returned errors for every call, the response
+            // carries a real reason (quota / API disabled / bad key). Without
+            // this, the user just sees "0 found" and has no clue what's wrong.
+            if (data.error_headline) {
+                var msg = data.error_headline;
+                if (data.fix_hint) msg += '\n\nFix: ' + data.fix_hint;
+                alert(msg);
+                btn.disabled = false;
+                btn.innerHTML = '🔍 Discover Competitors';
+                return;
+            }
             alert('Discovered ' + data.competitors_found + ' competitors from ' + data.keywords_analysed + ' keywords (' + data.cse_calls + ' searches used).');
             location.reload();
         } else {

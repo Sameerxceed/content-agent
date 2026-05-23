@@ -113,6 +113,11 @@ $domain_data = []; // domain => ['keywords' => [...], 'shared' => N]
 $cse_calls = 0;
 $failed_lookups = 0;
 
+// Track the FIRST error we see so the UI can show a real reason instead of
+// just "0 competitors found" — quota exhausted, API disabled, bad cx, etc.
+$first_error_status = null;
+$first_error_message = null;
+
 foreach ($keywords as $kw) {
     $query = $kw['keyword'];
     $params = http_build_query([
@@ -134,7 +139,15 @@ foreach ($keywords as $kw) {
     curl_close($ch);
     $cse_calls++;
 
-    if ($status !== 200 || !$body) { $failed_lookups++; continue; }
+    if ($status !== 200 || !$body) {
+        $failed_lookups++;
+        if ($first_error_status === null) {
+            $first_error_status = $status;
+            $err = json_decode($body ?: '{}', true);
+            $first_error_message = $err['error']['message'] ?? ('HTTP ' . $status);
+        }
+        continue;
+    }
     $data = json_decode($body, true);
     if (empty($data['items'])) continue;
 
@@ -265,6 +278,22 @@ foreach ($candidates as $domain => $info) {
     }
 }
 
+// Build a useful headline message — if every CSE call failed, surface the real
+// reason (quota / API disabled / bad key) instead of silently saying "0 found".
+$headline = null;
+$fix_hint = null;
+if ($cse_calls > 0 && $failed_lookups === $cse_calls) {
+    $msg = $first_error_message ?: ('HTTP ' . $first_error_status);
+    $headline = "All {$cse_calls} Google Custom Search calls failed: {$msg}";
+    if (stripos($msg, 'not have the access') !== false || stripos($msg, 'PERMISSION_DENIED') !== false) {
+        $fix_hint = 'Enable the Custom Search JSON API for your Google Cloud project: https://console.cloud.google.com/apis/library/customsearch.googleapis.com';
+    } elseif ($first_error_status === 429 || stripos($msg, 'quota') !== false) {
+        $fix_hint = 'Daily quota (100 free/day) hit. Either wait until tomorrow or enable billing on the CSE in Google Cloud Console.';
+    } elseif (stripos($msg, 'API key not valid') !== false || $first_error_status === 400) {
+        $fix_hint = 'API key or CX is invalid. Check the values in Integrations Hub → Google CSE.';
+    }
+}
+
 // Log
 $db->prepare('INSERT INTO agent_log (site_id, action, details, status, duration_ms) VALUES (?, ?, ?, ?, ?)')->execute([
     $site_id, 'competitors_discover',
@@ -274,9 +303,10 @@ $db->prepare('INSERT INTO agent_log (site_id, action, details, status, duration_
         'failed_lookups'    => $failed_lookups,
         'candidates_found'  => count($candidates),
         'rankings_saved'    => $updated_rankings,
+        'first_error'       => $first_error_status ? ['status' => $first_error_status, 'message' => $first_error_message] : null,
         'by_user'           => $user_id,
     ]),
-    'success', 0,
+    $headline ? 'fail' : 'success', 0,
 ]);
 
 echo json_encode([
@@ -286,4 +316,6 @@ echo json_encode([
     'failed_lookups'    => $failed_lookups,
     'competitors_found' => $inserted,
     'rankings_saved'    => $updated_rankings,
+    'error_headline'    => $headline,
+    'fix_hint'          => $fix_hint,
 ]);
