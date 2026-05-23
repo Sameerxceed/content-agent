@@ -62,92 +62,52 @@ if (!serp_active_provider()) {
     cd_respond(['error' => 'No SERP provider configured. Set up Brave Search (free) or DataForSEO in Integrations Hub.']);
 }
 
-// Limit to top 5 keywords. DataForSEO's live/advanced SERP endpoint takes
-// 5-15s per query (it polls Google live). nginx / PHP-FPM cuts the connection
-// at ~60s by default — set_time_limit() doesn't override that, so we have to
-// stay well inside the proxy budget. 5 * ~10s = ~50s, fits reliably.
-// The first run worked at 12 keywords because DataForSEO had cached SERPs for
-// some queries; subsequent runs hit fresh queries and time out.
+// ── Profile-driven query generation ─────────────────────────
 //
-// Proper fix is to convert this to a background job (fire CLI + poll status)
-// — bookmarked for next session. For now: small sample is better than
-// timeout errors.
-$stmt = $db->prepare("SELECT id, keyword FROM keywords WHERE site_id = ? AND status = 'active' ORDER BY (source = 'gsc') DESC, priority DESC, impressions DESC LIMIT 5");
-$stmt->execute([$site_id]);
-$keywords = $stmt->fetchAll();
-
-if (empty($keywords)) {
-    cd_respond(['error' => 'No active keywords to analyse. Add keywords or run Find Keywords first.']);
+// Old approach: search Google for the user's existing keywords (260+ of them,
+// many of which are branded — "xceed software", "xcerd", "xceed logo"). Result:
+// brand-name impostors dominated the candidate list because they share the
+// user's branded keywords by definition.
+//
+// New approach: ask Claude to generate ~6 BUYER-PERSPECTIVE search queries
+// directly from the business profile. These are the queries someone evaluating
+// alternatives to this business would actually type into Google. The user's
+// own keyword list isn't used — it's the wrong tool for finding competitors.
+//
+// Profile is required for this to work meaningfully.
+if (!$profile || empty($profile['industry_category']) && empty($profile['industry_sub'])) {
+    cd_respond(['error' => 'Business profile incomplete. Go to Site Identity, fill in at least Industry, then retry. We use it to generate the right discovery queries.']);
 }
 
-// Profile-aware seed queries — augment the keyword list with industry+geography
-// terms so we find peer-scale competitors instead of just whoever ranks for the
-// generic head terms. Without these, Xceed's "what is IT consulting" queries
-// surface mega-corps (Infosys/TCS/Wipro). With them, we also search e.g.
-// "AI consulting firms India" → finds boutique peers.
-if ($profile) {
-    $seed_queries = [];
-    $industry = trim($profile['industry_sub'] ?? $profile['industry_category'] ?? '');
-    $geo      = trim($profile['hq_country'] ?? '');
-    $scope    = $profile['market_scope'] ?? '';
-    $size     = $profile['size_tier'] ?? '';
+$query_gen_system = "You are a competitive intelligence analyst. Given a business profile, output 6 Google search queries that a real buyer evaluating ALTERNATIVES to this business would type. The goal is to surface this business's actual competitors — peer-scale firms in the same industry and geography. NOT the business's own customers, NOT their suppliers, NOT mega-corp incumbents the buyer wouldn't realistically consider.\n\nOutput ONLY a JSON array of strings, no commentary.\n\nMix the 6 queries across these intents:\n  - Geography + industry: 'AI consulting firms India', 'document AI companies Pune'\n  - Size-appropriate descriptor: 'boutique AI consulting India', 'mid-market software development partner'\n  - Use case specific: 'computer vision services for manufacturing', 'document automation for healthcare India'\n  - Alternatives framing: 'alternatives to mid-tier AI consultancies', 'top AI consulting agencies for SMBs'\n\nDO NOT include the business's own brand name in the queries. DO NOT make them sound like the business is searching about itself. Frame them as a buyer looking for options.";
 
-    if ($industry !== '') {
-        // Pick the SINGLE most-targeted seed based on profile shape.
-        if ($geo !== '' && in_array($scope, ['local', 'regional', 'national'], true)) {
-            $seed_queries[] = "{$industry} firms in {$geo}";
-        } elseif (in_array($size, ['solo', 'small', 'mid'], true)) {
-            $seed_queries[] = "boutique {$industry} firms";
-        } else {
-            $seed_queries[] = "top {$industry} consultancies";
-        }
-        // One more general one — peer comparison
-        if (in_array($size, ['solo', 'small', 'mid'], true)) {
-            $seed_queries[] = "small {$industry} agencies";
-        }
-    }
-    // Cap at 2 seeds so we stay inside the proxy timeout (5 keywords + 2 seeds
-    // = 7 SERP calls * ~10s = ~70s, just under nginx default 60-90s budget).
-    foreach (array_slice($seed_queries, 0, 2) as $sq) {
-        $keywords[] = ['id' => 0, 'keyword' => $sq, '_seed' => true];
-    }
+$query_gen_prompt = profile_prompt_block($profile);
+
+$resp = haiku_chat($query_gen_system, $query_gen_prompt, 600);
+if (empty($resp['success'])) {
+    cd_respond(['error' => 'Could not generate discovery queries via AI: ' . ($resp['error'] ?? 'unknown')]);
 }
+$content = preg_replace('/^```(?:json)?\s*|\s*```$/m', '', trim($resp['content']));
+$query_strings = json_decode($content, true);
+if (!is_array($query_strings) || empty($query_strings)) {
+    cd_respond(['error' => 'AI returned unparseable query list. Raw: ' . substr($content, 0, 300)]);
+}
+
+// Cap at 6 queries to fit nginx/PHP-FPM proxy budget (6 × ~10s DFSO live SERP = ~60s).
+$query_strings = array_slice($query_strings, 0, 6);
+$keywords = array_map(fn($q) => ['id' => 0, 'keyword' => (string)$q, '_seed' => true], $query_strings);
 
 // Domain helpers
 $own_domain = preg_replace('#^(https?://)?(www\.)?#i', '', strtolower(trim($site['domain'])));
 $own_domain = rtrim($own_domain, '/');
 
-// Brand-name impostor protection. The first run for Xceed returned domains
-// like xceed.com, xceedtek.com, xceed.me — namesakes/squatters whose only
-// "overlap" is ranking for typos of the brand name (xcerd, xceee, xteed).
-// We compute a brand root from the domain (e.g. "xceed" from "xceedtech.in")
-// and reject any candidate domain that contains it. We also strip those
-// brand-tainted keywords from the discovery seed set so we don't waste
-// SERP calls on queries that only surface impostors.
+// Brand-root for the candidate-domain filter — still useful as belt-and-
+// suspenders since some buyer-perspective queries can incidentally surface
+// namesake domains (e.g. a search for "AI consulting India" returns xceed.com
+// because they happen to do AI consulting under the same brand name).
 $brand_root = strtolower(explode('.', $own_domain)[0]);
-// Strip common suffixes so "xceedtech" → "xceed"
 $brand_root = preg_replace('/(tech|techno|technologies|labs|software|digital|studio|agency|group|inc|co|ltd)$/i', '', $brand_root);
 $brand_root = strlen($brand_root) >= 4 ? $brand_root : strtolower(explode('.', $own_domain)[0]);
-
-// Drop keywords whose tokens are dominated by the brand name — these are
-// branded searches, not topical queries that find competitors.
-$keywords = array_values(array_filter($keywords, function($kw) use ($brand_root) {
-    $tokens = preg_split('/[^a-z0-9]+/i', strtolower($kw['keyword']));
-    $tokens = array_filter($tokens, fn($t) => strlen($t) >= 3);
-    if (empty($tokens)) return true;
-    $brand_hits = 0;
-    foreach ($tokens as $t) {
-        if (similar_text($t, $brand_root) / max(strlen($t), strlen($brand_root)) >= 0.6) {
-            $brand_hits++;
-        }
-    }
-    // If half or more of the meaningful tokens look like the brand name, skip.
-    return $brand_hits < count($tokens) / 2;
-}));
-
-if (empty($keywords)) {
-    cd_respond(['error' => 'After filtering brand-name keywords, no usable seed queries remain. Add some topical (non-branded) keywords first, then retry.']);
-}
 
 // Sites that aren't real competitors — generic content aggregators, socials, marketplaces
 $exclusion_list = [
@@ -249,14 +209,21 @@ foreach ($keywords as $kw) {
 
 $total_kw = count($keywords);
 
-// Only keep domains that appeared in 2+ keywords (signal threshold)
+// Keep domains that appear in 2+ of our 6 buyer-perspective queries OR rank
+// in the top 5 of any single one (high-position single hits are strong signals
+// — domains that dominate position #1-5 for "AI consulting India" are real
+// competitors even if they only show in one of our queries).
 $candidates = [];
 foreach ($domain_data as $domain => $info) {
     $shared = count($info['rankings']);
-    if ($shared < 2) continue;
+    $top5_hits = 0;
+    foreach ($info['rankings'] as $r) {
+        if (($r['position'] ?? 99) <= 5) $top5_hits++;
+    }
+    if ($shared < 2 && $top5_hits === 0) continue;
     $candidates[$domain] = [
         'shared' => $shared,
-        'overlap_score' => (int)round(($shared / $total_kw) * 100),
+        'overlap_score' => (int)round(($shared / max(1, $total_kw)) * 100),
         'rankings' => $info['rankings'],
     ];
 }
