@@ -120,8 +120,24 @@ foreach ($sites as $site) {
     echo "  Total items fetched: " . count($all_items) . "\n";
 
     // ── Filter by relevance ─────────────────────────────
-    $relevant = rss_filter_by_relevance($all_items, $filter_keywords, 0.1);
-    echo "  Relevant items: " . count($relevant) . "\n";
+    // Profile-aware threshold: a specialised niche business wants tight matches
+    // (so it doesn't drown in generic industry news); a generalist or
+    // category-leader can afford looser filtering to catch trends early.
+    require_once __DIR__ . '/../includes/business_profile.php';
+    $news_profile = profile_get($db, (int)$site['id']);
+    $relevance_threshold = 0.1; // default (current behaviour)
+    if ($news_profile) {
+        $size      = $news_profile['size_tier'] ?? '';
+        $maturity  = $news_profile['maturity_tier'] ?? '';
+        $industry_sub = trim($news_profile['industry_sub'] ?? '');
+        if ($industry_sub !== '' && in_array($size, ['solo', 'small'], true)) {
+            $relevance_threshold = 0.18; // tighter — only highly-relevant items
+        } elseif (in_array($maturity, ['category_leader', 'public_company'], true)) {
+            $relevance_threshold = 0.07; // looser — catch industry-wide trends
+        }
+    }
+    $relevant = rss_filter_by_relevance($all_items, $filter_keywords, $relevance_threshold);
+    echo "  Relevant items: " . count($relevant) . " (threshold=" . $relevance_threshold . ")\n";
 
     // ── Deduplicate ─────────────────────────────────────
     $unique = rss_deduplicate($relevant);

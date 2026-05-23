@@ -7,17 +7,70 @@
 require_once __DIR__ . '/helpers.php';
 
 /**
- * Generate Organization schema.
+ * Pick the most specific schema.org @type for a business profile.
+ * Falls back to 'Organization' when the profile is empty.
+ */
+function schema_pick_type(array $site): string
+{
+    $model    = $site['business_model']    ?? null;
+    $offering = $site['offering_type']     ?? null;
+    $size     = $site['size_tier']         ?? null;
+    $scope    = $site['market_scope']      ?? null;
+    $maturity = $site['maturity_tier']     ?? null;
+
+    if ($model === 'nonprofit')                                             return 'NGO';
+    if ($maturity === 'public_company')                                     return 'Corporation';
+    if ($offering === 'product' && $model === 'b2c')                        return 'OnlineStore';
+    if ($model === 'marketplace')                                           return 'OnlineStore';
+
+    if ($offering === 'service') {
+        // Local service-based businesses get the most specific type
+        if (in_array($size, ['solo', 'small', 'mid'], true) && in_array($scope, ['local', 'regional'], true)) {
+            return 'ProfessionalService';
+        }
+        if (in_array($size, ['solo', 'small', 'mid'], true)) {
+            return 'ProfessionalService';
+        }
+        return 'Organization';
+    }
+
+    return 'Organization';
+}
+
+/**
+ * Generate Organization (or more specific) schema using the rich business
+ * profile when available. Falls back gracefully to the old shape if the
+ * profile fields are null.
  */
 function schema_organization(array $site): string
 {
     $data = [
         '@context'    => 'https://schema.org',
-        '@type'       => 'Organization',
+        '@type'       => schema_pick_type($site),
         'name'        => $site['name'],
         'url'         => 'https://' . $site['domain'],
-        'description' => $site['brand_tone'] ?? '',
+        'description' => trim($site['business_description'] ?? '') ?: ($site['brand_tone'] ?? ''),
     ];
+
+    if (!empty($site['founding_year'])) {
+        $data['foundingDate'] = (string)$site['founding_year'];
+    }
+    if (!empty($site['employee_estimate'])) {
+        $data['numberOfEmployees'] = [
+            '@type' => 'QuantitativeValue',
+            'value' => (int)$site['employee_estimate'],
+        ];
+    }
+    if (!empty($site['hq_city']) || !empty($site['hq_country'])) {
+        $data['address'] = array_filter([
+            '@type'           => 'PostalAddress',
+            'addressLocality' => $site['hq_city']    ?? null,
+            'addressCountry'  => $site['hq_country'] ?? null,
+        ]);
+    }
+    if (!empty($site['market_scope'])) {
+        $data['areaServed'] = $site['market_scope'] === 'global' ? 'Worldwide' : ucfirst($site['market_scope']);
+    }
 
     $social = [];
     // Could be expanded with actual social links from scanner

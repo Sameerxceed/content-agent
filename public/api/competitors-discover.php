@@ -9,6 +9,8 @@
  */
 require_once __DIR__ . '/../../includes/helpers.php';
 require_once __DIR__ . '/../../includes/auth.php';
+require_once __DIR__ . '/../../includes/business_profile.php';
+require_once __DIR__ . '/../../includes/haiku.php';
 
 auth_start();
 if (!auth_check()) { http_response_code(401); echo json_encode(['error' => 'Unauthorized']); exit; }
@@ -22,9 +24,10 @@ $input = json_decode(file_get_contents('php://input'), true) ?: [];
 $site_id = (int)($input['site_id'] ?? 0);
 if (!$site_id) { http_response_code(400); echo json_encode(['error' => 'site_id required']); exit; }
 
-// Verify ownership and load site
-$site = auth_get_accessible_site($db, $site_id);
+// Verify ownership and load site (+ rich business profile for relevance filtering)
+$site    = auth_get_accessible_site($db, $site_id);
 if (!$site) { http_response_code(404); echo json_encode(['error' => 'Site not found']); exit; }
+$profile = profile_get($db, $site_id);
 
 // Need Google CSE configured
 $api_key = config('google_cse_api_key');
@@ -42,6 +45,34 @@ $keywords = $stmt->fetchAll();
 if (empty($keywords)) {
     echo json_encode(['error' => 'No active keywords to analyse. Add keywords or run Find Keywords first.']);
     exit;
+}
+
+// Profile-aware seed queries — augment the keyword list with industry+geography
+// terms so we find peer-scale competitors instead of just whoever ranks for the
+// generic head terms. Without these, Xceed's "what is IT consulting" queries
+// surface mega-corps (Infosys/TCS/Wipro). With them, we also search e.g.
+// "AI consulting firms India" → finds boutique peers.
+if ($profile) {
+    $seed_queries = [];
+    $industry = trim($profile['industry_sub'] ?? $profile['industry_category'] ?? '');
+    $geo      = trim($profile['hq_country'] ?? '');
+    $scope    = $profile['market_scope'] ?? '';
+    $size     = $profile['size_tier'] ?? '';
+
+    if ($industry !== '') {
+        if ($geo !== '' && in_array($scope, ['local', 'regional', 'national'], true)) {
+            $seed_queries[] = "{$industry} firms in {$geo}";
+            $seed_queries[] = "best {$industry} companies {$geo}";
+        }
+        if (in_array($size, ['solo', 'small', 'mid'], true)) {
+            $seed_queries[] = "small {$industry} agencies";
+            $seed_queries[] = "boutique {$industry} firms";
+        }
+        $seed_queries[] = "top {$industry} consultancies";
+    }
+    foreach ($seed_queries as $sq) {
+        $keywords[] = ['id' => 0, 'keyword' => $sq, '_seed' => true];
+    }
 }
 
 // Domain helpers
@@ -142,8 +173,53 @@ foreach ($domain_data as $domain => $info) {
     ];
 }
 
-// Sort by shared count desc and cap at top 15 (so we don't insert 100s)
+// Sort by shared count desc and cap at top 30 (we'll filter further with Claude
+// using business profile so the cap is wider — better recall before the AI filter
+// drops obvious scale mismatches).
 uasort($candidates, fn($a, $b) => $b['shared'] <=> $a['shared']);
+$candidates = array_slice($candidates, 0, 30, true);
+
+// Profile-aware relevance filter — ask Claude to drop domains that are obvious
+// scale or market mismatches (e.g. Infosys / TCS / Wipro for a 15-person boutique).
+// Only run when a profile is available and there are enough candidates to warrant
+// the call. Cost: ~$0.002 per discovery run.
+$claude_drops = [];
+$claude_reasons = [];
+if ($profile && count($candidates) >= 5) {
+    $profile_block = profile_prompt_block($profile);
+    $domain_list = array_keys($candidates);
+    $system = "You filter SERP-discovered candidate competitor domains for relevance. "
+        . "Output ONLY valid JSON: {\"drop\":[\"domain1\",\"domain2\",...],\"reasons\":{\"domain1\":\"why\",...}}. "
+        . "Drop a domain when ANY of these are true:\n"
+        . "  - Its company is clearly >5x larger than the business below (e.g. Infosys, TCS, Wipro for a 15-person firm)\n"
+        . "  - It serves a totally different geographic market than the business (e.g. US-only for an India-only local business)\n"
+        . "  - It is a job board, directory, marketplace, news site, government site, or aggregator (not a direct competitor)\n"
+        . "  - It is the customer's own subsidiary / parent / sibling brand\n"
+        . "Keep a domain when you're unsure — better to surface than to silently drop. Don't drop more than half the list.";
+
+    $prompt = $profile_block . "\n\n## Candidate competitor domains (from SERP overlap with our keywords):\n"
+        . implode("\n", array_map(fn($d) => "  - {$d}", $domain_list));
+
+    $resp = haiku_chat($system, $prompt, 600);
+    if (!empty($resp['success'])) {
+        $clean = preg_replace('/^```(?:json)?\s*|\s*```$/m', '', trim($resp['content']));
+        $data = json_decode($clean, true);
+        if (is_array($data['drop'] ?? null)) {
+            $claude_drops = array_map('strtolower', $data['drop']);
+            $claude_reasons = is_array($data['reasons'] ?? null) ? $data['reasons'] : [];
+            // Safety: cap drops at 50% of the list so a hallucination can't nuke everything.
+            $max_drop = (int)floor(count($candidates) / 2);
+            if (count($claude_drops) > $max_drop) {
+                $claude_drops = array_slice($claude_drops, 0, $max_drop);
+            }
+            foreach ($claude_drops as $bad_domain) {
+                unset($candidates[$bad_domain]);
+            }
+        }
+    }
+}
+
+// Final cap after AI filter — keep top 15 for storage.
 $candidates = array_slice($candidates, 0, 15, true);
 
 // Persist

@@ -90,7 +90,8 @@ function haiku_write_blog(string $topic, string $brand_tone, array $keywords = [
     // Site-aware system prompt — ground in customer's own words
     $site_name = $site['name'] ?? 'our company';
     $site_domain = $site['domain'] ?? '';
-    $topics = json_decode($site['topics'] ?? '[]', true) ?: [];
+    // profile_get() returns topics as an array; raw DB row returns it as JSON string.
+    $topics = is_array($site['topics'] ?? null) ? $site['topics'] : (json_decode($site['topics'] ?? '[]', true) ?: []);
     $niche = !empty($topics) ? implode(', ', array_slice($topics, 0, 3)) : 'our industry';
     $business_desc = trim($site['business_description'] ?? '');
     $persona       = trim($site['persona'] ?? '');
@@ -98,6 +99,16 @@ function haiku_write_blog(string $topic, string $brand_tone, array $keywords = [
     $business_line = $business_desc ? "WHAT WE ACTUALLY DO (from owner): {$business_desc}\n\n" : '';
     if ($persona) $business_line .= "OUR IDEAL READER: {$persona}\n\n";
     if ($usp)     $business_line .= "WHAT MAKES US DIFFERENT (use this naturally, never as a sales pitch): {$usp}\n\n";
+
+    // Structured business profile — calibrates authority/scale of the writing.
+    // (A bootstrapped 15-person consultancy shouldn't write like Gartner; an
+    // enterprise leader shouldn't write like a hobbyist blog.) Only injected
+    // when at least one structured field is present.
+    if (!empty($site['size_tier']) || !empty($site['business_model']) || !empty($site['industry_category'])) {
+        if (function_exists('profile_prompt_block')) {
+            $business_line .= profile_prompt_block($site) . "\n\n";
+        }
+    }
 
     // SERP brief — model the post on what's actually ranking
     $serp_lines = '';

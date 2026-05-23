@@ -308,8 +308,18 @@ function aeo_suggest_queries(PDO $db, array $site): array
 
     $topics = json_decode($site['topics'] ?? '[]', true) ?: [];
 
-    $system = "You are an AEO (Answer Engine Optimization) strategist. Generate 8 search queries that real users would ask AI assistants (ChatGPT, Perplexity, Claude) and where this business would ideally be cited as a source.\n\nReturn ONLY valid JSON array:\n[{\"query\": \"...\", \"category\": \"brand|industry|how-to|comparison|location\"}]\n\nMix categories. Make them sound natural — how people actually ask AI, not Google. Lean toward queries with commercial intent (someone deciding what to buy / use).";
-    $user = "Business: {$site['name']} ({$site['domain']})\nTopics: " . implode(', ', $topics) . "\nKeywords: " . implode(', ', array_slice($keywords, 0, 10));
+    // Profile context so suggested queries match the business's actual scale,
+    // geography and customer — not generic enterprise SEO. e.g. for a 15-person
+    // Pune AI consultancy, queries should sound like "best AI consultancy for
+    // mid-market in India", not "how to choose an AI vendor for Fortune 500".
+    require_once __DIR__ . '/business_profile.php';
+    $profile = profile_get($db, (int)$site['id']);
+    $profile_block = $profile ? profile_prompt_block($profile) . "\n\n" : '';
+
+    $system = "You are an AEO (Answer Engine Optimization) strategist. Generate 8 search queries that real users would ask AI assistants (ChatGPT, Perplexity, Claude) and where this business would ideally be cited as a source.\n\nReturn ONLY valid JSON array:\n[{\"query\": \"...\", \"category\": \"brand|industry|how-to|comparison|location\"}]\n\nMix categories. Make them sound natural — how people actually ask AI, not Google. Lean toward queries with commercial intent (someone deciding what to buy / use). Calibrate each query to the SPECIFIC business profile below: a small local boutique should not get queries phrased for an enterprise buyer, and vice versa.";
+    $user = $profile_block
+        . "Business: {$site['name']} ({$site['domain']})\nTopics: " . implode(', ', $topics)
+        . "\nKeywords: " . implode(', ', array_slice($keywords, 0, 10));
 
     $resp = haiku_chat($system, $user, 1024);
     if (empty($resp['success'])) return [];

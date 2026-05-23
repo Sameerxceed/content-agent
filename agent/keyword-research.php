@@ -10,6 +10,7 @@
 require_once __DIR__ . '/../includes/helpers.php';
 require_once __DIR__ . '/../includes/scraper.php';
 require_once __DIR__ . '/../includes/haiku.php';
+require_once __DIR__ . '/../includes/business_profile.php';
 
 $db = require __DIR__ . '/../includes/db.php';
 
@@ -43,11 +44,31 @@ if (!$seed_kw && (empty($topics) || !$topics_confirmed)) {
     exit(1);
 }
 
+// Load business profile up-front — used for both seed augmentation and clustering.
+$kw_profile = profile_get($db, (int)$site_id);
+
 $seeds = [];
 if ($seed_kw) {
     $seeds[] = $seed_kw;
 } else {
     $seeds = array_slice($topics, 0, 5);
+
+    // Profile-aware seed augmentation — when the business is local/regional,
+    // mix in geo-suffixed seeds so we surface localised long-tail (e.g. "AI
+    // consulting Pune" alongside "AI consulting"). Without this, a Pune-based
+    // boutique gets the same generic head terms as a global SaaS.
+    if ($kw_profile) {
+        $geo   = trim($kw_profile['hq_city'] ?? '') ?: trim($kw_profile['hq_country'] ?? '');
+        $scope = $kw_profile['market_scope'] ?? '';
+        if ($geo !== '' && in_array($scope, ['local', 'regional', 'national'], true)) {
+            foreach (array_slice($topics, 0, 3) as $t) $seeds[] = "{$t} {$geo}";
+        }
+        // Small-business seeds — surface "for small business" / "for startups" intent
+        if (in_array($kw_profile['size_tier'] ?? '', ['solo', 'small'], true)) {
+            foreach (array_slice($topics, 0, 2) as $t) $seeds[] = "{$t} for small business";
+        }
+        $seeds = array_values(array_unique($seeds));
+    }
 }
 
 echo "Keyword Research for: {$site['domain']}\n";
@@ -101,7 +122,7 @@ echo "  Total keywords so far: " . count($all_keywords) . "\n";
 echo "\n[3/4] Clustering keywords with AI...\n";
 
 $keyword_list = array_keys($all_keywords);
-$clusters = cluster_keywords($keyword_list);
+$clusters = cluster_keywords($keyword_list, $kw_profile ?? null);
 
 if ($clusters) {
     echo "  Created " . count($clusters) . " clusters\n";
@@ -230,7 +251,7 @@ function people_also_ask(string $query): array
 /**
  * Use Haiku to cluster keywords into topic groups.
  */
-function cluster_keywords(array $keywords): ?array
+function cluster_keywords(array $keywords, ?array $profile = null): ?array
 {
     if (count($keywords) < 5) return null;
 
@@ -238,9 +259,16 @@ function cluster_keywords(array $keywords): ?array
     $kw_sample = array_slice($keywords, 0, 100);
     $kw_list = implode("\n", $kw_sample);
 
+    $profile_context = '';
+    if ($profile && function_exists('profile_prompt_block')) {
+        $profile_context = "\n\n" . profile_prompt_block($profile)
+            . "\n\nUse this profile to label clusters in terms a reader of THIS business would search for. "
+            . "Cluster names should reflect the business's actual scale and audience — not generic enterprise SEO categories.";
+    }
+
     $system = "You are an SEO strategist. Group keywords into topic clusters for blog content planning.
 Output ONLY valid JSON: an object where keys are cluster names (2-4 words) and values are arrays of keywords from the input list.
-Each keyword should appear in exactly one cluster. Aim for 5-10 clusters.";
+Each keyword should appear in exactly one cluster. Aim for 5-10 clusters.{$profile_context}";
 
     $prompt = "Group these keywords into topic clusters:\n\n{$kw_list}";
 

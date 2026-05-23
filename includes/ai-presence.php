@@ -185,6 +185,13 @@ function presence_build_search_terms(array $site, PDO $db): array
     $stmt->execute([$site['id']]);
     $keywords = $stmt->fetchAll(PDO::FETCH_COLUMN);
 
+    // Profile context — biases search terms toward the audience that's
+    // actually reachable for this business (local long-tail for a regional
+    // boutique vs global head terms for a global SaaS).
+    require_once __DIR__ . '/business_profile.php';
+    $profile = profile_get($db, (int)$site['id']);
+    $profile_block = $profile ? profile_prompt_block($profile) . "\n\n" : '';
+
     // Use AI to generate short, broad search terms that will actually find conversations
     $site_label = $site['name'] . ' (' . $site['domain'] . ')';
     $context = "Topics: " . implode(', ', $topics) . "\nKeywords: " . implode(', ', array_slice($keywords, 0, 8));
@@ -192,8 +199,10 @@ function presence_build_search_terms(array $site, PDO $db): array
     $ai = haiku_chat(
         "Given this business, generate 5 short search terms (2-4 words each) that people would discuss on Reddit, Quora, or forums. "
         . "Focus on the INDUSTRY and PROBLEMS the business solves, not the brand name. "
+        . "If the business is local/regional, include 1-2 geo-suffixed terms (e.g. 'CRM India', 'web design Sydney'). "
+        . "If the business is B2C, lean toward consumer Q&A phrasing; if B2B, professional procurement phrasing. "
         . "Output ONLY a JSON array of strings. Example: [\"web development trends\", \"best CRM software\", \"ecommerce platform comparison\"]",
-        "Business: {$site_label}\n{$context}",
+        $profile_block . "Business: {$site_label}\n{$context}",
         256
     );
 

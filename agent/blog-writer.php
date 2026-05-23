@@ -85,7 +85,12 @@ for ($i = 0; $i < $count; $i++) {
     echo "  Writing with Haiku...\n";
 
     $word_count = rand($min_words, $max_words);
-    $result = haiku_write_blog($current_topic, $brand_tone, $keywords, $word_count);
+    // Pass the full business profile so haiku_write_blog can ground tone/claims
+    // in scale and positioning (a 15-person boutique should not write like
+    // an enterprise, and vice versa).
+    require_once __DIR__ . '/../includes/business_profile.php';
+    $profile_for_writer = profile_get($db, (int)$site_id) ?: $site;
+    $result = haiku_write_blog($current_topic, $brand_tone, $keywords, $word_count, $profile_for_writer);
 
     if (!$result['success']) {
         echo "  ERROR: {$result['error']}\n";
