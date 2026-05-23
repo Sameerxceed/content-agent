@@ -62,11 +62,17 @@ if (!serp_active_provider()) {
     cd_respond(['error' => 'No SERP provider configured. Set up Brave Search (free) or DataForSEO in Integrations Hub.']);
 }
 
-// Limit to top 12 keywords. DataForSEO's live/advanced SERP endpoint takes
-// 5-15s per query (it polls Google live), so 12 * ~10s = ~2 minutes total —
-// fits under reasonable PHP-FPM / proxy timeouts. We were previously running
-// 30 and hitting server kill at ~30s, returning non-JSON, breaking the UI.
-$stmt = $db->prepare("SELECT id, keyword FROM keywords WHERE site_id = ? AND status = 'active' ORDER BY (source = 'gsc') DESC, priority DESC, impressions DESC LIMIT 12");
+// Limit to top 5 keywords. DataForSEO's live/advanced SERP endpoint takes
+// 5-15s per query (it polls Google live). nginx / PHP-FPM cuts the connection
+// at ~60s by default — set_time_limit() doesn't override that, so we have to
+// stay well inside the proxy budget. 5 * ~10s = ~50s, fits reliably.
+// The first run worked at 12 keywords because DataForSEO had cached SERPs for
+// some queries; subsequent runs hit fresh queries and time out.
+//
+// Proper fix is to convert this to a background job (fire CLI + poll status)
+// — bookmarked for next session. For now: small sample is better than
+// timeout errors.
+$stmt = $db->prepare("SELECT id, keyword FROM keywords WHERE site_id = ? AND status = 'active' ORDER BY (source = 'gsc') DESC, priority DESC, impressions DESC LIMIT 5");
 $stmt->execute([$site_id]);
 $keywords = $stmt->fetchAll();
 
@@ -87,17 +93,22 @@ if ($profile) {
     $size     = $profile['size_tier'] ?? '';
 
     if ($industry !== '') {
+        // Pick the SINGLE most-targeted seed based on profile shape.
         if ($geo !== '' && in_array($scope, ['local', 'regional', 'national'], true)) {
             $seed_queries[] = "{$industry} firms in {$geo}";
-            $seed_queries[] = "best {$industry} companies {$geo}";
+        } elseif (in_array($size, ['solo', 'small', 'mid'], true)) {
+            $seed_queries[] = "boutique {$industry} firms";
+        } else {
+            $seed_queries[] = "top {$industry} consultancies";
         }
+        // One more general one — peer comparison
         if (in_array($size, ['solo', 'small', 'mid'], true)) {
             $seed_queries[] = "small {$industry} agencies";
-            $seed_queries[] = "boutique {$industry} firms";
         }
-        $seed_queries[] = "top {$industry} consultancies";
     }
-    foreach ($seed_queries as $sq) {
+    // Cap at 2 seeds so we stay inside the proxy timeout (5 keywords + 2 seeds
+    // = 7 SERP calls * ~10s = ~70s, just under nginx default 60-90s budget).
+    foreach (array_slice($seed_queries, 0, 2) as $sq) {
         $keywords[] = ['id' => 0, 'keyword' => $sq, '_seed' => true];
     }
 }
@@ -105,6 +116,38 @@ if ($profile) {
 // Domain helpers
 $own_domain = preg_replace('#^(https?://)?(www\.)?#i', '', strtolower(trim($site['domain'])));
 $own_domain = rtrim($own_domain, '/');
+
+// Brand-name impostor protection. The first run for Xceed returned domains
+// like xceed.com, xceedtek.com, xceed.me — namesakes/squatters whose only
+// "overlap" is ranking for typos of the brand name (xcerd, xceee, xteed).
+// We compute a brand root from the domain (e.g. "xceed" from "xceedtech.in")
+// and reject any candidate domain that contains it. We also strip those
+// brand-tainted keywords from the discovery seed set so we don't waste
+// SERP calls on queries that only surface impostors.
+$brand_root = strtolower(explode('.', $own_domain)[0]);
+// Strip common suffixes so "xceedtech" → "xceed"
+$brand_root = preg_replace('/(tech|techno|technologies|labs|software|digital|studio|agency|group|inc|co|ltd)$/i', '', $brand_root);
+$brand_root = strlen($brand_root) >= 4 ? $brand_root : strtolower(explode('.', $own_domain)[0]);
+
+// Drop keywords whose tokens are dominated by the brand name — these are
+// branded searches, not topical queries that find competitors.
+$keywords = array_values(array_filter($keywords, function($kw) use ($brand_root) {
+    $tokens = preg_split('/[^a-z0-9]+/i', strtolower($kw['keyword']));
+    $tokens = array_filter($tokens, fn($t) => strlen($t) >= 3);
+    if (empty($tokens)) return true;
+    $brand_hits = 0;
+    foreach ($tokens as $t) {
+        if (similar_text($t, $brand_root) / max(strlen($t), strlen($brand_root)) >= 0.6) {
+            $brand_hits++;
+        }
+    }
+    // If half or more of the meaningful tokens look like the brand name, skip.
+    return $brand_hits < count($tokens) / 2;
+}));
+
+if (empty($keywords)) {
+    cd_respond(['error' => 'After filtering brand-name keywords, no usable seed queries remain. Add some topical (non-branded) keywords first, then retry.']);
+}
 
 // Sites that aren't real competitors — generic content aggregators, socials, marketplaces
 $exclusion_list = [
@@ -125,12 +168,21 @@ function extract_apex_domain(string $url): ?string {
     return $host ?: null;
 }
 
-function is_excluded(string $domain, string $own, array $excl): bool {
+function is_excluded(string $domain, string $own, array $excl, string $brand_root = ''): bool {
     if ($domain === $own) return true;
     // Also catch subdomains of own site
     if (str_ends_with($domain, '.' . $own)) return true;
     foreach ($excl as $bad) {
         if ($domain === $bad || str_ends_with($domain, '.' . $bad)) return true;
+    }
+    // Brand-name impostor filter — drop xceed.com / xceedtek.com / xceed.me
+    // class of namesakes when the brand root is e.g. "xceed". We compare
+    // against the apex segment of the candidate, not the full host.
+    if ($brand_root !== '' && strlen($brand_root) >= 4) {
+        $apex = explode('.', $domain)[0];
+        if (str_starts_with($apex, $brand_root)) return true;
+        // Very close fuzzy match (typos / single-char variants of the brand)
+        if (similar_text($apex, $brand_root) / max(strlen($apex), strlen($brand_root)) >= 0.75) return true;
     }
     return false;
 }
@@ -177,7 +229,7 @@ foreach ($keywords as $kw) {
         if (!$url) continue;
         $domain = extract_apex_domain($url);
         if (!$domain) continue;
-        if (is_excluded($domain, $own_domain, $exclusion_list)) continue;
+        if (is_excluded($domain, $own_domain, $exclusion_list, $brand_root)) continue;
 
         $position = (int)($item['position'] ?? 0) ?: 99;
         if (!isset($domain_data[$domain])) {
@@ -231,6 +283,8 @@ if ($profile && count($candidates) >= 5) {
         . "  - It serves a totally different geographic market than the business (e.g. US-only for an India-only local business)\n"
         . "  - It is a job board, directory, marketplace, news site, government site, or aggregator (not a direct competitor)\n"
         . "  - It is the customer's own subsidiary / parent / sibling brand\n"
+        . "  - It is a TYPO or VARIANT of the customer's brand name (namesake / brand-squat / domain that only ranks for misspellings of the customer's name, not for the customer's actual topic). Example: if the customer is 'xceedtech.in', drop xceed.com / xceedtek.com / xceed.me — they share keywords only because Google surfaces them for typos of the brand.\n"
+        . "  - Its name visually rhymes with the customer's brand name and clearly trades on confusion (1-2 char Levenshtein distance from the customer's domain root)\n"
         . "Keep a domain when you're unsure — better to surface than to silently drop. Don't drop more than half the list.";
 
     $prompt = $profile_block . "\n\n## Candidate competitor domains (from SERP overlap with our keywords):\n"
