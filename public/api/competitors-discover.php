@@ -11,6 +11,7 @@ require_once __DIR__ . '/../../includes/helpers.php';
 require_once __DIR__ . '/../../includes/auth.php';
 require_once __DIR__ . '/../../includes/business_profile.php';
 require_once __DIR__ . '/../../includes/haiku.php';
+require_once __DIR__ . '/../../includes/dataforseo.php';
 
 auth_start();
 if (!auth_check()) { http_response_code(401); echo json_encode(['error' => 'Unauthorized']); exit; }
@@ -29,11 +30,12 @@ $site    = auth_get_accessible_site($db, $site_id);
 if (!$site) { http_response_code(404); echo json_encode(['error' => 'Site not found']); exit; }
 $profile = profile_get($db, $site_id);
 
-// Need Google CSE configured
-$api_key = config('google_cse_api_key');
-$cx = config('google_cse_cx');
-if (empty($api_key) || empty($cx)) {
-    echo json_encode(['error' => 'Google Custom Search not configured. Go to Settings → API Keys to set it up.']);
+// DataForSEO replaces Google CSE here. CSE deprecated "Search the entire web"
+// for free engines (2024/2025), so it can only search restricted site lists.
+// DataForSEO hits Google's real SERP for ~$0.001/query — cheaper than CSE's
+// paid tier and not subject to the deprecation.
+if (empty(config('dataforseo_login')) || empty(config('dataforseo_password'))) {
+    echo json_encode(['error' => 'DataForSEO not configured. Go to Integrations Hub to set it up.']);
     exit;
 }
 
@@ -110,55 +112,41 @@ function is_excluded(string $domain, string $own, array $excl): bool {
 
 // Run CSE for each keyword
 $domain_data = []; // domain => ['keywords' => [...], 'shared' => N]
-$cse_calls = 0;
+$cse_calls = 0;            // kept name for back-compat with downstream logging
 $failed_lookups = 0;
 
 // Track the FIRST error we see so the UI can show a real reason instead of
-// just "0 competitors found" — quota exhausted, API disabled, bad cx, etc.
+// just "0 competitors found" — insufficient balance, auth failure, etc.
 $first_error_status = null;
 $first_error_message = null;
 
 foreach ($keywords as $kw) {
     $query = $kw['keyword'];
-    $params = http_build_query([
-        'key' => $api_key,
-        'cx' => $cx,
-        'q' => $query,
-        'num' => 10,
-    ]);
-    $url = 'https://www.googleapis.com/customsearch/v1?' . $params;
-
-    $ch = curl_init($url);
-    curl_setopt_array($ch, [
-        CURLOPT_RETURNTRANSFER => true,
-        CURLOPT_TIMEOUT => 10,
-        CURLOPT_USERAGENT => 'ContentAgent/1.0',
-    ]);
-    $body = curl_exec($ch);
-    $status = curl_getinfo($ch, CURLINFO_HTTP_CODE);
-    curl_close($ch);
     $cse_calls++;
 
-    if ($status !== 200 || !$body) {
+    try {
+        // 30 organic results per query is enough — we only need the top of
+        // the SERP to spot which domains keep recurring as competitors.
+        $items = dataforseo_serp_results($query, 30);
+    } catch (Throwable $e) {
         $failed_lookups++;
         if ($first_error_status === null) {
-            $first_error_status = $status;
-            $err = json_decode($body ?: '{}', true);
-            $first_error_message = $err['error']['message'] ?? ('HTTP ' . $status);
+            $first_error_status = 0;
+            $first_error_message = $e->getMessage();
         }
         continue;
     }
-    $data = json_decode($body, true);
-    if (empty($data['items'])) continue;
 
-    foreach ($data['items'] as $idx => $item) {
-        $url = $item['link'] ?? '';
+    if (empty($items)) continue;
+
+    foreach ($items as $item) {
+        $url = $item['url'] ?? '';
         if (!$url) continue;
         $domain = extract_apex_domain($url);
         if (!$domain) continue;
         if (is_excluded($domain, $own_domain, $exclusion_list)) continue;
 
-        $position = $idx + 1;
+        $position = (int)($item['position'] ?? 0) ?: 99;
         if (!isset($domain_data[$domain])) {
             $domain_data[$domain] = ['rankings' => []];
         }
@@ -170,6 +158,8 @@ foreach ($keywords as $kw) {
             'title'      => $item['title'] ?? '',
         ];
     }
+
+    usleep(100000); // 100ms throttle — DFSO is fine without but we're polite
 }
 
 $total_kw = count($keywords);
@@ -278,19 +268,19 @@ foreach ($candidates as $domain => $info) {
     }
 }
 
-// Build a useful headline message — if every CSE call failed, surface the real
-// reason (quota / API disabled / bad key) instead of silently saying "0 found".
+// Build a useful headline message — if every SERP call failed, surface the
+// real reason (DataForSEO balance, auth, etc.) instead of "0 found".
 $headline = null;
 $fix_hint = null;
 if ($cse_calls > 0 && $failed_lookups === $cse_calls) {
-    $msg = $first_error_message ?: ('HTTP ' . $first_error_status);
-    $headline = "All {$cse_calls} Google Custom Search calls failed: {$msg}";
-    if (stripos($msg, 'not have the access') !== false || stripos($msg, 'PERMISSION_DENIED') !== false) {
-        $fix_hint = 'Enable the Custom Search JSON API for your Google Cloud project: https://console.cloud.google.com/apis/library/customsearch.googleapis.com';
-    } elseif ($first_error_status === 429 || stripos($msg, 'quota') !== false) {
-        $fix_hint = 'Daily quota (100 free/day) hit. Either wait until tomorrow or enable billing on the CSE in Google Cloud Console.';
-    } elseif (stripos($msg, 'API key not valid') !== false || $first_error_status === 400) {
-        $fix_hint = 'API key or CX is invalid. Check the values in Integrations Hub → Google CSE.';
+    $msg = $first_error_message ?: 'unknown error';
+    $headline = "All {$cse_calls} DataForSEO SERP calls failed: {$msg}";
+    if (stripos($msg, 'insufficient') !== false || stripos($msg, 'balance') !== false || stripos($msg, '40200') !== false || stripos($msg, '40201') !== false) {
+        $fix_hint = 'DataForSEO balance is empty. Top up at https://app.dataforseo.com/billing — $5 covers thousands of SERP calls.';
+    } elseif (stripos($msg, 'auth') !== false || stripos($msg, '401') !== false || stripos($msg, 'login') !== false || stripos($msg, 'password') !== false) {
+        $fix_hint = 'DataForSEO credentials are invalid. Re-enter them in Integrations Hub → DataForSEO.';
+    } elseif (stripos($msg, 'rate') !== false || stripos($msg, '429') !== false) {
+        $fix_hint = 'DataForSEO rate limit hit. Wait a minute and retry.';
     }
 }
 

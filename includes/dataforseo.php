@@ -142,6 +142,49 @@ function dataforseo_keywords_for_site(string $domain, int $limit = 500, int $loc
 }
 
 /**
+ * Get the full Google SERP for a keyword. Returns an array of organic results
+ * (position, url, title, snippet) up to $depth items. Used for competitor
+ * discovery — Google CSE deprecated whole-web search for free engines.
+ *
+ * Cost: ~$0.0006 per query (Live Advanced SERP). For a 30-keyword discovery
+ * run that's ~2 cents total — cheaper than CSE's paid tier.
+ *
+ * @return array<int, array{position:int, url:string, title:string, snippet:string}>
+ */
+function dataforseo_serp_results(string $keyword, int $depth = 30, int $location_code = DFSO_DEFAULT_LOCATION, string $language_code = DFSO_DEFAULT_LANGUAGE): array
+{
+    $kw = trim($keyword);
+    if ($kw === '') return [];
+
+    $resp = dataforseo_call('/v3/serp/google/organic/live/advanced', [[
+        'keyword'       => $kw,
+        'location_code' => $location_code,
+        'language_code' => $language_code,
+        'depth'         => min(100, max(10, $depth)),
+    ]]);
+    if (empty($resp['success'])) {
+        // Bubble the error up via a thrown exception so the caller can show
+        // a real message instead of pretending nothing was returned.
+        throw new RuntimeException('DataForSEO SERP call failed: ' . ($resp['error'] ?? 'unknown'));
+    }
+
+    $items = $resp['data']['tasks'][0]['result'][0]['items'] ?? [];
+    $out = [];
+    foreach ($items as $item) {
+        if (($item['type'] ?? '') !== 'organic') continue;
+        $url = trim($item['url'] ?? '');
+        if ($url === '') continue;
+        $out[] = [
+            'position' => isset($item['rank_group']) ? (int)$item['rank_group'] : (count($out) + 1),
+            'url'      => $url,
+            'title'    => (string)($item['title'] ?? ''),
+            'snippet'  => (string)($item['description'] ?? ''),
+        ];
+    }
+    return $out;
+}
+
+/**
  * Get the current Google SERP for a keyword and find a target domain's position.
  * Returns null if domain not in top 100, otherwise the rank (1-100).
  */
