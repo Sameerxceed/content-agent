@@ -227,10 +227,30 @@ Schema:
 
 Rules:
 - Be honest about uncertainty. If About/Team pages don't exist, you'll have less to go on — return nulls with low confidence instead of guessing.
-- Don't invent numbers. If you cannot find a founding year on the page, return null.
-- size_tier and employee_estimate should agree: solo=1, small=2-10, mid=11-50, large=51-500, enterprise=500+.
-- maturity_tier: bootstrapped = early/self-funded, established = solid mid-size, category_leader = #1 or #2 in their niche, public_company = stock-listed.
-- Enums MUST match exactly one of the allowed values — no synonyms, no new categories.
+
+founding_year — ONLY extract if the page text explicitly says one of:
+  "founded in YYYY" / "established YYYY" / "since YYYY" / "started in YYYY" / "began in YYYY".
+  DO NOT use:
+    - copyright notices like "© 2014" (that's the website footer, not the company age)
+    - "last updated" dates
+    - domain registration dates
+    - any year that just happens to appear in the text
+  If no founding statement is present, return null with confidence 0.
+  Put the exact quoted sentence in signals.founding_year so the user can verify.
+
+employee_estimate / size_tier — ONLY use signals that describe the company itself:
+  "team of X" / "X-person team" / "X employees" / "we are X strong" / explicit team grid on /team page.
+  DO NOT use customer/user/download counts ("trusted by 10,000 customers" is NOT employee count).
+  If you only see customer numbers, return null with confidence 0.
+  size_tier must align with employee_estimate: solo=1, small=2-10, mid=11-50, large=51-500, enterprise=500+.
+
+hq_city / hq_country — prefer addresses on a /contact or footer. Don't guess from project locations.
+
+maturity_tier: bootstrapped = early/self-funded, established = solid mid-size, category_leader = #1 or #2 in their niche, public_company = stock-listed.
+
+Enums MUST match exactly one of the allowed values — no synonyms, no new categories.
+
+For EVERY field where you returned a non-null value, signals.{field} must contain a SHORT direct quote (max ~120 chars) from the excerpts above showing why. If you can't quote it, you shouldn't be returning it.
 SYS;
 
     $page_block = '';
