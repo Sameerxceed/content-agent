@@ -29,33 +29,156 @@ const PROFILE_MARKET_SCOPES      = ['local', 'regional', 'national', 'global'];
 const PROFILE_MATURITY_TIERS     = ['bootstrapped', 'established', 'category_leader', 'public_company'];
 
 /**
- * Crawl the homepage + the first reachable About/Team/Contact page.
- * Returns extracted text excerpts keyed by page label, capped per page.
+ * Crawl the homepage and the most business-relevant pages we can find on it.
+ *
+ * Strategy:
+ *   1. Always fetch the homepage. Extract its internal links from the nav.
+ *   2. Score those links by pattern (/services, /work, /about, /team, etc.)
+ *      so the highest-signal pages bubble to the top.
+ *   3. Also try a fallback list of common paths in case the nav is hidden
+ *      behind JS or uses non-standard labels.
+ *   4. Fetch up to a budget (8 extra pages, 10s timeout each) and label each
+ *      so Claude knows what section of the site the text came from.
+ *
+ * Returns: ['homepage' => '...', 'services' => '...', 'work' => '...', ...]
  */
 function profile_fetch_pages(string $domain): array
 {
     $base = rtrim('https://' . preg_replace('#^https?://#i', '', $domain), '/');
-    $candidates = [
-        'homepage' => $base . '/',
-        'about'    => $base . '/about',
-        'team'     => $base . '/team',
-        'contact'  => $base . '/contact',
-    ];
-
     $excerpts = [];
-    foreach ($candidates as $label => $url) {
-        $resp = scraper_fetch($url, 15);
-        if ($resp['status'] !== 200 || empty($resp['body'])) continue;
+    $seen_urls = [];
 
-        // Strip scripts/styles before text extraction so we don't feed Claude JS noise.
+    // 1. Homepage — required.
+    $home = scraper_fetch($base . '/', 15);
+    if ($home['status'] !== 200 || empty($home['body'])) {
+        return []; // can't do anything without a homepage
+    }
+    $home_doc = scraper_parse_html($home['body']);
+    $home_text = trim(scraper_get_text($home_doc));
+    if (mb_strlen($home_text) >= 80) {
+        $excerpts['homepage'] = mb_substr($home_text, 0, 3000);
+    }
+    $seen_urls[strtolower($home['final_url'])] = true;
+
+    // 2. Score links found on the homepage. Higher score = more likely to
+    //    contain real business signal (services, case studies, team etc.)
+    //    rather than utility pages (login, terms, cookie policy).
+    $nav_links = scraper_get_links($home_doc, $base);
+    $internal  = array_filter($nav_links, fn($l) => !empty($l['internal']));
+
+    $candidates = [];
+    foreach ($internal as $link) {
+        $url = $link['url'] ?? '';
+        if (!$url) continue;
+        $path = strtolower(parse_url($url, PHP_URL_PATH) ?? '');
+        if ($path === '' || $path === '/') continue;
+        $score = _profile_score_path($path);
+        if ($score <= 0) continue;
+        // Keep only the highest-scored URL per top-level segment so /services
+        // and /services/ai-ml don't both win — we want section coverage.
+        $top_seg = explode('/', trim($path, '/'))[0];
+        if (!isset($candidates[$top_seg]) || $candidates[$top_seg]['score'] < $score) {
+            $candidates[$top_seg] = ['url' => $url, 'score' => $score, 'path' => $path];
+        }
+    }
+
+    // Sort candidates by score descending.
+    uasort($candidates, fn($a, $b) => $b['score'] <=> $a['score']);
+    $ranked_urls = array_column($candidates, 'url');
+
+    // 3. Fallback paths — try these too in case nav was JS-driven or missing.
+    foreach ([
+        '/about', '/about-us', '/company', '/who-we-are',
+        '/services', '/what-we-do', '/solutions', '/offerings',
+        '/work', '/portfolio', '/case-studies', '/projects', '/clients',
+        '/team', '/people', '/leadership',
+        '/industries', '/sectors',
+        '/contact', '/contact-us',
+    ] as $fp) {
+        $ranked_urls[] = $base . $fp;
+    }
+
+    // 4. Fetch up to 8 distinct pages with a 10s timeout each.
+    $fetched = 0;
+    foreach ($ranked_urls as $url) {
+        if ($fetched >= 8) break;
+        $key = strtolower($url);
+        if (isset($seen_urls[$key])) continue;
+        $seen_urls[$key] = true;
+
+        $resp = scraper_fetch($url, 10);
+        if ($resp['status'] !== 200 || empty($resp['body'])) continue;
+        // After redirects we might have ended up back on the homepage.
+        $final_key = strtolower($resp['final_url']);
+        if (isset($seen_urls[$final_key]) && $final_key !== $key) continue;
+        $seen_urls[$final_key] = true;
+
         $doc = scraper_parse_html($resp['body']);
         $text = trim(scraper_get_text($doc));
-        if (mb_strlen($text) < 80) continue; // too thin to be useful
+        if (mb_strlen($text) < 80) continue;
 
-        $excerpts[$label] = mb_substr($text, 0, $label === 'homepage' ? 3000 : 2000);
+        $label = _profile_label_from_url($resp['final_url']);
+        // Avoid duplicate labels — if /services and /what-we-do both resolve
+        // to 'services', append a counter.
+        $orig_label = $label;
+        $n = 2;
+        while (isset($excerpts[$label])) { $label = $orig_label . '-' . $n++; }
+
+        $excerpts[$label] = mb_substr($text, 0, 2000);
+        $fetched++;
     }
 
     return $excerpts;
+}
+
+/**
+ * Score a URL path by how much business signal it's likely to contain.
+ * Higher score = crawl earlier. Returns 0 for URLs we don't want at all.
+ */
+function _profile_score_path(string $path): int
+{
+    // Hard skip — login, legal, utility, blog index (we want services not posts), assets.
+    $skip = '/^\/(login|signin|sign-in|signup|register|cart|checkout|account|admin|wp-admin|wp-login|terms|privacy|cookie|sitemap|search|tag|category|author|feed|rss|xmlrpc|wp-content|wp-json|assets|static|media|images|img|css|js|api|robots|favicon)(\/|$)/i';
+    if (preg_match($skip, $path)) return 0;
+    if (preg_match('/\.(pdf|jpg|jpeg|png|gif|svg|webp|ico|zip|mp4|mp3)$/i', $path)) return 0;
+
+    $score = 0;
+    // Strongest signals — what we do + who we serve
+    if (preg_match('#/(services?|solutions?|offerings?|capabilities|what[-_]we[-_]do|expertise|practice[-_]areas)(/|$)#', $path)) $score += 100;
+    if (preg_match('#/(work|portfolio|case[-_ ]?stud(y|ies)|projects?|clients?|customers?|success[-_]stor)#', $path)) $score += 90;
+    if (preg_match('#/(industries?|sectors?|verticals?|who[-_]we[-_]serve)(/|$)#', $path)) $score += 80;
+    // Identity / scale signals
+    if (preg_match('#/(about|company|who[-_]we[-_]are|story|mission|culture)(/|$)#', $path)) $score += 70;
+    if (preg_match('#/(team|people|leadership|founders?|partners?|employees?)(/|$)#', $path)) $score += 60;
+    if (preg_match('#/(careers?|jobs)(/|$)#', $path)) $score += 30; // signals scale
+    if (preg_match('#/(contact|locations?|offices?)(/|$)#', $path)) $score += 25; // geography
+    // Vertical / product family pages (e.g. /ai, /document-ai, /cloud)
+    $segs = array_filter(explode('/', trim($path, '/')));
+    if (count($segs) === 1 && preg_match('/^[a-z][a-z0-9-]{2,30}$/', $segs[0])) {
+        // Single short top-level segment that isn't a hard-skip — likely a service line
+        $score += 40;
+    }
+    // Prefer shallower paths
+    $depth = count($segs);
+    if ($depth === 1) $score += 5;
+    if ($depth === 2) $score += 2;
+    if ($depth >= 4) $score -= 20;
+
+    return max(0, $score);
+}
+
+/**
+ * Turn a URL into a short label for the inference prompt.
+ * /services/document-ai → "services-document-ai", /about → "about", / → "homepage"
+ */
+function _profile_label_from_url(string $url): string
+{
+    $path = trim(parse_url($url, PHP_URL_PATH) ?? '', '/');
+    if ($path === '') return 'homepage';
+    $segs = array_slice(explode('/', $path), 0, 3);
+    $label = implode('-', $segs);
+    $label = preg_replace('/[^a-z0-9-]+/i', '-', strtolower($label));
+    return trim($label, '-') ?: 'page';
 }
 
 /**
