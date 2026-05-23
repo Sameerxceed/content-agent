@@ -7,6 +7,20 @@
  *
  * POST JSON: { site_id }
  */
+// DataForSEO's live/advanced SERP endpoint takes 5-15s per query because it
+// actually polls Google live. With 15-30 keywords sequential, the whole run
+// is 1-5 minutes — well past PHP's default 30s execution limit. Bump it,
+// and don't abandon the run if the user closes their tab mid-flight.
+set_time_limit(600);
+ignore_user_abort(true);
+
+// Bulletproof JSON output — any stray PHP notice/warning would break
+// JSON.parse on the client (we hit this exact bug today: "JSON.parse:
+// unexpected character at line 1 column 1"). Buffer all output and emit
+// only well-formed JSON via cd_respond().
+ini_set('display_errors', '0');
+ob_start();
+
 require_once __DIR__ . '/../../includes/helpers.php';
 require_once __DIR__ . '/../../includes/auth.php';
 require_once __DIR__ . '/../../includes/business_profile.php';
@@ -14,38 +28,50 @@ require_once __DIR__ . '/../../includes/haiku.php';
 require_once __DIR__ . '/../../includes/serp.php';
 
 auth_start();
-if (!auth_check()) { http_response_code(401); echo json_encode(['error' => 'Unauthorized']); exit; }
+if (!auth_check()) { http_response_code(401); ob_end_clean(); echo json_encode(['error' => 'Unauthorized']); exit; }
 
 header('Content-Type: application/json');
+
+/** Discard any buffered stray output, then send JSON. */
+function cd_respond(array $payload, int $status = 200): void {
+    if (ob_get_length()) {
+        $stray = ob_get_clean();
+        if (trim($stray) !== '') error_log('[competitors-discover] stray output: ' . substr($stray, 0, 500));
+    }
+    http_response_code($status);
+    echo json_encode($payload);
+    exit;
+}
 
 $db = require __DIR__ . '/../../includes/db.php';
 $user_id = auth_user_id();
 
 $input = json_decode(file_get_contents('php://input'), true) ?: [];
 $site_id = (int)($input['site_id'] ?? 0);
-if (!$site_id) { http_response_code(400); echo json_encode(['error' => 'site_id required']); exit; }
+if (!$site_id) cd_respond(['error' => 'site_id required'], 400);
 
 // Verify ownership and load site (+ rich business profile for relevance filtering)
 $site    = auth_get_accessible_site($db, $site_id);
-if (!$site) { http_response_code(404); echo json_encode(['error' => 'Site not found']); exit; }
+if (!$site) cd_respond(['error' => 'Site not found'], 404);
 $profile = profile_get($db, $site_id);
 
 // SERP queries go through the provider abstraction in includes/serp.php.
-// Brave Search is tried first (free 2k/month), DataForSEO is the paid fallback.
+// Brave Search is tried first (free 1k/month), DataForSEO is the paid fallback.
 // At least one provider must be configured.
 if (!serp_active_provider()) {
-    echo json_encode(['error' => 'No SERP provider configured. Set up Brave Search (free) or DataForSEO in Integrations Hub.']);
-    exit;
+    cd_respond(['error' => 'No SERP provider configured. Set up Brave Search (free) or DataForSEO in Integrations Hub.']);
 }
 
-// Get top 30 active keywords (prefer GSC-real ones, then AI-estimated)
-$stmt = $db->prepare("SELECT id, keyword FROM keywords WHERE site_id = ? AND status = 'active' ORDER BY (source = 'gsc') DESC, priority DESC, impressions DESC LIMIT 30");
+// Limit to top 12 keywords. DataForSEO's live/advanced SERP endpoint takes
+// 5-15s per query (it polls Google live), so 12 * ~10s = ~2 minutes total —
+// fits under reasonable PHP-FPM / proxy timeouts. We were previously running
+// 30 and hitting server kill at ~30s, returning non-JSON, breaking the UI.
+$stmt = $db->prepare("SELECT id, keyword FROM keywords WHERE site_id = ? AND status = 'active' ORDER BY (source = 'gsc') DESC, priority DESC, impressions DESC LIMIT 12");
 $stmt->execute([$site_id]);
 $keywords = $stmt->fetchAll();
 
 if (empty($keywords)) {
-    echo json_encode(['error' => 'No active keywords to analyse. Add keywords or run Find Keywords first.']);
-    exit;
+    cd_respond(['error' => 'No active keywords to analyse. Add keywords or run Find Keywords first.']);
 }
 
 // Profile-aware seed queries — augment the keyword list with industry+geography
@@ -315,7 +341,7 @@ $db->prepare('INSERT INTO agent_log (site_id, action, details, status, duration_
     $headline ? 'fail' : 'success', 0,
 ]);
 
-echo json_encode([
+cd_respond([
     'success'            => true,
     'keywords_analysed'  => $total_kw,
     'cse_calls'          => $cse_calls,
