@@ -68,7 +68,36 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         // Brand fonts
         $brand_fonts = array_filter(array_map('trim', explode(',', $_POST['brand_fonts'] ?? '')));
 
-        $stmt = $db->prepare('UPDATE sites SET name = ?, agent_mode = ?, blog_path = ?, topics = ?, topics_confirmed = ?, business_description = ?, persona = ?, usp = ?, rss_feeds = ?, cms_url = ?, cms_api_key = ?, server_type = ?, server_host = ?, server_user = ?, server_pass = ?, server_path = ?, git_repo = ?, hosting_panel = ?, brand_colors = ?, brand_fonts = ?, is_active = ?, digest_email = ? WHERE id = ?');
+        // Business profile fields — clamp enums to allowed values so a tampered
+        // POST can't insert an arbitrary string into an ENUM column.
+        $enum = function(string $key, array $allowed): ?string {
+            $v = strtolower(trim($_POST[$key] ?? ''));
+            return ($v !== '' && in_array($v, $allowed, true)) ? $v : null;
+        };
+        $int_or_null = function(string $key, int $min, int $max): ?int {
+            $v = trim($_POST[$key] ?? '');
+            if ($v === '' || !is_numeric($v)) return null;
+            $n = (int)$v;
+            return ($n >= $min && $n <= $max) ? $n : null;
+        };
+
+        $bp_size_tier        = $enum('size_tier',        ['solo','small','mid','large','enterprise']);
+        $bp_business_model   = $enum('business_model',   ['b2b','b2c','b2b2c','nonprofit','marketplace']);
+        $bp_offering_type    = $enum('offering_type',    ['service','product','hybrid']);
+        $bp_customer_segment = $enum('customer_segment', ['consumer','smb','midmarket','enterprise','mixed']);
+        $bp_market_scope     = $enum('market_scope',     ['local','regional','national','global']);
+        $bp_maturity_tier    = $enum('maturity_tier',    ['bootstrapped','established','category_leader','public_company']);
+        $bp_founding_year    = $int_or_null('founding_year', 1900, 2030);
+        $bp_employee_est     = $int_or_null('employee_estimate', 1, 1000000);
+
+        $stmt = $db->prepare('UPDATE sites SET name = ?, agent_mode = ?, blog_path = ?, topics = ?, topics_confirmed = ?,
+            business_description = ?, persona = ?, usp = ?,
+            founding_year = ?, hq_city = ?, hq_country = ?, size_tier = ?, employee_estimate = ?,
+            business_model = ?, offering_type = ?, industry_category = ?, industry_sub = ?,
+            customer_segment = ?, market_scope = ?, maturity_tier = ?, profile_confirmed = ?,
+            rss_feeds = ?, cms_url = ?, cms_api_key = ?, server_type = ?, server_host = ?, server_user = ?, server_pass = ?, server_path = ?, git_repo = ?, hosting_panel = ?,
+            brand_colors = ?, brand_fonts = ?, is_active = ?, digest_email = ?
+            WHERE id = ?');
         $stmt->execute([
             trim($_POST['name']),
             $_POST['agent_mode'] ?? 'manual',
@@ -78,6 +107,19 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             trim($_POST['business_description'] ?? '') ?: null,
             trim($_POST['persona'] ?? '') ?: null,
             trim($_POST['usp'] ?? '') ?: null,
+            $bp_founding_year,
+            trim($_POST['hq_city'] ?? '') ?: null,
+            trim($_POST['hq_country'] ?? '') ?: null,
+            $bp_size_tier,
+            $bp_employee_est,
+            $bp_business_model,
+            $bp_offering_type,
+            trim($_POST['industry_category'] ?? '') ?: null,
+            trim($_POST['industry_sub'] ?? '') ?: null,
+            $bp_customer_segment,
+            $bp_market_scope,
+            $bp_maturity_tier,
+            isset($_POST['profile_confirmed']) ? 1 : 0,
             json_encode(array_filter(array_map('trim', explode("\n", $_POST['rss_feeds'] ?? '')))),
             trim($_POST['cms_url'] ?? '') ?: null,
             trim($_POST['cms_api_key'] ?? '') ?: null,
@@ -176,6 +218,24 @@ if ($action === 'add'):
         $stepper_active = 'scan';
         include __DIR__ . '/_site_stepper.php';
 ?>
+    <?php
+        // Business profile state for the new top section
+        $profile_confidence = json_decode($site['profile_confidence'] ?? '{}', true) ?: [];
+        $profile_signals    = json_decode($site['profile_signals'] ?? '{}', true) ?: [];
+        $profile_inferred   = !empty($site['profile_inferred_at']);
+        $profile_confirmed  = !empty($site['profile_confirmed']);
+
+        // Tiny helper: render an "AI guess" pill next to a field's label
+        // when that field has an inferred confidence value > 0.
+        $ai_tag = function(string $field) use ($profile_confidence, $profile_signals, $profile_confirmed) {
+            $conf = $profile_confidence[$field] ?? null;
+            if ($conf === null || $profile_confirmed) return '';
+            $bg = $conf >= 0.7 ? '#d1fae5' : ($conf >= 0.4 ? '#fef3c7' : '#fee2e2');
+            $fg = $conf >= 0.7 ? '#065f46' : ($conf >= 0.4 ? '#92400e' : '#991b1b');
+            $tip = !empty($profile_signals[$field]) ? ' title="' . e((string)$profile_signals[$field]) . '"' : '';
+            return ' <span' . $tip . ' style="font-size:10px;font-weight:500;padding:1px 6px;border-radius:8px;background:' . $bg . ';color:' . $fg . ';margin-left:6px;">&#10024; AI guess</span>';
+        };
+    ?>
     <div class="card" style="max-width: 600px;">
         <div class="card-header">Edit: <?= e($site['name']) ?></div>
         <form method="POST">
@@ -187,6 +247,165 @@ if ($action === 'add'):
                 <label for="name">Site Name</label>
                 <input type="text" id="name" name="name" class="form-control" value="<?= e($site['name']) ?>">
             </div>
+
+            <!-- 🎯 Business Profile — the single source of truth every AI agent reads from -->
+            <div id="business-profile" style="margin-top:6px;padding:14px 16px;border:1px solid <?= $profile_confirmed ? '#86efac' : '#fcd34d' ?>;border-radius:8px;background:<?= $profile_confirmed ? '#f0fdf4' : '#fffbeb' ?>;margin-bottom:14px;">
+                <div style="display:flex;justify-content:space-between;align-items:start;gap:10px;margin-bottom:8px;flex-wrap:wrap;">
+                    <div>
+                        <div style="font-weight:600;font-size:14px;color:<?= $profile_confirmed ? '#065f46' : '#92400e' ?>;">
+                            <?= $profile_confirmed ? '&#10003; Business profile confirmed' : '&#9888; We figured out your business &mdash; please confirm' ?>
+                        </div>
+                        <div style="font-size:11px;color:#64748b;margin-top:2px;">
+                            <?php if ($profile_inferred): ?>
+                                AI scanned your homepage + about/team pages on <?= format_date($site['profile_inferred_at'], 'd M Y, h:i A') ?>.
+                            <?php else: ?>
+                                Run a scan from the SEO/AEO page to have AI fill these in automatically.
+                            <?php endif; ?>
+                            These fields drive every downstream agent (competitors, blog writer, keyword research, AEO, brand presence). If something is wrong, fix it here.
+                        </div>
+                    </div>
+                    <?php if ($profile_inferred): ?>
+                    <button type="button" onclick="reanalyseProfile(<?= (int)$site['id'] ?>, this)" class="btn btn-outline btn-sm" style="white-space:nowrap;font-size:11px;">&#128260; Re-analyse with AI</button>
+                    <?php endif; ?>
+                </div>
+
+                <div class="grid-2" style="margin-top:8px;">
+                    <div class="form-group">
+                        <label for="founding_year">Founded (year)<?= $ai_tag('founding_year') ?></label>
+                        <input type="number" id="founding_year" name="founding_year" class="form-control" min="1900" max="2030" value="<?= e((string)($site['founding_year'] ?? '')) ?>" placeholder="e.g. 2014">
+                    </div>
+                    <div class="form-group">
+                        <label for="employee_estimate">Approx. team size<?= $ai_tag('employee_estimate') ?></label>
+                        <input type="number" id="employee_estimate" name="employee_estimate" class="form-control" min="1" value="<?= e((string)($site['employee_estimate'] ?? '')) ?>" placeholder="e.g. 15">
+                    </div>
+                    <div class="form-group">
+                        <label for="hq_city">HQ city<?= $ai_tag('hq_city') ?></label>
+                        <input type="text" id="hq_city" name="hq_city" class="form-control" value="<?= e($site['hq_city'] ?? '') ?>" placeholder="e.g. Pune">
+                    </div>
+                    <div class="form-group">
+                        <label for="hq_country">HQ country<?= $ai_tag('hq_country') ?></label>
+                        <input type="text" id="hq_country" name="hq_country" class="form-control" value="<?= e($site['hq_country'] ?? '') ?>" placeholder="e.g. India">
+                    </div>
+                    <div class="form-group">
+                        <label for="size_tier">Company size tier<?= $ai_tag('size_tier') ?></label>
+                        <select id="size_tier" name="size_tier" class="form-control">
+                            <option value="">—</option>
+                            <?php foreach ([
+                                'solo'       => 'Solo (1 person)',
+                                'small'      => 'Small (2–10)',
+                                'mid'        => 'Mid (11–50)',
+                                'large'      => 'Large (51–500)',
+                                'enterprise' => 'Enterprise (500+)',
+                            ] as $v => $lbl): ?>
+                                <option value="<?= $v ?>" <?= ($site['size_tier'] ?? '') === $v ? 'selected' : '' ?>><?= $lbl ?></option>
+                            <?php endforeach; ?>
+                        </select>
+                    </div>
+                    <div class="form-group">
+                        <label for="business_model">Business model<?= $ai_tag('business_model') ?></label>
+                        <select id="business_model" name="business_model" class="form-control">
+                            <option value="">—</option>
+                            <?php foreach ([
+                                'b2b'         => 'B2B (sells to businesses)',
+                                'b2c'         => 'B2C (sells to consumers)',
+                                'b2b2c'       => 'B2B2C (via partners)',
+                                'marketplace' => 'Marketplace',
+                                'nonprofit'   => 'Nonprofit',
+                            ] as $v => $lbl): ?>
+                                <option value="<?= $v ?>" <?= ($site['business_model'] ?? '') === $v ? 'selected' : '' ?>><?= $lbl ?></option>
+                            <?php endforeach; ?>
+                        </select>
+                    </div>
+                    <div class="form-group">
+                        <label for="offering_type">Offering<?= $ai_tag('offering_type') ?></label>
+                        <select id="offering_type" name="offering_type" class="form-control">
+                            <option value="">—</option>
+                            <?php foreach (['service' => 'Service', 'product' => 'Product', 'hybrid' => 'Hybrid (both)'] as $v => $lbl): ?>
+                                <option value="<?= $v ?>" <?= ($site['offering_type'] ?? '') === $v ? 'selected' : '' ?>><?= $lbl ?></option>
+                            <?php endforeach; ?>
+                        </select>
+                    </div>
+                    <div class="form-group">
+                        <label for="customer_segment">Sells to<?= $ai_tag('customer_segment') ?></label>
+                        <select id="customer_segment" name="customer_segment" class="form-control">
+                            <option value="">—</option>
+                            <?php foreach ([
+                                'consumer'   => 'Consumers',
+                                'smb'        => 'Small businesses',
+                                'midmarket'  => 'Mid-market',
+                                'enterprise' => 'Enterprise',
+                                'mixed'      => 'Mixed',
+                            ] as $v => $lbl): ?>
+                                <option value="<?= $v ?>" <?= ($site['customer_segment'] ?? '') === $v ? 'selected' : '' ?>><?= $lbl ?></option>
+                            <?php endforeach; ?>
+                        </select>
+                    </div>
+                    <div class="form-group">
+                        <label for="industry_category">Industry<?= $ai_tag('industry_category') ?></label>
+                        <input type="text" id="industry_category" name="industry_category" class="form-control" value="<?= e($site['industry_category'] ?? '') ?>" placeholder="e.g. Tech consulting">
+                    </div>
+                    <div class="form-group">
+                        <label for="industry_sub">Sub-category<?= $ai_tag('industry_sub') ?></label>
+                        <input type="text" id="industry_sub" name="industry_sub" class="form-control" value="<?= e($site['industry_sub'] ?? '') ?>" placeholder="e.g. AI/ML services">
+                    </div>
+                    <div class="form-group">
+                        <label for="market_scope">Market scope<?= $ai_tag('market_scope') ?></label>
+                        <select id="market_scope" name="market_scope" class="form-control">
+                            <option value="">—</option>
+                            <?php foreach ([
+                                'local'    => 'Local (city)',
+                                'regional' => 'Regional (state/region)',
+                                'national' => 'National (one country)',
+                                'global'   => 'Global',
+                            ] as $v => $lbl): ?>
+                                <option value="<?= $v ?>" <?= ($site['market_scope'] ?? '') === $v ? 'selected' : '' ?>><?= $lbl ?></option>
+                            <?php endforeach; ?>
+                        </select>
+                    </div>
+                    <div class="form-group">
+                        <label for="maturity_tier">Maturity<?= $ai_tag('maturity_tier') ?></label>
+                        <select id="maturity_tier" name="maturity_tier" class="form-control">
+                            <option value="">—</option>
+                            <?php foreach ([
+                                'bootstrapped'    => 'Bootstrapped / early',
+                                'established'     => 'Established',
+                                'category_leader' => 'Category leader',
+                                'public_company'  => 'Public company',
+                            ] as $v => $lbl): ?>
+                                <option value="<?= $v ?>" <?= ($site['maturity_tier'] ?? '') === $v ? 'selected' : '' ?>><?= $lbl ?></option>
+                            <?php endforeach; ?>
+                        </select>
+                    </div>
+                </div>
+
+                <div style="margin-top:6px;padding-top:10px;border-top:1px solid rgba(0,0,0,0.06);">
+                    <label style="display:flex;align-items:center;gap:8px;cursor:pointer;font-weight:normal;font-size:13px;">
+                        <input type="checkbox" name="profile_confirmed" value="1" <?= $profile_confirmed ? 'checked' : '' ?>>
+                        <span>I've reviewed the above. AI agents may now use this profile to ground every decision (competitors, blog writing, keyword targeting, etc.).</span>
+                    </label>
+                </div>
+            </div>
+
+            <script>
+            async function reanalyseProfile(siteId, btn) {
+                if (!confirm('Re-run the AI scan? This overwrites the inferred fields (any you have NOT manually confirmed) and takes 10-20 seconds.')) return;
+                const orig = btn.textContent;
+                btn.disabled = true; btn.textContent = 'Analysing...';
+                try {
+                    const res = await fetch('<?= url('/api/business-profile-reanalyse.php') ?>', {
+                        method:'POST', headers:{'Content-Type':'application/json'},
+                        body: JSON.stringify({site_id: siteId})
+                    });
+                    const data = await res.json();
+                    if (data.success) { location.reload(); return; }
+                    alert('Failed: ' + (data.error || 'unknown'));
+                    btn.disabled = false; btn.textContent = orig;
+                } catch(e) {
+                    alert('Error: ' + e.message);
+                    btn.disabled = false; btn.textContent = orig;
+                }
+            }
+            </script>
 
             <div style="padding:12px 0;border-bottom:1px solid var(--border);margin-bottom:14px;">
                 <div class="text-sm" style="font-weight:600;margin-bottom:8px;">Brand Colors</div>

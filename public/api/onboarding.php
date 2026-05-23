@@ -112,6 +112,25 @@ if ($action === 'scan') {
         $site_id, 'scan', json_encode(['platform' => $platform, 'links' => count($internal)]), 'success'
     ]);
 
+    // Fire the AI business-profile inference in the background — adds 5-15s of
+    // Claude work that drives every downstream agent. We don't block the
+    // scan response on it; the Edit Site page will show the inferred profile
+    // once the background job lands (usually within 20s).
+    $infer_php    = PHP_OS_FAMILY === 'Windows' ? 'C:\\xampp\\php\\php.exe' : '/usr/bin/php8.3';
+    $infer_script = realpath(__DIR__ . '/../../agent/business-profile-infer.php');
+    if ($infer_script) {
+        if (PHP_OS_FAMILY === 'Windows') {
+            // Windows: pclose(popen()) launches detached
+            $cmd = sprintf('start /B "" "%s" "%s" --site=%d', $infer_php, $infer_script, $site_id);
+            pclose(popen($cmd, 'r'));
+        } else {
+            // Linux: nohup + & to fully detach
+            $log = config('log_path') . '/profile-infer.log';
+            $cmd = sprintf('nohup %s %s --site=%d >> %s 2>&1 &', escapeshellarg($infer_php), escapeshellarg($infer_script), $site_id, escapeshellarg($log));
+            exec($cmd);
+        }
+    }
+
     json_response([
         'success'        => true,
         'title'          => $title,

@@ -60,7 +60,7 @@ $domain = rtrim($domain, '/');
 echo "Scanning: {$domain}\n";
 
 // ── Step 1: Fetch homepage ───────────────────────────────
-echo "  [1/7] Fetching homepage...\n";
+echo "  [1/8] Fetching homepage...\n";
 $homepage = scraper_fetch($domain);
 
 if ($homepage['error'] || $homepage['status'] >= 400) {
@@ -74,12 +74,12 @@ $html = $homepage['body'];
 $doc  = scraper_parse_html($html);
 
 // ── Step 2: Detect platform ─────────────────────────────
-echo "  [2/7] Detecting platform...\n";
+echo "  [2/8] Detecting platform...\n";
 $platform = scraper_detect_platform($html, $homepage['headers']);
 echo "         Platform: {$platform}\n";
 
 // ── Step 2b: Detect theme name ─────────────────────────
-echo "  [2b/7] Detecting theme...\n";
+echo "  [2b/8] Detecting theme...\n";
 $theme_name = 'default';
 if ($platform === 'opencart') {
     // OpenCart themes are in catalog/view/theme/{name}/ — detect from CSS/JS paths
@@ -97,7 +97,7 @@ if ($platform === 'opencart') {
 echo "         Theme: {$theme_name}\n";
 
 // ── Step 3: Extract brand elements ──────────────────────
-echo "  [3/7] Extracting brand elements...\n";
+echo "  [3/8] Extracting brand elements...\n";
 $title  = scraper_get_title($doc);
 $meta   = scraper_get_meta($doc);
 $colors = scraper_extract_colors($html);
@@ -108,7 +108,7 @@ echo "         Colors: " . implode(', ', $colors) . "\n";
 echo "         Fonts: " . implode(', ', $fonts) . "\n";
 
 // ── Step 4: Extract links & content ─────────────────────
-echo "  [4/7] Extracting links & content...\n";
+echo "  [4/8] Extracting links & content...\n";
 $links    = scraper_get_links($doc, $domain);
 $images   = scraper_get_images($doc, $domain);
 $headings = scraper_get_headings($doc);
@@ -123,7 +123,7 @@ echo "         Images: " . count($images) . "\n";
 echo "         Social: " . implode(', ', array_keys($social)) . "\n";
 
 // ── Step 5: Check blog existence ────────────────────────
-echo "  [5/7] Checking for existing blog...\n";
+echo "  [5/8] Checking for existing blog...\n";
 $blog_paths = ['/blog', '/news', '/articles', '/insights', '/resources'];
 $blog_found = null;
 
@@ -141,7 +141,7 @@ if (!$blog_found) {
 }
 
 // ── Step 6: Check technical SEO basics ──────────────────
-echo "  [6/7] Checking technical SEO...\n";
+echo "  [6/8] Checking technical SEO...\n";
 $sitemap  = scraper_check_sitemap($domain);
 $robots   = scraper_check_robots($domain);
 $ssl      = scraper_check_ssl($domain);
@@ -157,7 +157,7 @@ echo "         Viewport: " . ($has_viewport ? 'Yes' : 'Missing') . "\n";
 echo "         Canonical: " . ($canonical ?: 'Missing') . "\n";
 
 // ── Step 7: AI brand analysis ───────────────────────────
-echo "  [7/7] Analyzing brand with AI...\n";
+echo "  [7/8] Analyzing brand with AI...\n";
 $brand_analysis = haiku_analyze_brand($text);
 $brand_data = null;
 
@@ -196,6 +196,42 @@ $stmt->execute([
     $blog_found ?: '/blog',
     $site_id,
 ]);
+
+// ── Step 8: Business profile inference (Claude crawls /about, /team, /contact) ──
+// Drives every downstream agent — competitors, blog writer, keyword research,
+// AEO suggester, Brand Presence, news filter, schema generator — so they
+// reason about scale/geography/positioning instead of treating every site the same.
+echo "\n  [8/8] Inferring business profile with AI...\n";
+require_once __DIR__ . '/../includes/business_profile.php';
+
+$site_row = $db->prepare('SELECT id, name, domain, profile_confirmed FROM sites WHERE id = ?');
+$site_row->execute([$site_id]);
+$site_for_profile = $site_row->fetch();
+
+if ((int)($site_for_profile['profile_confirmed'] ?? 0) === 1) {
+    echo "         profile_confirmed=1 — skipping (user has reviewed; use --force-profile to override)\n";
+} else {
+    $pages = profile_fetch_pages($site_for_profile['domain']);
+    echo "         Fetched " . count($pages) . " page(s): " . implode(', ', array_keys($pages)) . "\n";
+
+    if (!empty($pages)) {
+        $result = profile_infer($site_for_profile, $pages);
+        if ($result['success']) {
+            profile_save($db, $site_id, $result);
+            $f = $result['fields'];
+            $tag = trim(implode(' · ', array_filter([
+                $f['size_tier']         ? "size={$f['size_tier']}"                  : null,
+                $f['hq_country']        ? "hq={$f['hq_country']}"                   : null,
+                $f['industry_category'] ? "industry={$f['industry_category']}"      : null,
+                $f['business_model']    ? "model={$f['business_model']}"            : null,
+                $f['customer_segment']  ? "sells_to={$f['customer_segment']}"       : null,
+            ])));
+            echo "         {$tag}\n";
+        } else {
+            echo "         Inference failed: " . ($result['error'] ?? 'unknown') . "\n";
+        }
+    }
+}
 
 // Log the scan
 $duration = round((microtime(true) - $start_time) * 1000);
