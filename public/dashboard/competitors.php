@@ -272,36 +272,91 @@ function toggleDrawer(id) {
     if (el) el.classList.toggle('open');
 }
 
+// Discovery now runs as a background job. We fire it, get a job_id, then
+// poll /api/competitors-status.php every 3s for progress + final result.
+// This means the UI shows real progress steps and never times out — the work
+// runs in a detached PHP CLI process, no proxy timeout to worry about.
+const STATUS_API = '<?= url('/api/competitors-status.php') ?>';
+const SPINNER_HTML = '<span class="spinner" style="display:inline-block;width:12px;height:12px;border:2px solid #fff;border-top-color:transparent;border-radius:50%;animation:spin 0.6s linear infinite;"></span>';
+let pollTimer = null;
+
+function resetDiscoverBtn() {
+    const btn = document.getElementById('discover-btn');
+    btn.disabled = false;
+    btn.innerHTML = '🔍 Discover Competitors';
+    if (pollTimer) { clearTimeout(pollTimer); pollTimer = null; }
+}
+
 async function discoverCompetitors() {
     const btn = document.getElementById('discover-btn');
     btn.disabled = true;
-    btn.innerHTML = '<span class="spinner" style="display:inline-block;width:12px;height:12px;border:2px solid #fff;border-top-color:transparent;border-radius:50%;animation:spin 0.6s linear infinite;"></span> Analysing your keywords...';
+    btn.innerHTML = SPINNER_HTML + ' Starting discovery...';
     try {
-        const res = await fetch(DISCOVER_API, {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({site_id: SITE_ID})});
+        const res = await fetch(DISCOVER_API, {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({site_id: SITE_ID})
+        });
         const data = await res.json();
-        if (data.success) {
-            // If the CSE itself returned errors for every call, the response
-            // carries a real reason (quota / API disabled / bad key). Without
-            // this, the user just sees "0 found" and has no clue what's wrong.
-            if (data.error_headline) {
-                var msg = data.error_headline;
-                if (data.fix_hint) msg += '\n\nFix: ' + data.fix_hint;
+        if (!data.success || !data.job_id) {
+            alert('Failed to start discovery: ' + (data.error || 'unknown'));
+            resetDiscoverBtn();
+            return;
+        }
+        // Job queued — start polling.
+        pollDiscoveryStatus(data.job_id);
+    } catch(e) {
+        alert('Error starting discovery: ' + e.message);
+        resetDiscoverBtn();
+    }
+}
+
+async function pollDiscoveryStatus(jobId) {
+    try {
+        const res = await fetch(STATUS_API + '?id=' + jobId);
+        const s = await res.json();
+        const btn = document.getElementById('discover-btn');
+
+        if (s.error && !s.status) {
+            alert('Status check failed: ' + s.error);
+            resetDiscoverBtn();
+            return;
+        }
+
+        if (s.status === 'done') {
+            const sum = s.summary || {};
+            if (sum.error_headline) {
+                let msg = sum.error_headline;
+                if (sum.fix_hint) msg += '\n\nFix: ' + sum.fix_hint;
                 alert(msg);
-                btn.disabled = false;
-                btn.innerHTML = '🔍 Discover Competitors';
+                resetDiscoverBtn();
                 return;
             }
-            alert('Discovered ' + data.competitors_found + ' competitors from ' + data.keywords_analysed + ' keywords (' + data.cse_calls + ' searches used).');
+            let msg = 'Discovered ' + (sum.competitors_saved ?? 0) + ' competitors from ' + (sum.queries_searched ?? 0) + ' Google searches.';
+            if (sum.queries && sum.queries.length) {
+                msg += '\n\nWe asked Google:\n  • ' + sum.queries.join('\n  • ');
+            }
+            alert(msg);
             location.reload();
-        } else {
-            alert('Failed: ' + (data.error || 'unknown'));
-            btn.disabled = false;
-            btn.innerHTML = '🔍 Discover Competitors';
+            return;
         }
+
+        if (s.status === 'failed') {
+            alert('Discovery failed: ' + (s.error || 'unknown'));
+            resetDiscoverBtn();
+            return;
+        }
+
+        // Still running — update the button with the current step + progress.
+        const step = s.current_step || 'Working...';
+        const pct  = s.progress ? ' (' + s.progress + '%)' : '';
+        btn.innerHTML = SPINNER_HTML + ' ' + step + pct;
+
+        pollTimer = setTimeout(() => pollDiscoveryStatus(jobId), 3000);
     } catch(e) {
-        alert('Error: ' + e.message);
-        btn.disabled = false;
-        btn.innerHTML = '🔍 Discover Competitors';
+        // Network blip — retry once more in 5s before giving up.
+        console.warn('Poll error:', e);
+        pollTimer = setTimeout(() => pollDiscoveryStatus(jobId), 5000);
     }
 }
 
