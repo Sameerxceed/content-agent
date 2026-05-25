@@ -20,7 +20,7 @@ $filter_cluster = $_GET['cluster'] ?? '';
 // visitor doesn't see an empty page.
 $filter_status  = $_GET['status']  ?? 'quick_wins';
 $filter_intent  = $_GET['intent']  ?? '';       // informational | commercial | transactional | navigational | ''
-$top_view       = $_GET['view']    ?? 'keywords'; // keywords | gsc
+$filter_sort    = $_GET['sort']    ?? 'score';  // score | az | za | volume | position | difficulty | impressions
 
 $page_title = 'Keywords';
 
@@ -69,7 +69,20 @@ if ($filter_intent !== '' && in_array($filter_intent, ['informational','commerci
 
 $where_sql = implode(' AND ', $where);
 
-$stmt = $db->prepare("SELECT k.*, s.domain FROM keywords k JOIN sites s ON k.site_id = s.id WHERE {$where_sql} ORDER BY COALESCE(k.opportunity_score, k.priority) DESC, k.impressions DESC, k.keyword LIMIT 300");
+// Map the sort key to a safe ORDER BY clause. Whitelist to avoid SQL injection
+// via $_GET. NULLS LAST in MySQL via `IS NULL` trick so unenriched rows
+// (no volume/difficulty yet) don't dominate the top.
+$order_by = match ($filter_sort) {
+    'az'         => 'k.keyword ASC',
+    'za'         => 'k.keyword DESC',
+    'volume'     => 'k.search_volume IS NULL, k.search_volume DESC, k.keyword ASC',
+    'position'   => 'k.gsc_position IS NULL, k.gsc_position ASC, k.keyword ASC',
+    'difficulty' => 'k.difficulty IS NULL, k.difficulty ASC, k.keyword ASC',
+    'impressions'=> 'k.impressions IS NULL, k.impressions DESC, k.keyword ASC',
+    default      => 'COALESCE(k.opportunity_score, k.priority) DESC, k.impressions DESC, k.keyword ASC',
+};
+
+$stmt = $db->prepare("SELECT k.*, s.domain FROM keywords k JOIN sites s ON k.site_id = s.id WHERE {$where_sql} ORDER BY {$order_by} LIMIT 300");
 $stmt->execute($params);
 $keywords = $stmt->fetchAll();
 
@@ -149,7 +162,7 @@ function tab_url($current_filters, $status) {
     return url('/dashboard/keywords.php?' . http_build_query(array_filter($q)));
 }
 
-$current_filters = ['site' => $filter_site, 'cluster' => $filter_cluster];
+$current_filters = ['site' => $filter_site, 'cluster' => $filter_cluster, 'sort' => $filter_sort !== 'score' ? $filter_sort : null];
 ?>
 
 <?php if ($filter_site && $site_name_kw): ?>
@@ -171,98 +184,6 @@ $current_filters = ['site' => $filter_site, 'cluster' => $filter_cluster];
 </div>
 <?php endif; ?>
 
-<?php if ($filter_site): ?>
-<!-- Top-level view tabs: Keywords vs GSC Data -->
-<div style="display:flex;gap:2px;border-bottom:1px solid var(--border);margin-bottom:14px;">
-    <a href="<?= url('/dashboard/keywords.php?site=' . (int)$filter_site . '&view=keywords') ?>" style="text-decoration:none;padding:10px 16px;font-size:13px;border-bottom:2px solid <?= $top_view === 'keywords' ? 'var(--accent)' : 'transparent' ?>;color:<?= $top_view === 'keywords' ? 'var(--accent)' : '#64748b' ?>;font-weight:<?= $top_view === 'keywords' ? '600' : '500' ?>;">Keywords</a>
-    <a href="<?= url('/dashboard/keywords.php?site=' . (int)$filter_site . '&view=gsc') ?>" style="text-decoration:none;padding:10px 16px;font-size:13px;border-bottom:2px solid <?= $top_view === 'gsc' ? 'var(--accent)' : 'transparent' ?>;color:<?= $top_view === 'gsc' ? 'var(--accent)' : '#64748b' ?>;font-weight:<?= $top_view === 'gsc' ? '600' : '500' ?>;">📈 GSC Data</a>
-</div>
-<?php endif; ?>
-
-<?php if ($top_view === 'gsc' && $filter_site):
-    // ── GSC Data view (was search-console.php) ──────────────
-    $stmt = $db->prepare('SELECT * FROM integrations WHERE site_id = ? AND platform = "google_search_console" AND is_active = 1');
-    $stmt->execute([(int)$filter_site]);
-    $integration = $stmt->fetch();
-
-    $gsc_site = auth_get_accessible_site($db, (int)$filter_site);
-
-    if (!$integration): ?>
-        <div class="card" style="text-align:center;padding:40px;">
-            <div style="font-size:48px;margin-bottom:10px;">📊</div>
-            <h3 style="margin-bottom:4px;">Connect Google Search Console</h3>
-            <p class="text-muted text-sm" style="max-width:500px;margin:0 auto 16px;">See real keyword rankings, clicks, impressions, and CTR from Google.</p>
-            <?php if (empty(config('google_client_id'))): ?>
-                <div class="alert alert-warning" style="max-width:500px;margin:0 auto;">
-                    Google OAuth credentials not configured. <a href="<?= url('/dashboard/integrations.php') ?>">Set up in Integrations Hub</a>.
-                </div>
-            <?php else: ?>
-                <a href="<?= e(google_get_auth_url((int)$filter_site)) ?>" class="btn btn-primary" style="padding:10px 24px;">Connect Google Search Console →</a>
-            <?php endif; ?>
-        </div>
-    <?php else:
-        $access_token = google_get_token($db, (int)$filter_site);
-        if (($_GET['action'] ?? '') === 'sync' && $access_token) {
-            $sync_result = google_update_rankings($db, (int)$filter_site);
-            if ($sync_result['success']) {
-                $total = ($sync_result['updated'] ?? 0) + ($sync_result['inserted'] ?? 0);
-                $auto_ig = (int)($sync_result['auto_ignored'] ?? 0);
-                $extra = $auto_ig > 0 ? ' · auto-filtered ' . $auto_ig . ' off-topic queries to the Ignored tab' : '';
-                echo '<div class="alert alert-success">Synced ' . $total . ' keywords' . $extra . '</div>';
-            } else {
-                echo '<div class="alert alert-error">Sync failed: ' . e($sync_result['error'] ?? 'Unknown') . '</div>';
-            }
-        }
-        $summary = $access_token ? google_performance_summary($db, (int)$filter_site, 30) : null;
-        $page_data = $access_token ? google_page_performance($db, (int)$filter_site, 30) : null;
-    ?>
-        <div class="flex justify-between items-center mb-4">
-            <div class="text-sm text-muted">
-                Connected as: <strong><?= e($integration['account_name'] ?? 'Google Account') ?></strong>
-                · Last synced: <?= $integration['updated_at'] ? format_date($integration['updated_at']) : 'Never' ?>
-            </div>
-            <a href="<?= url('/dashboard/keywords.php?site=' . (int)$filter_site . '&view=gsc&action=sync') ?>" class="btn btn-primary btn-sm">🔄 Sync Rankings</a>
-        </div>
-
-        <?php if ($summary): ?>
-        <div class="stats-grid" style="margin-bottom:14px;">
-            <div class="stat-card"><div class="stat-label">Clicks (30 days)</div><div class="stat-value"><?= number_format($summary['clicks']) ?></div></div>
-            <div class="stat-card"><div class="stat-label">Impressions</div><div class="stat-value"><?= number_format($summary['impressions']) ?></div></div>
-            <div class="stat-card"><div class="stat-label">Avg CTR</div><div class="stat-value"><?= $summary['ctr'] ?>%</div></div>
-            <div class="stat-card"><div class="stat-label">Avg Position</div><div class="stat-value"><?= $summary['position'] ?></div></div>
-        </div>
-        <?php endif; ?>
-
-        <?php if ($page_data && !empty($page_data['rows'])): ?>
-        <div class="card">
-            <div class="card-header">Top Pages (last 30 days)</div>
-            <table>
-                <thead><tr><th>Page</th><th>Clicks</th><th>Impressions</th><th>CTR</th><th>Avg Position</th></tr></thead>
-                <tbody>
-                    <?php foreach (array_slice($page_data['rows'], 0, 20) as $row): ?>
-                    <tr>
-                        <td class="text-sm" style="max-width:300px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">
-                            <a href="<?= e($row['keys'][0]) ?>" target="_blank" style="color:var(--primary);text-decoration:none;"><?= e(str_replace('https://www.' . $gsc_site['domain'], '', $row['keys'][0])) ?></a>
-                        </td>
-                        <td><?= $row['clicks'] ?></td>
-                        <td><?= number_format($row['impressions']) ?></td>
-                        <td><?= round($row['ctr'] * 100, 1) ?>%</td>
-                        <td><?= round($row['position'], 1) ?></td>
-                    </tr>
-                    <?php endforeach; ?>
-                </tbody>
-            </table>
-        </div>
-        <?php else: ?>
-        <div class="card" style="padding:30px;text-align:center;color:#94a3b8;">No page data yet. Click Sync to pull from Google.</div>
-        <?php endif; ?>
-
-    <?php endif;
-    // Skip the rest of the page (keywords list)
-    $page_content = ob_get_clean();
-    require __DIR__ . '/../../templates/dashboard/layout.php';
-    return;
-endif; ?>
 
 <?php if ($filter_site):
     $_dfso_ok = !empty(config('dataforseo_login')) && !empty(config('dataforseo_password'));
@@ -506,10 +427,24 @@ $show_filter_form = !$filter_site || !empty($clusters);
         <?php endif; ?>
         </p>
     <?php else: ?>
-        <!-- Bulk action bar -->
-        <div id="kw-actions-bar" style="padding:8px 12px;border-bottom:1px solid var(--border);display:flex;justify-content:space-between;align-items:center;background:#f8fafc;">
-            <div style="font-size:12px;color:#64748b;">
-                <span id="kw-selected-count">0</span> selected
+        <!-- Bulk action bar with sort control -->
+        <div id="kw-actions-bar" style="padding:8px 12px;border-bottom:1px solid var(--border);display:flex;justify-content:space-between;align-items:center;background:#f8fafc;gap:10px;flex-wrap:wrap;">
+            <div style="display:flex;align-items:center;gap:10px;">
+                <div style="font-size:12px;color:#64748b;">
+                    <span id="kw-selected-count">0</span> selected
+                </div>
+                <label style="font-size:11px;color:#64748b;display:flex;align-items:center;gap:4px;">
+                    Sort by
+                    <select id="kw-sort" onchange="onSortChange(this.value)" style="font-size:11px;padding:3px 6px;border:1px solid var(--border);border-radius:4px;background:#fff;">
+                        <option value="score"      <?= $filter_sort === 'score'      ? 'selected' : '' ?>>Score (highest first)</option>
+                        <option value="volume"     <?= $filter_sort === 'volume'     ? 'selected' : '' ?>>Volume (highest first)</option>
+                        <option value="position"   <?= $filter_sort === 'position'   ? 'selected' : '' ?>>Position (best rank first)</option>
+                        <option value="difficulty" <?= $filter_sort === 'difficulty' ? 'selected' : '' ?>>Difficulty (easiest first)</option>
+                        <option value="impressions"<?= $filter_sort === 'impressions'? 'selected' : '' ?>>Impressions (highest first)</option>
+                        <option value="az"         <?= $filter_sort === 'az'         ? 'selected' : '' ?>>Keyword A → Z</option>
+                        <option value="za"         <?= $filter_sort === 'za'         ? 'selected' : '' ?>>Keyword Z → A</option>
+                    </select>
+                </label>
             </div>
             <div style="display:flex;gap:6px;">
                 <?php if ($filter_status !== 'ignored'): ?>
@@ -520,20 +455,27 @@ $show_filter_form = !$filter_site || !empty($clusters);
                 <button onclick="bulkDelete()" id="kw-delete-btn" class="btn btn-sm" style="background:#dc2626;color:#fff;border:none;font-size:11px;" disabled>Delete Selected</button>
             </div>
         </div>
+        <?php
+        // ⓘ icon used on every heading. The browser shows the title attribute
+        // on hover — accessible, no JS, no popover library.
+        $info = function (string $text): string {
+            return '<span style="display:inline-block;margin-left:3px;color:#cbd5e1;font-size:11px;cursor:help;" title="' . htmlspecialchars($text, ENT_QUOTES) . '">ⓘ</span>';
+        };
+        ?>
         <table>
             <thead>
                 <tr>
                     <th style="width:32px;"><input type="checkbox" id="kw-select-all" onchange="toggleAll(this)"></th>
-                    <th>Keyword</th>
-                    <th title="Buyer intent — AI-classified">Intent</th>
-                    <th title="0-100 opportunity score">Score</th>
-                    <th title="Estimated monthly searches">Volume</th>
-                    <th title="0-100, lower is easier">Diff</th>
-                    <th title="Times shown in Google">Impr</th>
-                    <th title="Your average position">Pos</th>
-                    <th>Source</th>
-                    <th title="SERP content brief — what's ranking and how to compete">📊 Brief</th>
-                    <th style="width:90px;text-align:right;">Actions</th>
+                    <th>Keyword<?= $info('The search phrase you target. The line below shows the buyer\'s question — what they\'re really asking when they type this.') ?></th>
+                    <th>Intent<?= $info("Why the searcher is searching. Trans = ready to buy/hire · Comm = comparing options · Info = learning · Nav = looking for a specific brand.") ?></th>
+                    <th>Score<?= $info('Opportunity score 0-100. Higher is a better target. Blends search volume × buyer intent × difficulty × your current rank against your business profile.') ?></th>
+                    <th>Volume<?= $info('Estimated monthly Google searches for this keyword (worldwide unless GSC data narrows it).') ?></th>
+                    <th>Diff<?= $info('Keyword difficulty 0-100 — how hard it is to rank for. Lower = easier. Under 30 is usually within reach for a small site; over 70 is enterprise-tough.') ?></th>
+                    <th>Impr<?= $info('Times your site appeared in Google search results for this keyword in the last 30 days (from Search Console). Higher = Google already shows you for this term.') ?></th>
+                    <th>Pos<?= $info('Your average rank on Google for this keyword. 1-10 = page 1, 11-30 = page 2-3, 31+ = barely visible.') ?></th>
+                    <th>Source<?= $info('Where this keyword came from. Google = real Search Console data · Manual = you typed it · AI = ContentAgent\'s research · Comp = imported from a competitor.') ?></th>
+                    <th>📊 Brief<?= $info('SERP content brief — AI analysis of what\'s ranking on Google for this keyword + a recommended outline to compete. Click Generate to create.') ?></th>
+                    <th style="width:90px;text-align:right;">Actions<?= $info('👁 = ignore (hide from main view, restorable). ✕ = delete permanently.') ?></th>
                 </tr>
             </thead>
             <tbody>
@@ -654,6 +596,33 @@ $show_filter_form = !$filter_site || !empty($clusters);
 <script>
 const KW_API = '<?= url('/api/keywords-manage.php') ?>';
 const SITE_ID = <?= $filter_site ? (int)$filter_site : 'null' ?>;
+
+// Sort dropdown handler — updates the URL and triggers the existing AJAX
+// table swap so the user keeps their scroll position and the rest of the
+// page stays put.
+function onSortChange(sort) {
+    const url = new URL(window.location);
+    if (sort && sort !== 'score') url.searchParams.set('sort', sort);
+    else                          url.searchParams.delete('sort');
+    const wrapper = document.getElementById('kw-table-wrapper');
+    if (!wrapper) { window.location = url.toString(); return; }
+    wrapper.style.opacity = '0.5';
+    const sep = url.search ? '&' : '?';
+    fetch(url.toString() + sep + 'partial=table', { credentials: 'same-origin' })
+        .then(r => r.text())
+        .then(html => {
+            const tmp = document.createElement('div');
+            tmp.innerHTML = html.trim();
+            const fresh = tmp.querySelector('#kw-table-wrapper');
+            if (fresh) {
+                wrapper.replaceWith(fresh);
+                if (window.history && history.pushState) history.pushState({}, '', url.toString());
+            } else {
+                window.location = url.toString();
+            }
+        })
+        .catch(() => { window.location = url.toString(); });
+}
 
 // Wire up the keyword-add input + button. Inline onkeydown wasn't always
 // firing (probably swallowed by browser autofill or focus shifts) — explicit
