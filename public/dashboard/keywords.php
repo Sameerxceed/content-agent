@@ -15,7 +15,10 @@ $user_id = auth_user_id();
 
 $filter_site    = $_GET['site']    ?? '';
 $filter_cluster = $_GET['cluster'] ?? '';
-$filter_status  = $_GET['status']  ?? 'active'; // active | ignored | quick_wins | new_content | aeo_gap | watch | skip | all
+// Default lands on Quick Wins (the most actionable bucket). Falls back to
+// 'all' below if the site has nothing in Quick Wins yet, so a first-time
+// visitor doesn't see an empty page.
+$filter_status  = $_GET['status']  ?? 'quick_wins';
 $filter_intent  = $_GET['intent']  ?? '';       // informational | commercial | transactional | navigational | ''
 $top_view       = $_GET['view']    ?? 'keywords'; // keywords | gsc
 
@@ -424,83 +427,45 @@ async function enrichKeywords(siteId, onlyMissing, btn) {
     </form>
 </div>
 
-<!-- Status / Action bucket tabs -->
+<!-- Single guided tab row — action buckets first, admin tabs after -->
 <?php if ($filter_site): ?>
-<div style="display:flex;gap:2px;margin-bottom:10px;border-bottom:1px solid var(--border);flex-wrap:wrap;">
+<div id="kw-tabs" style="display:flex;gap:2px;margin-bottom:10px;border-bottom:1px solid var(--border);flex-wrap:wrap;align-items:center;">
     <?php
+    // Action buckets — what the user should DO. Listed in actionability order.
     $tabs = [
-        'active'      => ['Active',       '#0f172a', $status_counts['active']],
-        'quick_wins'  => ['💎 Quick Wins', '#10b981', $status_counts['quick_wins']],
-        'new_content' => ['🆕 New Content','#7c3aed', $status_counts['new_content']],
-        'aeo_gap'     => ['🎯 AEO Gaps',   '#0284c7', $status_counts['aeo_gap']],
-        'watch'       => ['👀 Watch',      '#64748b', $status_counts['watch']],
-        'skip'        => ['⏭ Skip',        '#94a3b8', $status_counts['skip']],
-        'ignored'     => ['Ignored',       '#f59e0b', $status_counts['ignored']],
-        'all'         => ['All',           '#0f172a', $status_counts['all']],
+        'quick_wins'  => ['💎 Quick Wins', '#10b981', $status_counts['quick_wins'], 'Already ranking page 2-3 — push to page 1.'],
+        'new_content' => ['🆕 New Content','#7c3aed', $status_counts['new_content'], 'Not ranking, realistic difficulty, real buyer intent — write something.'],
+        'aeo_gap'     => ['🎯 AEO Gaps',   '#0284c7', $status_counts['aeo_gap'],    'Informational queries you\'re invisible on. Candidates for AI-friendly content.'],
+        'watch'       => ['👀 Watch',      '#64748b', $status_counts['watch'],      'Interesting but not actionable yet.'],
+        'skip'        => ['⏭ Skip',        '#94a3b8', $status_counts['skip'],       'Wrong intent or too hard for your scale.'],
+        'ignored'     => ['Ignored',       '#f59e0b', $status_counts['ignored'],    'Keywords you\'ve marked off-brand or irrelevant.'],
+        'all'         => ['All',           '#0f172a', $status_counts['all'],        'Every keyword for this site, including ignored ones.'],
     ];
-    foreach ($tabs as $key => [$label, $color, $count]):
+    foreach ($tabs as $key => [$label, $color, $count, $hint]):
         $is_active = $filter_status === $key;
-        // Skip empty buckets to reduce visual noise (except always-shown core tabs)
-        if ($count === 0 && !in_array($key, ['active','quick_wins','ignored','all'], true)) continue;
     ?>
-    <a href="<?= tab_url($current_filters, $key) ?>" style="text-decoration:none;padding:8px 12px;font-size:12px;border-bottom:2px solid <?= $is_active ? $color : 'transparent' ?>;color:<?= $is_active ? $color : '#64748b' ?>;font-weight:<?= $is_active ? '600' : '500' ?>;">
+    <a href="<?= tab_url($current_filters, $key) ?>" data-status="<?= e($key) ?>" data-color="<?= e($color) ?>" title="<?= e($hint) ?>" class="kw-tab" style="text-decoration:none;padding:8px 12px;font-size:12px;border-bottom:2px solid <?= $is_active ? $color : 'transparent' ?>;color:<?= $is_active ? $color : '#64748b' ?>;font-weight:<?= $is_active ? '600' : '500' ?>;">
         <?= $label ?> <span style="font-size:11px;color:#94a3b8;">(<?= $count ?>)</span>
     </a>
     <?php endforeach; ?>
+    <span style="flex:1;"></span>
+    <!-- Inline legend popover trigger -->
+    <a href="#" onclick="event.preventDefault();document.getElementById('kw-legend').classList.toggle('hidden');" style="font-size:11px;color:#94a3b8;text-decoration:none;padding:8px 8px;" title="What do these columns mean?">ⓘ legend</a>
 </div>
 
-<!-- Intent filter pills (only show when there's something to filter on) -->
-<?php
-$intent_count_stmt = $db->prepare("SELECT intent, COUNT(*) c FROM keywords WHERE site_id = ? AND status = 'active' AND intent != 'unknown' GROUP BY intent");
-$intent_count_stmt->execute([(int)$filter_site]);
-$intent_counts = [];
-foreach ($intent_count_stmt->fetchAll() as $r) $intent_counts[$r['intent']] = (int)$r['c'];
-if (!empty($intent_counts)):
-?>
-<div style="display:flex;gap:6px;margin-bottom:10px;font-size:11px;align-items:center;">
-    <span style="color:#94a3b8;">Intent:</span>
-    <?php
-    $intent_pills = [
-        ''              => ['All',           '#475569'],
-        'transactional' => ['Transactional', '#059669'],
-        'commercial'    => ['Commercial',    '#0284c7'],
-        'informational' => ['Informational', '#7c3aed'],
-        'navigational'  => ['Navigational',  '#94a3b8'],
-    ];
-    foreach ($intent_pills as $key => [$label, $color]):
-        if ($key !== '' && empty($intent_counts[$key])) continue;
-        $is_on = $filter_intent === $key;
-        $q = array_filter(['site' => $filter_site, 'cluster' => $filter_cluster, 'status' => $filter_status, 'intent' => $key]);
-        $href = url('/dashboard/keywords.php?' . http_build_query($q));
-        $count_label = $key === '' ? '' : ' (' . ($intent_counts[$key] ?? 0) . ')';
-    ?>
-    <a href="<?= $href ?>" style="text-decoration:none;padding:3px 10px;border-radius:10px;font-weight:600;background:<?= $is_on ? $color : '#f1f5f9' ?>;color:<?= $is_on ? '#fff' : $color ?>;border:1px solid <?= $is_on ? $color : 'transparent' ?>;"><?= $label . $count_label ?></a>
-    <?php endforeach; ?>
+<!-- Collapsible column legend (hidden by default; toggled by the ⓘ link above) -->
+<div id="kw-legend" class="hidden" style="margin-bottom:10px;padding:10px 14px;background:#f8fafc;border:1px solid var(--border);border-radius:6px;font-size:12px;color:#475569;line-height:1.7;">
+    <div><strong>Intent:</strong> What the searcher wants. <em>Trans</em>actional (ready to buy) · <em>Comm</em>ercial (comparing) · <em>Info</em>rmational (learning) · <em>Nav</em>igational (a specific brand).</div>
+    <div><strong>Score:</strong> 0-100 opportunity score blending volume × intent × difficulty × your current rank. Higher = better.</div>
+    <div><strong>Volume / Diff:</strong> Estimated monthly searches and keyword difficulty (lower = easier).</div>
+    <div><strong>Impr / Pos:</strong> Your Google Search Console impressions and average rank.</div>
+    <div><strong>Source:</strong> Google = real GSC · Manual = you added it · AI = ContentAgent research · Comp = from a competitor.</div>
 </div>
-<?php endif; ?>
+<style>#kw-legend.hidden{display:none}</style>
 <?php endif; ?>
 
-<!-- Column legend -->
-<details style="margin-bottom:10px;font-size:12px;color:#64748b;">
-    <summary style="cursor:pointer;color:var(--primary);font-weight:600;">What do these columns and buckets mean?</summary>
-    <div style="padding:8px 12px;background:#f8fafc;border:1px solid var(--border);border-radius:6px;margin-top:6px;line-height:1.7;">
-        <div><strong>Intent:</strong> What the searcher wants. <em>Trans</em>actional (ready to buy) · <em>Comm</em>ercial (comparing) · <em>Info</em>rmational (learning) · <em>Nav</em>igational (a specific brand).</div>
-        <div><strong>Score:</strong> 0-100 opportunity score blending volume × intent × difficulty × your current rank. Higher = better.</div>
-        <div><strong>Volume:</strong> Estimated monthly searches. <strong>Diff:</strong> 0-100 keyword difficulty — lower is easier.</div>
-        <div><strong>Impr / Pos:</strong> Your Google Search Console impressions and average rank for this keyword.</div>
-        <div><strong>Source:</strong> Google = real GSC data · Manual = you typed it · AI = found by ContentAgent's research · Comp = from a competitor.</div>
-        <div style="margin-top:6px;padding-top:6px;border-top:1px dashed #e2e8f0;">
-            <strong>Buckets (set by 🧠 Deep Research):</strong>
-            <div>💎 <strong>Quick Wins</strong> — already ranking page 2-3, push to page 1.</div>
-            <div>🆕 <strong>New Content</strong> — not ranking, realistic difficulty, real buyer intent. Write something.</div>
-            <div>🎯 <strong>AEO Gaps</strong> — informational queries you're invisible on. Candidates for AI-friendly content.</div>
-            <div>👀 <strong>Watch</strong> — interesting but not actionable yet.</div>
-            <div>⏭ <strong>Skip</strong> — wrong intent or too hard for your scale.</div>
-        </div>
-    </div>
-</details>
-
-<div class="card">
+<!--KW_TABLE_START-->
+<div id="kw-table-wrapper" class="card">
     <?php if (empty($keywords)): ?>
         <p class="text-muted text-sm" style="padding: 20px; text-align: center;">
         <?php if ($filter_status === 'ignored'): ?>
@@ -660,6 +625,7 @@ if (!empty($intent_counts)):
         </table>
     <?php endif; ?>
 </div>
+<!--KW_TABLE_END-->
 
 <script>
 const KW_API = '<?= url('/api/keywords-manage.php') ?>';
@@ -862,6 +828,78 @@ function escapeHtml(s) {
     </div>
 </div>
 
+<script>
+// ── Tab AJAX swap ───────────────────────────────────────────────────
+// Click a bucket tab → fetch only the table partial → swap in place,
+// update tab highlighting, and update the URL via pushState so the
+// browser back button works. No scroll-jump, no full reload.
+(function () {
+    const tabs    = document.querySelectorAll('.kw-tab');
+    const wrapper = document.getElementById('kw-table-wrapper');
+    if (!tabs.length || !wrapper) return;
+
+    tabs.forEach(tab => {
+        tab.addEventListener('click', async (e) => {
+            e.preventDefault();
+            const target = tab.getAttribute('href');
+            if (!target) return;
+
+            // Style update — set this tab active, clear others
+            tabs.forEach(t => {
+                const c = t.getAttribute('data-color') || '#0f172a';
+                if (t === tab) {
+                    t.style.borderBottom = '2px solid ' + c;
+                    t.style.color = c;
+                    t.style.fontWeight = '600';
+                } else {
+                    t.style.borderBottom = '2px solid transparent';
+                    t.style.color = '#64748b';
+                    t.style.fontWeight = '500';
+                }
+            });
+
+            // Show a quiet loading state
+            wrapper.style.opacity = '0.5';
+            try {
+                const sep = target.includes('?') ? '&' : '?';
+                const res = await fetch(target + sep + 'partial=table', { credentials: 'same-origin' });
+                const html = await res.text();
+                // Replace the wrapper element entirely so the new id stays unique
+                const tmp = document.createElement('div');
+                tmp.innerHTML = html.trim();
+                const fresh = tmp.querySelector('#kw-table-wrapper');
+                if (fresh) {
+                    wrapper.replaceWith(fresh);
+                    // Update browser URL without reloading
+                    if (window.history && history.pushState) {
+                        history.pushState({}, '', target);
+                    }
+                } else {
+                    // Fallback to a hard reload if the partial came back malformed
+                    window.location = target;
+                }
+            } catch (err) {
+                window.location = target;
+            }
+        });
+    });
+})();
+</script>
+
 <?php
-$page_content = ob_get_clean();
+$full_page = ob_get_clean();
+
+// Partial mode — when called with ?partial=table, return only the table
+// card so the tab AJAX swap can drop it into the existing page without a
+// full reload. Everything else (stepper, deep-research card, tabs) stays
+// on screen and scroll position is preserved.
+if (($_GET['partial'] ?? '') === 'table') {
+    if (preg_match('/<!--KW_TABLE_START-->(.*)<!--KW_TABLE_END-->/s', $full_page, $m)) {
+        header('Content-Type: text/html; charset=utf-8');
+        echo $m[1];
+        exit;
+    }
+}
+
+$page_content = $full_page;
 require __DIR__ . '/../../templates/dashboard/layout.php';
