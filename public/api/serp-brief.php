@@ -12,6 +12,7 @@ require_once __DIR__ . '/../../includes/helpers.php';
 require_once __DIR__ . '/../../includes/auth.php';
 require_once __DIR__ . '/../../includes/scraper.php';
 require_once __DIR__ . '/../../includes/haiku.php';
+require_once __DIR__ . '/../../includes/serp.php';
 
 auth_start();
 if (!auth_check()) { http_response_code(401); echo json_encode(['error' => 'Unauthorized']); exit; }
@@ -49,54 +50,37 @@ if (!$force && !empty($kw['serp_briefed_at'])) {
     }
 }
 
-// Need CSE
-$api_key = config('google_cse_api_key');
-$cx = config('google_cse_cx');
-if (empty($api_key) || empty($cx)) {
-    echo json_encode(['error' => 'Google Custom Search not configured. Go to Settings → API Keys.']);
+// Need a SERP provider configured
+if (!serp_active_provider()) {
+    echo json_encode(['error' => 'No search data source configured. Go to Integrations to connect one.']);
     exit;
 }
 
-// Need Claude
+// Need the AI engine
 if (empty(config('haiku_api_key'))) {
-    echo json_encode(['error' => 'Claude API key not configured.']);
+    echo json_encode(['error' => 'AI engine not configured. Go to Settings → API Keys.']);
     exit;
 }
 
 $keyword = $kw['keyword'];
 
-// ── Step 1: Fetch top 10 from Google CSE ────────────────────────────
-$params = http_build_query([
-    'key' => $api_key,
-    'cx' => $cx,
-    'q' => $keyword,
-    'num' => 10,
-]);
-$cse_url = 'https://www.googleapis.com/customsearch/v1?' . $params;
-$ch = curl_init($cse_url);
-curl_setopt_array($ch, [
-    CURLOPT_RETURNTRANSFER => true,
-    CURLOPT_TIMEOUT => 12,
-    CURLOPT_USERAGENT => 'ContentAgent/1.0',
-]);
-$cse_body = curl_exec($ch);
-$cse_status = curl_getinfo($ch, CURLINFO_HTTP_CODE);
-curl_close($ch);
-
-if ($cse_status !== 200 || !$cse_body) {
-    echo json_encode(['error' => 'Could not reach Google CSE (HTTP ' . $cse_status . ')']);
+// ── Step 1: Fetch top 10 via the SERP abstraction ───────────────────
+try {
+    $serp = serp_search($keyword, 10);
+} catch (Throwable $e) {
+    echo json_encode(['error' => 'Search failed: ' . $e->getMessage()]);
     exit;
 }
-$cse_data = json_decode($cse_body, true);
-$items = $cse_data['items'] ?? [];
+$items = $serp['results'] ?? [];
 if (empty($items)) {
-    echo json_encode(['error' => 'No SERP results found for "' . $keyword . '"']);
+    $err_detail = '';
+    if (!empty($serp['errors'])) {
+        $err_detail = ' (' . implode(' / ', array_map(fn($p,$m) => "{$p}: {$m}", array_keys($serp['errors']), array_values($serp['errors']))) . ')';
+    }
+    echo json_encode(['error' => 'No SERP results found for "' . $keyword . '"' . $err_detail]);
     exit;
 }
 
-// SERP features from CSE metadata
-$serp_features = [];
-$has_paa = false;
 $own_domain = preg_replace('#^(https?://)?(www\.)?#i', '', strtolower($kw['site_domain']));
 $own_ranked = false;
 $own_position = null;
@@ -105,14 +89,16 @@ $own_position = null;
 $top_pages = [];
 $skipped = 0;
 foreach (array_slice($items, 0, 5) as $idx => $item) {
-    $url = $item['link'] ?? '';
+    $url = $item['url'] ?? '';
     if (!$url) { $skipped++; continue; }
+
+    $position = (int)($item['position'] ?? ($idx + 1));
 
     // Check if this is our own domain
     $host = preg_replace('#^www\.#', '', strtolower(parse_url($url, PHP_URL_HOST) ?? ''));
     if ($host === $own_domain) {
         $own_ranked = true;
-        $own_position = $idx + 1;
+        $own_position = $position;
     }
 
     $result = scraper_fetch($url, 8);
@@ -135,13 +121,13 @@ foreach (array_slice($items, 0, 5) as $idx => $item) {
     }
 
     $top_pages[] = [
-        'position' => $idx + 1,
-        'url'      => $url,
-        'host'     => $host,
-        'title'    => $item['title'] ?? '',
-        'snippet'  => $item['snippet'] ?? '',
+        'position'   => $position,
+        'url'        => $url,
+        'host'       => $host,
+        'title'      => $item['title']   ?? '',
+        'snippet'    => $item['snippet'] ?? '',
         'word_count' => $word_count,
-        'h2s' => $h2s,
+        'h2s'        => $h2s,
     ];
 
     // Free memory between fetches
@@ -150,14 +136,15 @@ foreach (array_slice($items, 0, 5) as $idx => $item) {
 
 // Also collect URLs from positions 6-10 (just title/snippet, no fetch)
 foreach (array_slice($items, 5, 5) as $idx => $item) {
+    $url = $item['url'] ?? '';
     $top_pages[] = [
-        'position' => $idx + 6,
-        'url' => $item['link'] ?? '',
-        'host' => preg_replace('#^www\.#', '', strtolower(parse_url($item['link'] ?? '', PHP_URL_HOST) ?? '')),
-        'title' => $item['title'] ?? '',
-        'snippet' => $item['snippet'] ?? '',
+        'position'   => (int)($item['position'] ?? ($idx + 6)),
+        'url'        => $url,
+        'host'       => preg_replace('#^www\.#', '', strtolower(parse_url($url, PHP_URL_HOST) ?? '')),
+        'title'      => $item['title']   ?? '',
+        'snippet'    => $item['snippet'] ?? '',
         'word_count' => 0,
-        'h2s' => [],
+        'h2s'        => [],
     ];
 }
 
@@ -203,7 +190,7 @@ if ($ai['success'] && !empty($ai['content'])) {
 }
 
 if (!$brief || !is_array($brief)) {
-    echo json_encode(['error' => 'Claude returned an unparseable brief. Try again.']);
+    echo json_encode(['error' => 'AI returned an unparseable brief. Try again.']);
     exit;
 }
 
