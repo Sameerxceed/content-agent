@@ -63,6 +63,21 @@ try {
     $site = $stmt->fetch();
     if (!$site) $mark_failed('Site not found.');
 
+    // ── Step -1: Wipe stale AI-found rows BEFORE re-running ─────────
+    // Without this, every Find Keywords run accumulated on top of the
+    // previous one. User would see 100 fresh keywords + 400 old garbage
+    // from earlier looser-filter runs. Manual entries + Google-synced
+    // rows are preserved — those are deliberate user data.
+    $wipe = $db->prepare("DELETE FROM keywords
+        WHERE site_id = ?
+          AND source IN ('autocomplete', 'paa', 'dataforseo_ideas', 'dataforseo_suggestions', 'competitor')
+          AND (gsc_synced_at IS NULL)");
+    $wipe->execute([$site_id]);
+    $wiped = $wipe->rowCount();
+    if ($wiped > 0) {
+        $progress("Cleared {$wiped} previously-found keywords for a fresh run...", 1);
+    }
+
     // ── Step 0: Sync Google Search Console first (if connected) ────
     // Folded into Find Keywords so the user gets one button that does
     // everything — sync → expand → score → bucket. Previously these were
@@ -150,6 +165,7 @@ try {
         'total_raw'        => $result['total_raw'],
         'total_kept'       => $result['total_kept'],
         'saved'            => $saved,
+        'wiped_before'     => $wiped,
         'counts_by_action' => $result['counts_by_action'],
         'counts_by_intent' => $result['counts_by_intent'],
         'gsc'              => $gsc_summary,
