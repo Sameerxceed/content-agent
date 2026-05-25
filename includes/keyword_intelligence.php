@@ -34,6 +34,7 @@ const KI_MAX_IDEAS_PER_SEED     = 150;   // DataForSEO keyword_ideas per seed
 const KI_MAX_SUGGESTIONS_PER    = 100;   // DataForSEO keyword_suggestions per seed
 const KI_KEEP_TOP_N             = 400;   // after dedup, only enrich + classify the top N by raw volume signal
 const KI_INTENT_BATCH           = 60;    // keywords per Claude classification call
+const KI_RELEVANCE_BATCH        = 120;   // keywords per Claude relevance-filter call
 
 /**
  * Top-level orchestrator.
@@ -54,7 +55,11 @@ function ki_run(PDO $db, int $site_id, callable $progress, array $opts = []): ar
 
     // ── Step 1: build seeds from profile + confirmed topics ────────
     $progress('Building seed phrases from your business profile...', 5);
-    $seeds = ki_build_seeds($profile);
+    // Prefer AI-derived specific service-line seeds — they're narrower than
+    // raw topics like "AI" or "software development", which over-expand when
+    // the SERP provider does semantic neighbourhood lookup. Falls back to the
+    // mechanical builder if the AI call fails.
+    $seeds = ki_build_seeds_ai($profile) ?: ki_build_seeds($profile);
     if (empty($seeds)) {
         throw new RuntimeException('No seed phrases could be derived. Confirm Business Focus + topics, then retry.');
     }
@@ -154,6 +159,19 @@ function ki_run(PDO $db, int $site_id, callable $progress, array $opts = []): ar
                 ];
             }
         }
+    }
+
+    // ── Step 5b: Claude relevance pass ─────────────────────────────
+    // DataForSEO's semantic expansion is wide — a "software development" seed
+    // pulls in "computer repair services"; an "AI" seed pulls in "ai story
+    // generator". Filter the list against the business profile so only
+    // keywords a real prospective customer of THIS business would type
+    // survive. Same lesson the competitor-discovery pass learned the hard way.
+    $before_filter = count($candidates);
+    $progress("Filtering {$before_filter} candidates for relevance to your business...", 70);
+    $drop_set = ki_relevance_drop_set(array_keys($candidates), $profile);
+    if (!empty($drop_set)) {
+        foreach ($drop_set as $bad) unset($candidates[$bad]);
     }
 
     // ── Step 6: pull GSC position + ranking competitor on the candidates we already know about ──
@@ -263,6 +281,56 @@ function ki_build_seeds(array $profile): array
     return array_slice($seeds, 0, KI_MAX_SEEDS);
 }
 
+/**
+ * Ask Claude for 6-8 narrow, service-line-shaped seed phrases derived from
+ * the business profile. This beats mechanical seeds because the SERP provider
+ * does semantic expansion — a broad seed like "AI" or "software development"
+ * pulls in completely unrelated stuff (consumer AI tools, hardware repair).
+ * A narrow seed like "ai document automation for healthcare" stays in lane.
+ *
+ * Returns null on AI failure so the caller can fall back to ki_build_seeds().
+ */
+function ki_build_seeds_ai(array $profile): ?array
+{
+    // Need at least industry + a topic or USP to bother with the AI call.
+    if (empty($profile['industry_category']) && empty($profile['industry_sub']) && empty($profile['topics'])) {
+        return null;
+    }
+
+    $sys = "You write narrow, buyer-shaped keyword seed phrases for a specific business. "
+         . "Output ONLY a JSON array of 6-8 short strings (2-5 words each), no commentary.\n\n"
+         . "Each seed must:\n"
+         . "  - Name a SPECIFIC service or offering this business actually sells (not the whole industry)\n"
+         . "  - Be a phrase a real prospective customer would type into Google\n"
+         . "  - Be narrow enough that a search engine's semantic expansion won't drag in unrelated industries\n"
+         . "  - Match this business's scale + geography (don't suggest enterprise terms for an SMB shop)\n\n"
+         . "BAD (too broad — semantic expansion will pull in junk):\n"
+         . "  \"AI\" → pulls in ai story generator, ai chat, etc.\n"
+         . "  \"software development\" → pulls in computer repair, IT support, etc.\n"
+         . "  \"consulting\" → pulls in financial planning, life coaching, etc.\n\n"
+         . "GOOD (narrow, on-target):\n"
+         . "  \"document AI services\"\n"
+         . "  \"computer vision consulting\"\n"
+         . "  \"custom AI agent development\"\n"
+         . "  \"AI consulting for manufacturing\"\n\n"
+         . profile_prompt_block($profile);
+
+    $resp = haiku_chat($sys, "Write 6-8 narrow seed phrases for this business.", 400);
+    if (empty($resp['success'])) {
+        error_log('[ki_build_seeds_ai] Claude error: ' . ($resp['error'] ?? 'unknown'));
+        return null;
+    }
+    $clean = preg_replace('/^```(?:json)?\s*|\s*```$/m', '', trim($resp['content']));
+    $data  = json_decode($clean, true);
+    if (!is_array($data) || empty($data)) return null;
+
+    $seeds = array_values(array_unique(array_filter(array_map(
+        fn($s) => ki_normalize((string)$s),
+        $data
+    ))));
+    return array_slice($seeds, 0, KI_MAX_SEEDS);
+}
+
 // ─────────────────────────────────────────────────────────────────
 // Free-tier autocomplete
 // ─────────────────────────────────────────────────────────────────
@@ -276,6 +344,72 @@ function ki_google_autocomplete(string $query): array
     $data = json_decode($res['body'], true);
     if (!is_array($data) || !isset($data[1]) || !is_array($data[1])) return [];
     return array_values(array_filter($data[1], fn($s) => strtolower($s) !== strtolower($query)));
+}
+
+// ─────────────────────────────────────────────────────────────────
+// Relevance filter (Claude, batched)
+// ─────────────────────────────────────────────────────────────────
+
+/**
+ * Given the candidate keyword list + business profile, ask Claude which
+ * keywords a real prospective customer of THIS business would NOT type
+ * when looking to hire/buy from them. Returns the set of keywords to drop.
+ *
+ * Batched in chunks of 120 to keep Claude calls fast and bounded.
+ *
+ * Defensive: caps the drop ratio at 70% per batch — if Claude wants to
+ * drop nearly everything, that's usually a sign the profile or its prompt
+ * misfired, and we'd rather keep questionable rows than wipe the list.
+ *
+ * @return array<string,true>  map of keyword => true for dropped items
+ */
+function ki_relevance_drop_set(array $keywords, array $profile): array
+{
+    $drops = [];
+    if (empty($keywords)) return $drops;
+
+    $profile_block = profile_prompt_block($profile);
+
+    foreach (array_chunk($keywords, KI_RELEVANCE_BATCH) as $batch) {
+        $list = implode("\n", array_map(fn($k) => "- {$k}", $batch));
+        $sys  = "You filter expanded keyword research candidates for relevance to a specific business. "
+              . "Output ONLY valid JSON: {\"drop\":[\"keyword 1\",\"keyword 2\",...]}. No commentary, no code fences.\n\n"
+              . "Drop a keyword when ANY of these are true:\n"
+              . "  - It's about a DIFFERENT industry's products/services (e.g. 'computer repair' for a software firm; 'ai story generator' for an AI consulting firm)\n"
+              . "  - It targets the wrong buyer (consumer-grade terms for a B2B business, or enterprise-only terms for an SMB shop)\n"
+              . "  - It's geographically irrelevant (a US-only keyword for an India-focused business, or vice versa)\n"
+              . "  - It's a job/career search (\"X jobs\", \"X salary\", \"how to become X\") — these are job seekers, not buyers\n"
+              . "  - It's a navigational query for a different specific brand\n"
+              . "  - It is plainly off-topic — would a buyer of THIS business EVER type this when looking to hire/buy from them?\n\n"
+              . "KEEP when in doubt — a noisy list with some false positives is better than wiping good keywords. "
+              . "Never drop more than 70% of the batch.\n\n"
+              . $profile_block;
+        $prompt = "Candidate keywords:\n\n{$list}";
+
+        $resp = haiku_chat($sys, $prompt, 2000);
+        if (empty($resp['success'])) {
+            error_log('[ki_relevance_drop_set] Claude error: ' . ($resp['error'] ?? 'unknown'));
+            continue;
+        }
+        $clean = preg_replace('/^```(?:json)?\s*|\s*```$/m', '', trim($resp['content']));
+        $data = json_decode($clean, true);
+        if (!is_array($data) || !isset($data['drop']) || !is_array($data['drop'])) continue;
+
+        $batch_drops = array_values(array_filter(array_map(
+            fn($k) => ki_normalize((string)$k),
+            $data['drop']
+        )));
+        // Cap drops per batch — defensive against a misfired profile
+        $cap = (int)floor(count($batch) * 0.7);
+        if (count($batch_drops) > $cap) $batch_drops = array_slice($batch_drops, 0, $cap);
+
+        foreach ($batch_drops as $d) {
+            // Only honour drops that were actually in the batch (Claude can hallucinate)
+            if (in_array($d, $batch, true)) $drops[$d] = true;
+        }
+        usleep(150000);
+    }
+    return $drops;
 }
 
 // ─────────────────────────────────────────────────────────────────
