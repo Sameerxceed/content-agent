@@ -161,7 +161,6 @@ try {
     }
 
     $summary = [
-        'seeds'            => $result['seeds'],
         'total_raw'        => $result['total_raw'],
         'total_kept'       => $result['total_kept'],
         'saved'            => $saved,

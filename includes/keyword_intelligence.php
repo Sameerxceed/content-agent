@@ -38,10 +38,15 @@ const KI_RELEVANCE_BATCH        = 100;   // keywords per Claude relevance-filter
 const KI_RELEVANCE_DROP_CAP_PCT = 95;    // max % per batch the relevance filter can drop — leave a small safety net
 
 /**
- * Top-level orchestrator.
+ * Top-level orchestrator — AI-first architecture.
+ *
+ * Claude generates the full keyword list directly from the business profile
+ * (no DataForSEO/Autocomplete expansion). DataForSEO is used only to enrich
+ * metrics (volume / difficulty / CPC). This produces ~80-120 keywords that
+ * are all on-target by construction, instead of expanding wide and trying
+ * to filter back down to relevance.
  *
  * @return array{
- *   seeds: string[],
  *   total_raw: int,
  *   total_kept: int,
  *   counts_by_action: array<string,int>,
@@ -54,134 +59,41 @@ function ki_run(PDO $db, int $site_id, callable $progress, array $opts = []): ar
     $profile = profile_get($db, $site_id);
     if (!$profile) throw new RuntimeException('Site profile not found.');
 
-    // ── Step 1: build seeds from profile + confirmed topics ────────
-    $progress('Building seed phrases from your business profile...', 5);
-    // Prefer AI-derived specific service-line seeds — they're narrower than
-    // raw topics like "AI" or "software development", which over-expand when
-    // the SERP provider does semantic neighbourhood lookup. Falls back to the
-    // mechanical builder if the AI call fails.
-    $seeds = ki_build_seeds_ai($profile) ?: ki_build_seeds($profile);
-    if (empty($seeds)) {
-        throw new RuntimeException('No seed phrases could be derived. Confirm Business Focus + topics, then retry.');
+    // ── Step 1: AI generates the keyword list directly ────────────
+    // Replaces the previous seed → autocomplete → DFSO ideas expansion
+    // pipeline (which kept dragging in adjacent-industry junk). Claude
+    // works from the business profile and writes 80-120 keywords each
+    // shaped to a real prospective customer of THIS business.
+    $progress('Generating keywords from your business profile...', 10);
+    $generated = ki_generate_keywords_ai($profile);
+    if (empty($generated)) {
+        throw new RuntimeException('Could not generate keywords. Confirm Business Focus is filled in (industry, topics, USP) and retry.');
     }
 
-    // ── Step 2: expand via Autocomplete (free) ────────────────────
-    $candidates = [];      // keyword (lowercase) => ['source' => ..., 'type' => ..., 'seed' => ...]
-    $total_seeds = count($seeds);
-    foreach ($seeds as $i => $seed) {
-        $progress("Google Autocomplete [" . ($i + 1) . "/{$total_seeds}]: \"{$seed}\"", 10 + (int)(($i / $total_seeds) * 15));
-        $suggs = ki_google_autocomplete($seed);
-        foreach (array_slice($suggs, 0, KI_MAX_AUTOCOMPLETE_PER) as $s) {
-            $key = ki_normalize($s);
-            if ($key === '' || isset($candidates[$key])) continue;
-            $candidates[$key] = [
-                'source' => 'autocomplete',
-                'type'   => ki_shape($key),
-                'seed'   => $seed,
+    // ── Step 2: Enrich each with DataForSEO metrics (volume/difficulty/CPC) ──
+    $dfso_ready = !empty(config('dataforseo_login')) && !empty(config('dataforseo_password'));
+    $dfso_metrics = [];
+    if ($dfso_ready) {
+        $progress('Looking up real search volume + difficulty for ' . count($generated) . ' keywords...', 50);
+        $kw_strings = array_values(array_unique(array_column($generated, 'keyword')));
+        $bulk = dataforseo_keyword_overview($kw_strings);
+        foreach ($bulk as $kw => $info) {
+            $dfso_metrics[$kw] = [
+                'search_volume'      => $info['search_volume']      ?? null,
+                'keyword_difficulty' => $info['keyword_difficulty'] ?? null,
+                'cpc'                => $info['cpc']                ?? null,
             ];
         }
-        // also try modifier-prefixed seeds for richer question/comparison coverage
-        foreach (['best', 'how to', 'what is', 'top', 'vs'] as $mod) {
-            $suggs = ki_google_autocomplete("{$mod} {$seed}");
-            foreach (array_slice($suggs, 0, 8) as $s) {
-                $key = ki_normalize($s);
-                if ($key === '' || isset($candidates[$key])) continue;
-                $candidates[$key] = ['source' => 'autocomplete', 'type' => ki_shape($key), 'seed' => "{$mod} {$seed}"];
-            }
-        }
-        usleep(900000); // 0.9s pacing to stay under Google's unofficial rate limit
     }
 
-    // ── Step 3: expand via DataForSEO keyword_ideas + suggestions ──
-    $dfso_ready = !empty(config('dataforseo_login')) && !empty(config('dataforseo_password'));
-    $dfso_metrics = [];   // keyword => ['search_volume', 'keyword_difficulty', 'cpc']
-    if ($dfso_ready) {
-        foreach ($seeds as $i => $seed) {
-            $progress("DataForSEO ideas [" . ($i + 1) . "/{$total_seeds}]: \"{$seed}\"", 25 + (int)(($i / $total_seeds) * 25));
-            $ideas = dataforseo_keyword_ideas($seed, KI_MAX_IDEAS_PER_SEED);
-            foreach ($ideas as $row) {
-                $key = ki_normalize($row['keyword']);
-                if ($key === '') continue;
-                if (!isset($candidates[$key])) {
-                    $candidates[$key] = ['source' => 'dataforseo_ideas', 'type' => ki_shape($key), 'seed' => $seed];
-                }
-                $dfso_metrics[$key] = [
-                    'search_volume'      => $row['search_volume']      ?? null,
-                    'keyword_difficulty' => $row['keyword_difficulty'] ?? null,
-                    'cpc'                => $row['cpc']                ?? null,
-                ];
-            }
-            $sugg = dataforseo_keyword_suggestions($seed, KI_MAX_SUGGESTIONS_PER);
-            foreach ($sugg as $row) {
-                $key = ki_normalize($row['keyword']);
-                if ($key === '') continue;
-                if (!isset($candidates[$key])) {
-                    $candidates[$key] = ['source' => 'dataforseo_suggestions', 'type' => ki_shape($key), 'seed' => $seed];
-                }
-                if (!isset($dfso_metrics[$key])) {
-                    $dfso_metrics[$key] = [
-                        'search_volume'      => $row['search_volume']      ?? null,
-                        'keyword_difficulty' => $row['keyword_difficulty'] ?? null,
-                        'cpc'                => $row['cpc']                ?? null,
-                    ];
-                }
-            }
-        }
-    }
-
-    $total_raw = count($candidates);
-
-    // ── Step 4: keep top N by volume signal (anything we already have metrics for ranks higher) ──
-    $progress("Picking top " . KI_KEEP_TOP_N . " of {$total_raw} candidates by volume...", 55);
-    $ranked = [];
-    foreach ($candidates as $kw => $meta) {
-        $vol = $dfso_metrics[$kw]['search_volume'] ?? null;
-        // unmetered candidates get a small baseline so we don't lose all autocomplete-only rows
-        $ranked[$kw] = $vol !== null ? $vol : -1;
-    }
-    arsort($ranked);
-    $kept = array_slice(array_keys($ranked), 0, KI_KEEP_TOP_N, true);
-    $kept_set = array_flip($kept);
-    foreach ($candidates as $kw => $_) {
-        if (!isset($kept_set[$kw])) unset($candidates[$kw]);
-    }
-
-    // ── Step 5: bulk-enrich anything still missing metrics ─────────
-    if ($dfso_ready) {
-        $needs = array_values(array_filter(array_keys($candidates), fn($kw) => empty($dfso_metrics[$kw])));
-        if ($needs) {
-            $progress('Enriching ' . count($needs) . ' keywords with volume + difficulty...', 65);
-            $bulk = dataforseo_keyword_overview($needs);
-            foreach ($bulk as $kw => $info) {
-                $dfso_metrics[$kw] = [
-                    'search_volume'      => $info['search_volume']      ?? null,
-                    'keyword_difficulty' => $info['keyword_difficulty'] ?? null,
-                    'cpc'                => $info['cpc']                ?? null,
-                ];
-            }
-        }
-    }
-
-    // ── Step 5b: Claude relevance pass ─────────────────────────────
-    // DataForSEO's semantic expansion is wide — a "software development" seed
-    // pulls in "computer repair services"; an "AI" seed pulls in "ai story
-    // generator". Filter the list against the business profile so only
-    // keywords a real prospective customer of THIS business would type
-    // survive. Same lesson the competitor-discovery pass learned the hard way.
-    $before_filter = count($candidates);
-    $progress("Filtering {$before_filter} candidates for relevance to your business...", 70);
-    $drop_set = ki_relevance_drop_set(array_keys($candidates), $profile);
-    if (!empty($drop_set)) {
-        foreach ($drop_set as $bad) unset($candidates[$bad]);
-    }
-
-    // ── Step 6: pull GSC position + ranking competitor on the candidates we already know about ──
-    $gsc_data = [];   // keyword => ['position', 'impressions']
-    if (!empty($candidates)) {
-        $progress('Cross-referencing your Google Search Console data...', 75);
-        $in  = implode(',', array_fill(0, count($candidates), '?'));
+    // ── Step 3: Cross-reference your GSC data for current rank/impressions ──
+    $progress('Cross-referencing your Google Search Console data...', 75);
+    $gsc_data = [];
+    $kw_strings = array_column($generated, 'keyword');
+    if (!empty($kw_strings)) {
+        $in  = implode(',', array_fill(0, count($kw_strings), '?'));
         $stmt = $db->prepare("SELECT keyword, gsc_position, current_rank, impressions FROM keywords WHERE site_id = ? AND keyword IN ({$in})");
-        $stmt->execute(array_merge([$site_id], array_keys($candidates)));
+        $stmt->execute(array_merge([$site_id], $kw_strings));
         while ($r = $stmt->fetch()) {
             $key = ki_normalize($r['keyword']);
             $gsc_data[$key] = [
@@ -191,51 +103,131 @@ function ki_run(PDO $db, int $site_id, callable $progress, array $opts = []): ar
         }
     }
 
-    // ── Step 7: Claude classifies intent + extracts the buyer question, in batches ──
-    $progress('Classifying buyer intent (this is the slow part)...', 80);
-    $intent_map = ki_classify_intent_bulk(array_keys($candidates), $profile);
-
-    // ── Step 8: score + recommend an action per keyword ────────────
-    $progress('Scoring opportunities + recommending actions...', 92);
+    // ── Step 4: Score + recommend an action per keyword ────────────
+    $progress('Scoring opportunities + recommending actions...', 90);
     $rows = [];
     $count_action = ['quick_win' => 0, 'new_content' => 0, 'aeo_gap' => 0, 'watch' => 0, 'skip' => 0];
     $count_intent = ['informational' => 0, 'commercial' => 0, 'transactional' => 0, 'navigational' => 0, 'unknown' => 0];
 
-    foreach ($candidates as $kw => $meta) {
+    foreach ($generated as $g) {
+        $kw      = $g['keyword'];
         $metrics = $dfso_metrics[$kw] ?? [];
         $gsc     = $gsc_data[$kw]     ?? [];
-        $intent_row = $intent_map[$kw] ?? ['intent' => 'unknown', 'question' => null];
 
-        $score  = ki_opportunity_score($metrics, $intent_row['intent'], $gsc, $profile, $kw);
-        $action = ki_recommend_action($metrics, $intent_row['intent'], $gsc, $score, $profile);
+        $score  = ki_opportunity_score($metrics, $g['intent'], $gsc, $profile, $kw);
+        $action = ki_recommend_action($metrics, $g['intent'], $gsc, $score, $profile);
 
         $count_action[$action] = ($count_action[$action] ?? 0) + 1;
-        $count_intent[$intent_row['intent']] = ($count_intent[$intent_row['intent']] ?? 0) + 1;
+        $count_intent[$g['intent']] = ($count_intent[$g['intent']] ?? 0) + 1;
 
         $rows[] = [
             'keyword'           => mb_substr($kw, 0, 255),
-            'source'            => $meta['source'],
-            'keyword_type'      => $meta['type'],
-            'cluster'           => null, // filled by a separate clustering pass downstream
-            'intent'            => $intent_row['intent'],
-            'buyer_question'    => $intent_row['question'],
+            // 'autocomplete' is the closest existing enum value to "AI-generated"
+            // without a schema change. The UI already shows it as "AI" — fine.
+            'source'            => 'autocomplete',
+            'keyword_type'      => $g['keyword_type'] ?? ki_shape($kw),
+            'cluster'           => null,
+            'intent'            => $g['intent'],
+            'buyer_question'    => $g['buyer_question'],
             'search_volume'     => $metrics['search_volume']      ?? null,
             'difficulty'        => $metrics['keyword_difficulty'] ?? null,
             'cpc'               => $metrics['cpc']                ?? null,
             'opportunity_score' => $score,
             'recommended_action'=> $action,
-            'priority'          => $score, // priority kept in sync with opportunity for legacy callers
+            'priority'          => $score,
         ];
     }
 
     return [
-        'seeds'             => $seeds,
-        'total_raw'         => $total_raw,
+        'total_raw'         => count($generated),
         'total_kept'        => count($rows),
         'counts_by_action'  => $count_action,
         'counts_by_intent'  => $count_intent,
         'rows'              => $rows,
     ];
+}
+
+/**
+ * Ask Claude to generate the entire keyword list directly from the business
+ * profile. Single call returns 80-120 keyword objects, each already shaped
+ * with intent + buyer_question + keyword_type. No expansion, no filtering —
+ * because nothing irrelevant ever enters the pipeline.
+ *
+ * @return array<int, array{keyword:string, intent:string, buyer_question:?string, keyword_type:string}>
+ */
+function ki_generate_keywords_ai(array $profile): array
+{
+    $name = trim((string)($profile['name'] ?? 'this business'));
+
+    $sys = "You are a search marketer for {$name}. Generate 80-120 keywords that real prospective customers would type into Google when actively looking to hire/buy from this business.\n\n"
+         . "For EVERY keyword, output 4 fields:\n"
+         . "  - keyword: the exact phrase a buyer types (lowercase, 2-7 words)\n"
+         . "  - intent: 'informational' (learning) | 'commercial' (comparing options) | 'transactional' (ready to buy/hire) | 'navigational' (specific brand)\n"
+         . "  - buyer_question: ONE short sentence in the buyer's voice — what they're actually asking (max 18 words)\n"
+         . "  - keyword_type: 'head' (1-2 words) | 'long_tail' (5+ words) | 'question' (starts with what/why/how/etc.) | 'comparison' (vs/alternative) | 'geo' (mentions a location) | 'related' (other)\n\n"
+         . "Spread the list across these patterns:\n"
+         . "  - Service-line keywords (e.g. 'AI consulting for healthcare', 'computer vision development services')\n"
+         . "  - Problem-aware searches (e.g. 'how to automate document processing', 'reduce manual data entry costs')\n"
+         . "  - Comparison + alternatives (e.g. 'best AI consulting firms for SMBs', 'alternatives to building an in-house ML team')\n"
+         . "  - Geo-modified (e.g. 'AI consulting Pune', 'software development partner India') — only if business serves that geo\n"
+         . "  - Long-tail buyer questions (e.g. 'which AI consultancy is best for document automation')\n"
+         . "  - Hiring/buying intent (e.g. 'hire AI consultants', 'AI development team for startups')\n\n"
+         . "STRICT RULES — break any of these and the output is useless:\n"
+         . "  - Every keyword MUST be one a real BUYER OF THIS BUSINESS would type when looking to hire/buy from them. Not a researcher, not a job seeker, not a curious bystander.\n"
+         . "  - Calibrate to the business's actual scale: a 15-person consultancy shouldn't have 'fortune 500' or 'enterprise platform' keywords. A global SaaS shouldn't have hyperlocal long-tail.\n"
+         . "  - NO tool/product brand names that aren't this business (e.g. don't list 'synthesia ai', 'kaggle datasets', 'weights ai', 'spicy ai', 'undressing ai')\n"
+         . "  - NO job-seeker queries (no 'X jobs', 'X salary', 'X internship', 'how to become X', 'X resume')\n"
+         . "  - NO NSFW or adjacent-industry junk\n"
+         . "  - NO vague single-word terms like 'software', 'consulting', 'ai'\n"
+         . "  - NO competitor brand names\n\n"
+         . "Output ONLY valid JSON: {\"keywords\":[{...}, {...}, ...]}. No commentary, no code fences, no leading text.\n\n"
+         . profile_prompt_block($profile);
+
+    $prompt = "Generate the keyword list now. Aim for 100 keywords, all genuinely buyer-shaped for this business.";
+
+    $resp = haiku_chat($sys, $prompt, 8000);
+    if (empty($resp['success'])) {
+        error_log('[ki_generate_keywords_ai] Claude error: ' . ($resp['error'] ?? 'unknown'));
+        return [];
+    }
+
+    $clean = preg_replace('/^```(?:json)?\s*|\s*```$/m', '', trim($resp['content']));
+    $data  = json_decode($clean, true);
+    if (!is_array($data) || empty($data['keywords']) || !is_array($data['keywords'])) {
+        error_log('[ki_generate_keywords_ai] malformed JSON: ' . substr($clean, 0, 500));
+        return [];
+    }
+
+    $seen = [];
+    $out  = [];
+    foreach ($data['keywords'] as $k) {
+        if (!is_array($k)) continue;
+        $kw = ki_normalize((string)($k['keyword'] ?? ''));
+        if ($kw === '' || mb_strlen($kw) > 255) continue;
+        if (isset($seen[$kw])) continue;
+        $seen[$kw] = true;
+
+        $intent = strtolower(trim((string)($k['intent'] ?? 'unknown')));
+        if (!in_array($intent, ['informational','commercial','transactional','navigational'], true)) {
+            $intent = 'unknown';
+        }
+
+        $type = strtolower(trim((string)($k['keyword_type'] ?? '')));
+        if (!in_array($type, ['head','long_tail','question','comparison','geo','related'], true)) {
+            $type = ki_shape($kw);
+        }
+
+        $q = trim((string)($k['buyer_question'] ?? ''));
+
+        $out[] = [
+            'keyword'        => $kw,
+            'intent'         => $intent,
+            'buyer_question' => $q !== '' ? mb_substr($q, 0, 500) : null,
+            'keyword_type'   => $type,
+        ];
+    }
+
+    return $out;
 }
 
 // ─────────────────────────────────────────────────────────────────
