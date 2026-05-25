@@ -267,11 +267,12 @@ endif; ?>
 <?php if ($filter_site):
     $_dfso_ok = !empty(config('dataforseo_login')) && !empty(config('dataforseo_password'));
 ?>
-<!-- Consolidated keyword toolbar: add input + Find New Keywords CTA + GSC status footer + more-options menu -->
+<!-- Two-action toolbar: Add keywords + Find Keywords. Everything else (GSC
+     sync, off-topic cleanup, metric refresh) is folded into Find Keywords so
+     the user has exactly two decisions, not five. -->
 <div class="card" style="margin-bottom:8px; padding:10px 12px;">
-    <!-- Row 1: primary actions — add manual keyword + Find New Keywords -->
     <div style="display:flex; gap:8px; align-items:stretch; flex-wrap:wrap;">
-        <div style="flex:1; min-width:280px; position:relative; display:flex; gap:6px;">
+        <div style="flex:1; min-width:280px; display:flex; gap:6px;">
             <input type="text" id="add-keyword-input"
                 placeholder="+  Add a keyword you want to target (Enter to save)"
                 style="flex:1;padding:8px 12px;font-size:13px;border:1px solid var(--border);border-radius:6px;outline:none;transition:border-color .15s;"
@@ -281,58 +282,18 @@ endif; ?>
         </div>
         <?php if ($_dfso_ok): ?>
             <button onclick="runDeepResearch(<?= (int)$filter_site ?>)" id="kr-run-btn"
-                title="Expands your topics into 300-500 candidates, fetches real search data, infers buyer intent, scores everything against your business profile. Runs in background, ~3-8 min."
+                title="One click does everything: pulls fresh Google Search Console data, expands your topics into 300-500 candidates, fetches real search volume + difficulty, classifies buyer intent, auto-ignores off-topic searches, and buckets everything into Quick Wins / New Content / AEO Gaps. Runs in background, ~5-8 min."
                 style="background:#7c3aed;border:1px solid #7c3aed;color:#fff;padding:8px 14px;font-size:13px;font-weight:600;border-radius:6px;cursor:pointer;white-space:nowrap;">
-                🧠 Find New Keywords
+                🧠 Find Keywords
             </button>
         <?php else: ?>
             <a href="<?= url('/dashboard/integrations.php') ?>" style="display:inline-flex;align-items:center;padding:8px 14px;font-size:13px;background:#f1f5f9;color:#475569;border:1px solid var(--border);border-radius:6px;text-decoration:none;white-space:nowrap;">
                 Connect search data →
             </a>
         <?php endif; ?>
-        <div style="position:relative;">
-            <button onclick="toggleKwMenu(event)" id="kw-more-btn"
-                style="background:#fff;border:1px solid var(--border);color:#475569;padding:8px 12px;font-size:14px;border-radius:6px;cursor:pointer;"
-                title="More options">⋯</button>
-            <div id="kw-more-menu" style="display:none;position:absolute;right:0;top:calc(100% + 4px);background:#fff;border:1px solid var(--border);border-radius:6px;box-shadow:0 8px 20px rgba(15,23,42,.08);min-width:260px;z-index:50;overflow:hidden;">
-                <?php if ($_dfso_ok): ?>
-                <a href="#" onclick="event.preventDefault();hideKwMenu();enrichKeywords(<?= (int)$filter_site ?>, true, this);return false;" class="kw-menu-item" style="display:block;padding:10px 14px;font-size:13px;color:#334155;text-decoration:none;cursor:pointer;">
-                    <span style="display:block;font-weight:500;">🔄 Just refresh metrics</span>
-                    <span style="display:block;font-size:11px;color:#94a3b8;margin-top:2px;">Re-pull volume + difficulty for existing keywords only</span>
-                </a>
-                <?php endif; ?>
-                <?php if ($gsc_connected): ?>
-                <a href="#" onclick="event.preventDefault();hideKwMenu();syncGsc(<?= (int)$filter_site ?>);return false;" class="kw-menu-item" style="display:block;padding:10px 14px;font-size:13px;color:#334155;text-decoration:none;cursor:pointer;border-top:1px solid #f1f5f9;">
-                    <span style="display:block;font-weight:500;">🔁 Re-sync Google Search Console</span>
-                    <span style="display:block;font-size:11px;color:#94a3b8;margin-top:2px;">Pull fresh impressions, clicks, and position</span>
-                </a>
-                <?php else: ?>
-                <a href="<?= url('/dashboard/keywords.php?site=' . (int)$filter_site . '&view=gsc') ?>" class="kw-menu-item" style="display:block;padding:10px 14px;font-size:13px;color:#334155;text-decoration:none;cursor:pointer;border-top:1px solid #f1f5f9;">
-                    <span style="display:block;font-weight:500;">🔗 Connect Google Search Console</span>
-                    <span style="display:block;font-size:11px;color:#94a3b8;margin-top:2px;">Get real ranking data instead of estimates</span>
-                </a>
-                <?php endif; ?>
-                <?php if ($gsc_active_count > 0): ?>
-                <a href="#" onclick="event.preventDefault();hideKwMenu();cleanOfftopicGsc(<?= (int)$filter_site ?>, <?= $gsc_active_count ?>);return false;" class="kw-menu-item" style="display:block;padding:10px 14px;font-size:13px;color:#334155;text-decoration:none;cursor:pointer;border-top:1px solid #f1f5f9;">
-                    <span style="display:block;font-weight:500;">🧹 Clean off-topic Google keywords (<?= number_format($gsc_active_count) ?>)</span>
-                    <span style="display:block;font-size:11px;color:#94a3b8;margin-top:2px;">Auto-ignore searches that aren't relevant to your business</span>
-                </a>
-                <?php endif; ?>
-                <?php if ($ai_keyword_count > 0): ?>
-                <a href="#" onclick="event.preventDefault();hideKwMenu();deleteAll(<?= (int)$filter_site ?>, <?= $ai_keyword_count ?>);return false;" class="kw-menu-item kw-menu-danger" style="display:block;padding:10px 14px;font-size:13px;color:#dc2626;text-decoration:none;cursor:pointer;border-top:1px solid #f1f5f9;">
-                    <span style="display:block;font-weight:500;">🗑 Clear AI-found keywords (<?= number_format($ai_keyword_count) ?>)</span>
-                    <span style="display:block;font-size:11px;color:#94a3b8;margin-top:2px;">Manual + Google-synced rows are preserved</span>
-                </a>
-                <?php endif; ?>
-            </div>
-            <style>
-                .kw-menu-item:hover { background:#f8fafc; }
-                .kw-menu-item.kw-menu-danger:hover { background:#fef2f2; }
-            </style>
-        </div>
     </div>
 
-    <!-- Row 2: GSC sync status — compact footer line (id let's syncGsc() update it in place) -->
+    <!-- Compact GSC status footer (gets repurposed as a loader by syncGsc/runDeepResearch JS) -->
     <div id="gsc-status" style="margin-top:6px;font-size:11px;color:<?= $gsc_connected ? '#065f46' : '#92400e' ?>;display:flex;align-items:center;gap:6px;">
         <span style="display:inline-block;width:6px;height:6px;border-radius:50%;background:<?= $gsc_connected ? '#10b981' : '#f59e0b' ?>;"></span>
         <?php if ($gsc_connected): ?>
@@ -347,19 +308,6 @@ endif; ?>
     <div id="kr-status"  style="font-size:12px;"></div>
     <div id="enrich-msg" style="font-size:11px;"></div>
 </div>
-<script>
-function toggleKwMenu(e) {
-    e.stopPropagation();
-    const m = document.getElementById('kw-more-menu');
-    m.style.display = m.style.display === 'none' ? 'block' : 'none';
-}
-function hideKwMenu() { document.getElementById('kw-more-menu').style.display = 'none'; }
-document.addEventListener('click', (e) => {
-    const m = document.getElementById('kw-more-menu');
-    const b = document.getElementById('kw-more-btn');
-    if (m && b && !m.contains(e.target) && e.target !== b) m.style.display = 'none';
-});
-</script>
 <script>
 // ── Deep Research (background job) ─────────────────────────────────────
 async function runDeepResearch(siteId) {
@@ -408,13 +356,20 @@ function pollResearchStatus(jobId) {
             if (data.status === 'done') {
                 const s = data.summary || {};
                 const a = s.counts_by_action || {};
+                const gsc = s.gsc || {};
                 btn.disabled = false;
-                btn.textContent = '🧠 Find New Keywords';
-                const msg = '✓ Done. Saved ' + (s.saved || 0) + ' keywords from ' + (s.total_raw || 0) + ' candidates · '
-                    + (a.quick_win   || 0) + ' Quick Wins · '
-                    + (a.new_content || 0) + ' New Content · '
-                    + (a.aeo_gap     || 0) + ' AEO Gaps';
-                status.innerHTML = '<span style="color:#065f46;">' + msg + '</span>';
+                btn.textContent = '🧠 Find Keywords';
+                let parts = ['Saved ' + (s.saved || 0) + ' keywords'];
+                if (gsc.inserted || gsc.updated) {
+                    parts.push('GSC synced ' + ((gsc.inserted||0) + (gsc.updated||0)));
+                }
+                if (s.gsc_auto_ignored) {
+                    parts.push('auto-ignored ' + s.gsc_auto_ignored + ' off-topic');
+                }
+                parts.push((a.quick_win || 0) + ' Quick Wins');
+                parts.push((a.new_content || 0) + ' New Content');
+                if (a.aeo_gap) parts.push(a.aeo_gap + ' AEO Gaps');
+                status.innerHTML = '<span style="color:#065f46;">✓ Done. ' + parts.join(' · ') + '.</span>';
                 setTimeout(() => location.reload(), 1500);
                 return;
             }

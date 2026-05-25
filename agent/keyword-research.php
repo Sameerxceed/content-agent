@@ -22,6 +22,7 @@
 
 require_once __DIR__ . '/../includes/helpers.php';
 require_once __DIR__ . '/../includes/keyword_intelligence.php';
+require_once __DIR__ . '/../includes/integrations/google.php';
 
 $db = require __DIR__ . '/../includes/db.php';
 
@@ -62,6 +63,28 @@ try {
     $site = $stmt->fetch();
     if (!$site) $mark_failed('Site not found.');
 
+    // ── Step 0: Sync Google Search Console first (if connected) ────
+    // Folded into Find Keywords so the user gets one button that does
+    // everything — sync → expand → score → bucket. Previously these were
+    // three separate menu items that confused users into wondering which
+    // to click. GSC sync also runs an auto-relevance pass on newly-imported
+    // keywords inside google_update_rankings(), so blog/news drift gets
+    // filtered automatically.
+    $gsc_summary = ['skipped' => 'not connected'];
+    $stmt = $db->prepare('SELECT id FROM integrations WHERE site_id = ? AND platform = "google_search_console" AND is_active = 1');
+    $stmt->execute([$site_id]);
+    if ($stmt->fetchColumn()) {
+        $progress('Pulling fresh data from Google Search Console...', 2);
+        try {
+            $gsc_summary = google_update_rankings($db, $site_id);
+        } catch (Throwable $e) {
+            // Don't fail the whole job if GSC sync fails — log and continue with expansion.
+            error_log('[keyword-research CLI] GSC sync failed: ' . $e->getMessage());
+            $gsc_summary = ['skipped' => 'sync error: ' . $e->getMessage()];
+        }
+    }
+
+    // ── Step 1+: AI expansion, enrichment, intent classification, scoring ──
     $result = ki_run($db, $site_id, $progress);
 
     // ── Persist rows ────────────────────────────────────────
@@ -108,6 +131,20 @@ try {
         $saved++;
     }
 
+    // ── Step Final: clean off-topic GSC pollution (one sweep on existing rows) ──
+    $progress('Cleaning off-topic Google keywords...', 98);
+    $cleaned = 0;
+    try {
+        $gsc_stmt = $db->prepare("SELECT keyword FROM keywords WHERE site_id = ? AND status = 'active' AND source = 'gsc'");
+        $gsc_stmt->execute([$site_id]);
+        $gsc_keywords = array_values(array_filter($gsc_stmt->fetchAll(PDO::FETCH_COLUMN)));
+        if (!empty($gsc_keywords)) {
+            $cleaned = keywords_auto_ignore_offtopic($db, $site_id, $gsc_keywords);
+        }
+    } catch (Throwable $e) {
+        error_log('[keyword-research CLI] post-run GSC cleanup failed: ' . $e->getMessage());
+    }
+
     $summary = [
         'seeds'            => $result['seeds'],
         'total_raw'        => $result['total_raw'],
@@ -115,6 +152,8 @@ try {
         'saved'            => $saved,
         'counts_by_action' => $result['counts_by_action'],
         'counts_by_intent' => $result['counts_by_intent'],
+        'gsc'              => $gsc_summary,
+        'gsc_auto_ignored' => $cleaned,
     ];
     $mark_done($summary);
 
