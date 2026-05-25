@@ -91,6 +91,15 @@ if ($filter_site) {
             if ($r['recommended_action'] !== 'quick_win') $status_counts[$r['recommended_action']] = (int)$r['c'];
         }
     }
+
+    // Count of AI-found keywords that the "Clear AI estimates" button would
+    // actually delete (everything except manual + GSC-synced rows). Used for
+    // the confirmation dialog so the user knows exactly what they're nuking.
+    $stmt = $db->prepare("SELECT COUNT(*) FROM keywords WHERE site_id = ? AND source <> 'manual' AND (source <> 'gsc' OR gsc_synced_at IS NULL)");
+    $stmt->execute([(int)$filter_site]);
+    $ai_keyword_count = (int)$stmt->fetchColumn();
+} else {
+    $ai_keyword_count = 0;
 }
 
 // GSC integration when filtered to one site
@@ -242,59 +251,83 @@ $current_filters = ['site' => $filter_site, 'cluster' => $filter_cluster];
     return;
 endif; ?>
 
-<!-- GSC banner -->
-<?php if ($filter_site): ?>
-<div style="margin-bottom:10px;padding:10px 14px;background:<?= $gsc_connected ? '#f0fdf4' : '#fef3c7' ?>;border:1px solid <?= $gsc_connected ? '#86efac' : '#fcd34d' ?>;border-radius:6px;display:flex;justify-content:space-between;align-items:center;gap:10px;">
-    <div style="font-size:12px;color:<?= $gsc_connected ? '#065f46' : '#92400e' ?>;">
-        <?php if ($gsc_connected): ?>
-            <strong>Real data from Google Search Console</strong> · Last synced: <?= $gsc_last_sync ? format_date($gsc_last_sync) : 'never — click Sync now' ?>
-        <?php else: ?>
-            <strong>⚠ Showing AI estimates only.</strong> Connect Google Search Console for real impressions, clicks, position, and CTR.
-        <?php endif; ?>
-    </div>
-    <a href="<?= url('/dashboard/keywords.php?site=' . (int)$filter_site . '&view=gsc' . ($gsc_connected ? '&action=sync' : '')) ?>" class="btn btn-sm btn-accent" style="text-decoration:none;white-space:nowrap;">
-        <?= $gsc_connected ? '🔄 Sync Now' : 'Connect Google →' ?>
-    </a>
-</div>
-<?php endif; ?>
-
-<!-- Add custom keyword (only when site is selected) -->
-<?php if ($filter_site): ?>
-<div class="card" style="margin-bottom:10px;padding:12px 14px;">
-    <div style="font-weight:600;font-size:13px;margin-bottom:6px;">Add keywords you want to target</div>
-    <div style="font-size:11px;color:#64748b;margin-bottom:8px;">e.g. <strong>xceed imagination</strong>. Google Search Console will start tracking impressions/position on the next sync if anyone searches for it.</div>
-    <div style="display:flex;gap:6px;">
-        <input type="text" id="add-keyword-input" class="form-control" placeholder="Type one keyword, or several separated by commas" style="font-size:13px;flex:1;" onkeydown="if(event.key==='Enter'){event.preventDefault();addKeywords();}">
-        <button onclick="addKeywords()" class="btn btn-accent" style="font-size:12px;white-space:nowrap;">+ Add</button>
-    </div>
-    <div id="add-msg" style="font-size:11px;margin-top:6px;"></div>
-</div>
-
-<?php $_dfso_ok = !empty(config('dataforseo_login')) && !empty(config('dataforseo_password')); ?>
-<!-- Deep Research card — runs the full keyword_intelligence pipeline as a background job -->
-<div class="card" style="margin-bottom:10px; padding:14px; border-left:3px solid <?= $_dfso_ok ? '#7c3aed' : '#94a3b8' ?>;">
-    <div style="display:flex; justify-content:space-between; align-items:flex-start; gap:10px; flex-wrap:wrap;">
-        <div style="flex:1; min-width:260px;">
-            <div style="font-weight:600; font-size:14px; color:var(--primary);">🧠 Run Deep Keyword Research</div>
-            <div style="font-size:12px; color:#475569; margin-top:4px; line-height:1.5;">
-                Expands your topics into 300-500 keyword candidates, fetches real search volume + difficulty,
-                infers buyer intent, and scores each one against your business profile + Google data.
-                Bucketed into <strong>Quick Wins</strong>, <strong>New Content</strong>, <strong>AEO Gaps</strong>, <strong>Watch</strong>, <strong>Skip</strong>.
-                <span style="color:#94a3b8;">Runs in background — typically 3-8 minutes.</span>
-            </div>
+<?php if ($filter_site):
+    $_dfso_ok = !empty(config('dataforseo_login')) && !empty(config('dataforseo_password'));
+?>
+<!-- Consolidated keyword toolbar: add input + Deep Research CTA + GSC status footer + more-options menu -->
+<div class="card" style="margin-bottom:12px; padding:14px;">
+    <!-- Row 1: primary actions — add manual keyword + Run Deep Research -->
+    <div style="display:flex; gap:10px; align-items:stretch; flex-wrap:wrap;">
+        <div style="flex:1; min-width:280px; position:relative;">
+            <input type="text" id="add-keyword-input"
+                placeholder="+  Add a keyword you want to target (Enter to save)"
+                style="width:100%;padding:11px 14px;font-size:14px;border:1px solid var(--border);border-radius:6px;outline:none;transition:border-color .15s;"
+                onfocus="this.style.borderColor='var(--accent)'" onblur="this.style.borderColor='var(--border)'"
+                onkeydown="if(event.key==='Enter'){event.preventDefault();addKeywords();}">
         </div>
         <?php if ($_dfso_ok): ?>
-            <div style="display:flex; gap:6px; flex-direction:column; align-items:stretch;">
-                <button onclick="runDeepResearch(<?= (int)$filter_site ?>)" id="kr-run-btn" class="btn btn-primary" style="background:#7c3aed; border-color:#7c3aed; font-weight:600;">🧠 Run Deep Research</button>
-                <button onclick="enrichKeywords(<?= (int)$filter_site ?>, true, this)" class="btn btn-outline btn-sm" title="Refresh search volume + difficulty for existing keywords" style="font-size:11px;">Just refresh metrics</button>
-            </div>
+            <button onclick="runDeepResearch(<?= (int)$filter_site ?>)" id="kr-run-btn"
+                title="Expands your topics into 300-500 candidates, fetches real search data, infers buyer intent, scores everything against your business profile. Runs in background, ~3-8 min."
+                style="background:#7c3aed;border:1px solid #7c3aed;color:#fff;padding:11px 18px;font-size:14px;font-weight:600;border-radius:6px;cursor:pointer;white-space:nowrap;">
+                🧠 Find New Keywords
+            </button>
         <?php else: ?>
-            <a href="<?= url('/dashboard/integrations.php') ?>" class="btn btn-outline btn-sm" style="font-size:11px;">Connect search data →</a>
+            <a href="<?= url('/dashboard/integrations.php') ?>" style="display:inline-flex;align-items:center;padding:11px 18px;font-size:13px;background:#f1f5f9;color:#475569;border:1px solid var(--border);border-radius:6px;text-decoration:none;white-space:nowrap;">
+                Connect search data →
+            </a>
+        <?php endif; ?>
+        <div style="position:relative;">
+            <button onclick="toggleKwMenu(event)" id="kw-more-btn"
+                style="background:#fff;border:1px solid var(--border);color:#475569;padding:11px 14px;font-size:14px;border-radius:6px;cursor:pointer;"
+                title="More options">⋯</button>
+            <div id="kw-more-menu" style="display:none;position:absolute;right:0;top:calc(100% + 4px);background:#fff;border:1px solid var(--border);border-radius:6px;box-shadow:0 8px 20px rgba(15,23,42,.08);min-width:240px;z-index:50;overflow:hidden;">
+                <?php if ($_dfso_ok): ?>
+                <button onclick="enrichKeywords(<?= (int)$filter_site ?>, true, this);hideKwMenu();" style="display:block;width:100%;text-align:left;padding:10px 14px;background:transparent;border:none;font-size:13px;color:#334155;cursor:pointer;" onmouseover="this.style.background='#f8fafc'" onmouseout="this.style.background='transparent'">
+                    🔄 Just refresh metrics
+                    <div style="font-size:11px;color:#94a3b8;margin-top:2px;">Re-pull volume + difficulty for existing keywords only</div>
+                </button>
+                <?php endif; ?>
+                <a href="<?= url('/dashboard/keywords.php?site=' . (int)$filter_site . '&view=gsc' . ($gsc_connected ? '&action=sync' : '')) ?>" style="display:block;padding:10px 14px;font-size:13px;color:#334155;text-decoration:none;border-top:1px solid #f1f5f9;" onmouseover="this.style.background='#f8fafc'" onmouseout="this.style.background='transparent'">
+                    <?= $gsc_connected ? '🔁 Re-sync Google Search Console' : '🔗 Connect Google Search Console' ?>
+                </a>
+                <?php if ($ai_keyword_count > 0): ?>
+                <button onclick="deleteAll(<?= (int)$filter_site ?>, <?= $ai_keyword_count ?>);hideKwMenu();" style="display:block;width:100%;text-align:left;padding:10px 14px;background:transparent;border:none;border-top:1px solid #f1f5f9;font-size:13px;color:#dc2626;cursor:pointer;" onmouseover="this.style.background='#fef2f2'" onmouseout="this.style.background='transparent'">
+                    🗑 Clear AI-found keywords (<?= number_format($ai_keyword_count) ?>)
+                    <div style="font-size:11px;color:#94a3b8;margin-top:2px;">Manual + Google-synced rows are preserved</div>
+                </button>
+                <?php endif; ?>
+            </div>
+        </div>
+    </div>
+
+    <!-- Row 2: GSC sync status — compact footer line -->
+    <div style="margin-top:10px;font-size:11px;color:<?= $gsc_connected ? '#065f46' : '#92400e' ?>;display:flex;align-items:center;gap:6px;">
+        <span style="display:inline-block;width:6px;height:6px;border-radius:50%;background:<?= $gsc_connected ? '#10b981' : '#f59e0b' ?>;"></span>
+        <?php if ($gsc_connected): ?>
+            Real data from Google · Last synced <?= $gsc_last_sync ? format_date($gsc_last_sync) : 'never' ?>
+        <?php else: ?>
+            Showing estimates only · <a href="<?= url('/dashboard/keywords.php?site=' . (int)$filter_site . '&view=gsc') ?>" style="color:#92400e;font-weight:600;">Connect Google for real impressions, clicks, CTR</a>
         <?php endif; ?>
     </div>
-    <div id="kr-status" style="font-size:12px; margin-top:8px;"></div>
-    <div id="enrich-msg" style="font-size:11px; margin-top:6px;"></div>
+
+    <!-- Inline status messages from the actions above -->
+    <div id="add-msg"     style="font-size:11px;margin-top:6px;"></div>
+    <div id="kr-status"   style="font-size:12px;margin-top:6px;"></div>
+    <div id="enrich-msg"  style="font-size:11px;margin-top:6px;"></div>
 </div>
+<script>
+function toggleKwMenu(e) {
+    e.stopPropagation();
+    const m = document.getElementById('kw-more-menu');
+    m.style.display = m.style.display === 'none' ? 'block' : 'none';
+}
+function hideKwMenu() { document.getElementById('kw-more-menu').style.display = 'none'; }
+document.addEventListener('click', (e) => {
+    const m = document.getElementById('kw-more-menu');
+    const b = document.getElementById('kw-more-btn');
+    if (m && b && !m.contains(e.target) && e.target !== b) m.style.display = 'none';
+});
+</script>
 <script>
 // ── Deep Research (background job) ─────────────────────────────────────
 async function runDeepResearch(siteId) {
@@ -312,14 +345,14 @@ async function runDeepResearch(siteId) {
         if (!data.success || !data.job_id) {
             status.innerHTML = '<span style="color:#dc2626;">✗ ' + (data.error || 'Failed to start') + '</span>';
             btn.disabled = false;
-            btn.textContent = '🧠 Run Deep Research';
+            btn.textContent = '🧠 Find New Keywords';
             return;
         }
         pollResearchStatus(data.job_id);
     } catch (e) {
         status.innerHTML = '<span style="color:#dc2626;">✗ ' + e.message + '</span>';
         btn.disabled = false;
-        btn.textContent = '🧠 Run Deep Research';
+        btn.textContent = '🧠 Find New Keywords';
     }
 }
 
@@ -344,7 +377,7 @@ function pollResearchStatus(jobId) {
                 const s = data.summary || {};
                 const a = s.counts_by_action || {};
                 btn.disabled = false;
-                btn.textContent = '🧠 Run Deep Research';
+                btn.textContent = '🧠 Find New Keywords';
                 const msg = '✓ Done. Saved ' + (s.saved || 0) + ' keywords from ' + (s.total_raw || 0) + ' candidates · '
                     + (a.quick_win   || 0) + ' Quick Wins · '
                     + (a.new_content || 0) + ' New Content · '
@@ -355,7 +388,7 @@ function pollResearchStatus(jobId) {
             }
             if (data.status === 'failed') {
                 btn.disabled = false;
-                btn.textContent = '🧠 Run Deep Research';
+                btn.textContent = '🧠 Find New Keywords';
                 status.innerHTML = '<span style="color:#dc2626;">✗ ' + (data.error || 'Job failed') + '</span>';
                 return;
             }
@@ -491,9 +524,6 @@ async function enrichKeywords(siteId, onlyMissing, btn) {
                 <button onclick="bulkRestore()" id="kw-restore-btn" class="btn btn-sm" style="background:#10b981;color:#fff;border:none;font-size:11px;" disabled>Restore Selected</button>
                 <?php endif; ?>
                 <button onclick="bulkDelete()" id="kw-delete-btn" class="btn btn-sm" style="background:#dc2626;color:#fff;border:none;font-size:11px;" disabled>Delete Selected</button>
-                <?php if ($filter_site): ?>
-                <button onclick="deleteAll(<?= (int)$filter_site ?>)" class="btn btn-sm" style="background:transparent;border:1px solid #dc2626;color:#dc2626;font-size:11px;">Clear All AI Estimates</button>
-                <?php endif; ?>
             </div>
         </div>
         <table>
@@ -701,8 +731,15 @@ function bulkDelete() {
     if (!confirm('Delete ' + ids.length + ' keyword' + (ids.length>1?'s':'') + ' permanently?')) return;
     call({action:'delete', ids});
 }
-function deleteAll(siteId) {
-    if (!confirm('Delete all AI-estimate keywords for this site?\n\nManual entries (purple) and Google-synced data (green) will be preserved.')) return;
+function deleteAll(siteId, count) {
+    const n = count ?? 0;
+    const msg = 'Delete ' + n + ' AI-found keyword' + (n === 1 ? '' : 's') + '?'
+              + '\n\nThis will permanently remove every keyword our research agent discovered for this site.'
+              + '\n\nKept safe:'
+              + '\n  • Keywords you typed in manually'
+              + '\n  • Keywords with real Google Search Console data'
+              + '\n\nYou can re-run "Find New Keywords" to repopulate.';
+    if (!confirm(msg)) return;
     call({action:'delete_all', site_id: siteId});
 }
 
