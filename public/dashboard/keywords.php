@@ -15,10 +15,10 @@ $user_id = auth_user_id();
 
 $filter_site    = $_GET['site']    ?? '';
 $filter_cluster = $_GET['cluster'] ?? '';
-// Default lands on Quick Wins (the most actionable bucket). Falls back to
-// 'all' below if the site has nothing in Quick Wins yet, so a first-time
-// visitor doesn't see an empty page.
-$filter_status  = $_GET['status']  ?? 'quick_wins';
+// Default lands on All — the full keyword list, so the user always sees
+// what's actually there. Bucket tabs (Quick Wins, New Content, etc.) are
+// one click away when they want to drill in.
+$filter_status  = $_GET['status']  ?? 'all';
 $filter_intent  = $_GET['intent']  ?? '';       // informational | commercial | transactional | navigational | ''
 $filter_sort    = $_GET['sort']    ?? 'score';  // score | az | za | volume | position | difficulty | impressions
 
@@ -379,15 +379,18 @@ $show_filter_form = !$filter_site || !empty($clusters);
 <?php if ($filter_site): ?>
 <div id="kw-tabs" style="display:flex;gap:2px;margin-bottom:6px;border-bottom:1px solid var(--border);flex-wrap:wrap;align-items:center;">
     <?php
-    // Action buckets — what the user should DO. Listed in actionability order.
+    // All is the default landing — full list first. Action buckets follow
+    // in actionability order for users who want to drill into a specific
+    // category. Ignored stays at the end (admin-style, not part of the
+    // main workflow).
     $tabs = [
+        'all'         => ['All',           '#0f172a', $status_counts['all'],        'Every active keyword for this site. Ignored rows are in the Ignored tab.'],
         'quick_wins'  => ['💎 Quick Wins', '#10b981', $status_counts['quick_wins'], 'Already ranking page 2-3 — push to page 1.'],
         'new_content' => ['🆕 New Content','#7c3aed', $status_counts['new_content'], 'Not ranking, realistic difficulty, real buyer intent — write something.'],
         'aeo_gap'     => ['🎯 AEO Gaps',   '#0284c7', $status_counts['aeo_gap'],    'Informational queries you\'re invisible on. Candidates for AI-friendly content.'],
         'watch'       => ['👀 Watch',      '#64748b', $status_counts['watch'],      'Interesting but not actionable yet.'],
         'skip'        => ['⏭ Skip',        '#94a3b8', $status_counts['skip'],       'Wrong intent or too hard for your scale.'],
         'ignored'     => ['Ignored',       '#f59e0b', $status_counts['ignored'],    'Keywords you\'ve marked off-brand or irrelevant.'],
-        'all'         => ['All',           '#0f172a', $status_counts['all'],        'Every active keyword for this site. Ignored rows are in the Ignored tab.'],
     ];
     foreach ($tabs as $key => [$label, $color, $count, $hint]):
         $is_active = $filter_status === $key;
@@ -908,15 +911,21 @@ function escapeHtml(s) {
 // update tab highlighting, and update the URL via pushState so the
 // browser back button works. No scroll-jump, no full reload.
 (function () {
-    const tabs    = document.querySelectorAll('.kw-tab');
-    const wrapper = document.getElementById('kw-table-wrapper');
-    if (!tabs.length || !wrapper) return;
+    const tabs = document.querySelectorAll('.kw-tab');
+    if (!tabs.length) return;
 
     tabs.forEach(tab => {
         tab.addEventListener('click', async (e) => {
             e.preventDefault();
             const target = tab.getAttribute('href');
             if (!target) return;
+
+            // Re-query the wrapper INSIDE the handler — after the first swap
+            // the captured node is detached, so a closure-captured const
+            // would silently no-op on subsequent clicks. This was the bug
+            // where tabs stopped working after one click.
+            const wrapper = document.getElementById('kw-table-wrapper');
+            if (!wrapper) { window.location = target; return; }
 
             // Style update — set this tab active, clear others
             tabs.forEach(t => {
@@ -932,24 +941,18 @@ function escapeHtml(s) {
                 }
             });
 
-            // Show a quiet loading state
             wrapper.style.opacity = '0.5';
             try {
                 const sep = target.includes('?') ? '&' : '?';
                 const res = await fetch(target + sep + 'partial=table', { credentials: 'same-origin' });
                 const html = await res.text();
-                // Replace the wrapper element entirely so the new id stays unique
                 const tmp = document.createElement('div');
                 tmp.innerHTML = html.trim();
                 const fresh = tmp.querySelector('#kw-table-wrapper');
                 if (fresh) {
                     wrapper.replaceWith(fresh);
-                    // Update browser URL without reloading
-                    if (window.history && history.pushState) {
-                        history.pushState({}, '', target);
-                    }
+                    if (window.history && history.pushState) history.pushState({}, '', target);
                 } else {
-                    // Fallback to a hard reload if the partial came back malformed
                     window.location = target;
                 }
             } catch (err) {

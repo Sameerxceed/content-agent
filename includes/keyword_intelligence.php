@@ -27,14 +27,15 @@ require_once __DIR__ . '/business_profile.php';
 require_once __DIR__ . '/dataforseo.php';
 require_once __DIR__ . '/haiku.php';
 
-/** Hard caps so a single run never explodes the budget. */
+/** Hard caps. Deliberately strict — 100 useful keywords beats 500 noisy ones. */
 const KI_MAX_SEEDS              = 8;     // distinct seed phrases we expand
-const KI_MAX_AUTOCOMPLETE_PER   = 30;    // suggestions per seed via Google
-const KI_MAX_IDEAS_PER_SEED     = 150;   // DataForSEO keyword_ideas per seed
-const KI_MAX_SUGGESTIONS_PER    = 100;   // DataForSEO keyword_suggestions per seed
-const KI_KEEP_TOP_N             = 400;   // after dedup, only enrich + classify the top N by raw volume signal
+const KI_MAX_AUTOCOMPLETE_PER   = 20;    // suggestions per seed via Google (autocomplete stays narrower than DFSO)
+const KI_MAX_IDEAS_PER_SEED     = 30;    // DataForSEO keyword_ideas per seed — was 150, too wide
+const KI_MAX_SUGGESTIONS_PER    = 20;    // DataForSEO keyword_suggestions per seed — was 100, too wide
+const KI_KEEP_TOP_N             = 200;   // after dedup, cap candidates before the expensive Claude passes
 const KI_INTENT_BATCH           = 60;    // keywords per Claude classification call
-const KI_RELEVANCE_BATCH        = 120;   // keywords per Claude relevance-filter call
+const KI_RELEVANCE_BATCH        = 100;   // keywords per Claude relevance-filter call
+const KI_RELEVANCE_DROP_CAP_PCT = 95;    // max % per batch the relevance filter can drop — leave a small safety net
 
 /**
  * Top-level orchestrator.
@@ -372,21 +373,24 @@ function ki_relevance_drop_set(array $keywords, array $profile): array
 
     foreach (array_chunk($keywords, KI_RELEVANCE_BATCH) as $batch) {
         $list = implode("\n", array_map(fn($k) => "- {$k}", $batch));
-        $sys  = "You filter expanded keyword research candidates for relevance to a specific business. "
+        $sys  = "You are a strict relevance filter for keyword research. Drop EVERY keyword that wouldn't be typed by a real prospective customer of THIS business when looking to hire/buy from them.\n\n"
               . "Output ONLY valid JSON: {\"drop\":[\"keyword 1\",\"keyword 2\",...]}. No commentary, no code fences.\n\n"
-              . "Drop a keyword when ANY of these are true:\n"
-              . "  - It's about a DIFFERENT industry's products/services (e.g. 'computer repair' for a software firm; 'ai story generator' for an AI consulting firm)\n"
-              . "  - It targets the wrong buyer (consumer-grade terms for a B2B business, or enterprise-only terms for an SMB shop)\n"
-              . "  - It's geographically irrelevant (a US-only keyword for an India-focused business, or vice versa)\n"
-              . "  - It's a job/career search (\"X jobs\", \"X salary\", \"how to become X\") — these are job seekers, not buyers\n"
-              . "  - It's a navigational query for a different specific brand\n"
-              . "  - It is plainly off-topic — would a buyer of THIS business EVER type this when looking to hire/buy from them?\n\n"
-              . "KEEP when in doubt — a noisy list with some false positives is better than wiping good keywords. "
-              . "Never drop more than 70% of the batch.\n\n"
+              . "Be ruthless. Bias toward dropping. The user explicitly said they would rather have 100 high-quality keywords than 500 noisy ones. Most expanded keywords ARE noise — wrong industry, wrong buyer, wrong intent. Cut hard.\n\n"
+              . "DEFINITELY drop:\n"
+              . "  - DIFFERENT industry (e.g. 'computer repair', 'flights to india', 'india post tracking' for a software/AI consultancy)\n"
+              . "  - CONSUMER products/services for a B2B business (e.g. 'ai story generator' for B2B AI consulting)\n"
+              . "  - ENTERPRISE-only terms for an SMB (e.g. 'fortune 500 erp' for a 15-person agency)\n"
+              . "  - WRONG GEOGRAPHY (US-only term for India-focused business or vice versa, unless your business sells globally)\n"
+              . "  - JOB/CAREER search ('X jobs', 'X salary', 'how to become X', 'X internship', 'X resume')\n"
+              . "  - GENERIC how-to/tutorial searches that bring readers but not buyers\n"
+              . "  - NAVIGATIONAL for a different brand (unless they're a known partner)\n"
+              . "  - VAGUE single-word terms that won't convert ('software', 'consulting', 'ai')\n"
+              . "  - Anything you cannot CLEARLY justify as a real buyer intent for THIS specific business\n\n"
+              . "Only KEEP a keyword if you can finish this sentence: 'A prospective customer of " . ($profile['name'] ?? 'this business') . " would type this when actively looking for someone who does ____'.\n\n"
               . $profile_block;
         $prompt = "Candidate keywords:\n\n{$list}";
 
-        $resp = haiku_chat($sys, $prompt, 2000);
+        $resp = haiku_chat($sys, $prompt, 3000);
         if (empty($resp['success'])) {
             error_log('[ki_relevance_drop_set] Claude error: ' . ($resp['error'] ?? 'unknown'));
             continue;
@@ -399,12 +403,12 @@ function ki_relevance_drop_set(array $keywords, array $profile): array
             fn($k) => ki_normalize((string)$k),
             $data['drop']
         )));
-        // Cap drops per batch — defensive against a misfired profile
-        $cap = (int)floor(count($batch) * 0.7);
+        // Keep a tiny safety net (95%) so a totally misfired profile prompt
+        // can't nuke literally every candidate, but otherwise let it cut hard.
+        $cap = (int)floor(count($batch) * (KI_RELEVANCE_DROP_CAP_PCT / 100));
         if (count($batch_drops) > $cap) $batch_drops = array_slice($batch_drops, 0, $cap);
 
         foreach ($batch_drops as $d) {
-            // Only honour drops that were actually in the batch (Claude can hallucinate)
             if (in_array($d, $batch, true)) $drops[$d] = true;
         }
         usleep(150000);
