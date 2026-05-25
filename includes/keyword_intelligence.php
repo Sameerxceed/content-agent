@@ -412,6 +412,44 @@ function ki_relevance_drop_set(array $keywords, array $profile): array
     return $drops;
 }
 
+/**
+ * Run the relevance filter against a list of keyword STRINGS that may have
+ * just been inserted (e.g. by a GSC sync). For any keyword Claude deems
+ * off-topic against the business profile, mark the corresponding row as
+ * status='ignored' with a clear reason so the user can later inspect them
+ * in the Ignored tab and restore mistakes.
+ *
+ * Returns the count of rows auto-ignored. Safe to call with an empty list
+ * or when the profile isn't filled in (it skips quietly in those cases —
+ * we don't want to auto-ignore stuff when we have no profile context to
+ * judge against).
+ */
+function keywords_auto_ignore_offtopic(PDO $db, int $site_id, array $keyword_strings): int
+{
+    $keyword_strings = array_values(array_filter(array_map(fn($s) => ki_normalize((string)$s), $keyword_strings)));
+    if (empty($keyword_strings)) return 0;
+
+    $profile = profile_get($db, $site_id);
+    if (!$profile) return 0;
+    // Need at least industry to make a credible relevance call. Without it,
+    // skip — better noisy GSC list than aggressive false-positives.
+    if (empty($profile['industry_category']) && empty($profile['industry_sub']) && empty($profile['topics'])) {
+        return 0;
+    }
+
+    $drops = ki_relevance_drop_set($keyword_strings, $profile);
+    if (empty($drops)) return 0;
+
+    $reason = 'Off-topic for your business (auto-filtered from Google Search Console).';
+    $upd = $db->prepare("UPDATE keywords SET status = 'ignored', ignored_reason = ? WHERE site_id = ? AND keyword = ? AND status = 'active'");
+    $count = 0;
+    foreach (array_keys($drops) as $kw) {
+        $upd->execute([$reason, $site_id, $kw]);
+        if ($upd->rowCount() > 0) $count++;
+    }
+    return $count;
+}
+
 // ─────────────────────────────────────────────────────────────────
 // Intent classification (Claude, batched)
 // ─────────────────────────────────────────────────────────────────

@@ -98,8 +98,15 @@ if ($filter_site) {
     $stmt = $db->prepare("SELECT COUNT(*) FROM keywords WHERE site_id = ? AND source <> 'manual' AND (source <> 'gsc' OR gsc_synced_at IS NULL)");
     $stmt->execute([(int)$filter_site]);
     $ai_keyword_count = (int)$stmt->fetchColumn();
+
+    // Count of active GSC-sourced keywords — fed into the "Clean off-topic
+    // GSC keywords" menu item so the user knows how many will be scanned.
+    $stmt = $db->prepare("SELECT COUNT(*) FROM keywords WHERE site_id = ? AND status = 'active' AND source = 'gsc'");
+    $stmt->execute([(int)$filter_site]);
+    $gsc_active_count = (int)$stmt->fetchColumn();
 } else {
     $ai_keyword_count = 0;
+    $gsc_active_count = 0;
 }
 
 // GSC integration when filtered to one site
@@ -195,7 +202,9 @@ $current_filters = ['site' => $filter_site, 'cluster' => $filter_cluster];
             $sync_result = google_update_rankings($db, (int)$filter_site);
             if ($sync_result['success']) {
                 $total = ($sync_result['updated'] ?? 0) + ($sync_result['inserted'] ?? 0);
-                echo '<div class="alert alert-success">Synced ' . $total . ' keywords (matched property: <code>' . e($sync_result['matched_url'] ?? '') . '</code>)</div>';
+                $auto_ig = (int)($sync_result['auto_ignored'] ?? 0);
+                $extra = $auto_ig > 0 ? ' · auto-filtered ' . $auto_ig . ' off-topic queries to the Ignored tab' : '';
+                echo '<div class="alert alert-success">Synced ' . $total . ' keywords' . $extra . '</div>';
             } else {
                 echo '<div class="alert alert-error">Sync failed: ' . e($sync_result['error'] ?? 'Unknown') . '</div>';
             }
@@ -297,6 +306,12 @@ endif; ?>
                 <a href="<?= url('/dashboard/keywords.php?site=' . (int)$filter_site . '&view=gsc') ?>" class="kw-menu-item" style="display:block;padding:10px 14px;font-size:13px;color:#334155;text-decoration:none;cursor:pointer;border-top:1px solid #f1f5f9;">
                     <span style="display:block;font-weight:500;">🔗 Connect Google Search Console</span>
                     <span style="display:block;font-size:11px;color:#94a3b8;margin-top:2px;">Get real ranking data instead of estimates</span>
+                </a>
+                <?php endif; ?>
+                <?php if ($gsc_active_count > 0): ?>
+                <a href="#" onclick="event.preventDefault();hideKwMenu();cleanOfftopicGsc(<?= (int)$filter_site ?>, <?= $gsc_active_count ?>);return false;" class="kw-menu-item" style="display:block;padding:10px 14px;font-size:13px;color:#334155;text-decoration:none;cursor:pointer;border-top:1px solid #f1f5f9;">
+                    <span style="display:block;font-weight:500;">🧹 Clean off-topic Google keywords (<?= number_format($gsc_active_count) ?>)</span>
+                    <span style="display:block;font-size:11px;color:#94a3b8;margin-top:2px;">Auto-ignore searches that aren't relevant to your business</span>
                 </a>
                 <?php endif; ?>
                 <?php if ($ai_keyword_count > 0): ?>
@@ -695,6 +710,33 @@ const SITE_ID = <?= $filter_site ? (int)$filter_site : 'null' ?>;
     if (btn) btn.addEventListener('click', (e) => { e.preventDefault(); addKeywords(); });
 })();
 
+// Clean off-topic GSC keywords — runs the Claude relevance filter against
+// every currently-active GSC-imported keyword and auto-ignores anything that
+// doesn't match the business profile. Surfaces the count so the user can
+// audit + restore from the Ignored tab.
+async function cleanOfftopicGsc(siteId, count) {
+    const msg = 'Scan ' + count + ' Google-imported keyword' + (count === 1 ? '' : 's') + ' and auto-ignore the ones that aren\'t relevant to your business?'
+              + '\n\nUses your business profile to decide. Anything ignored can be restored from the Ignored tab.';
+    if (!confirm(msg)) return;
+    const dot = document.getElementById('gsc-status');
+    if (dot) dot.innerHTML = '<span style="display:inline-block;width:6px;height:6px;border-radius:50%;background:#7c3aed;"></span> Scanning ' + count + ' Google keywords for relevance…';
+    try {
+        const res = await fetch('<?= url('/api/keywords-clean-offtopic.php') ?>', {
+            method: 'POST', headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({ site_id: siteId })
+        });
+        const data = await res.json();
+        if (data.success) {
+            if (dot) dot.innerHTML = '<span style="display:inline-block;width:6px;height:6px;border-radius:50%;background:#10b981;"></span> Done — auto-ignored ' + data.ignored + ' off-topic keyword' + (data.ignored === 1 ? '' : 's') + '. Refreshing…';
+            setTimeout(() => location.reload(), 1000);
+        } else {
+            if (dot) dot.innerHTML = '<span style="display:inline-block;width:6px;height:6px;border-radius:50%;background:#dc2626;"></span> Failed: ' + (data.error || 'unknown');
+        }
+    } catch (e) {
+        if (dot) dot.innerHTML = '<span style="display:inline-block;width:6px;height:6px;border-radius:50%;background:#dc2626;"></span> Error: ' + e.message;
+    }
+}
+
 // GSC sync — replaces the full-page navigation with an inline AJAX call so
 // the user gets a loader and stays on the keywords page. The legacy URL
 // keywords.php?view=gsc&action=sync still works as a fallback.
@@ -754,9 +796,20 @@ async function addKeywords() {
         const res = await fetch(KW_API, {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({action:'add', site_id: SITE_ID, keywords})});
         const data = await res.json();
         if (data.success) {
-            msg.innerHTML = '<span style="color:#065f46;">✓ Added ' + data.added + ', already existed: ' + data.skipped + '</span>';
+            const added = data.added || 0;
+            const skipped = data.skipped || 0;
+            const noun = added === 1 ? 'keyword' : 'keywords';
+            const suffix = skipped > 0 ? ' (' + skipped + ' already existed)' : '';
+            msg.innerHTML = '<span style="color:#065f46;">✓ Added ' + added + ' ' + noun + suffix + ' — switching to All tab so you can see them.</span>';
             input.value = '';
-            setTimeout(() => location.reload(), 600);
+            // Land on All tab where the new manual keywords are guaranteed to
+            // be visible — they have no recommended_action yet, so they're
+            // invisible on bucket views like Quick Wins / New Content.
+            setTimeout(() => {
+                const url = new URL(window.location);
+                url.searchParams.set('status', 'all');
+                window.location = url.toString();
+            }, 900);
         } else {
             msg.innerHTML = '<span style="color:#dc2626;">' + (data.error || 'Failed') + '</span>';
         }

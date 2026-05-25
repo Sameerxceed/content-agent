@@ -231,6 +231,7 @@ function google_update_rankings(PDO $db, int $site_id): array
 
     $updated = 0;
     $inserted = 0;
+    $new_keywords = []; // freshly-inserted rows fed to the relevance filter below
     foreach ($data['rows'] as $row) {
         $keyword = $row['keys'][0] ?? '';
         if (empty($keyword)) continue;
@@ -268,11 +269,41 @@ function google_update_rankings(PDO $db, int $site_id): array
             $impressions,
             $priority,
         ]);
-        if ($stmt->rowCount() === 1) $inserted++;
-        else $updated++;
+        // PDO rowCount() returns 1 for a fresh INSERT and 2 for an
+        // ON-DUPLICATE-KEY UPDATE — so 1 means "this row is new this sync".
+        if ($stmt->rowCount() === 1) {
+            $inserted++;
+            $new_keywords[] = mb_substr($keyword, 0, 255);
+        } else {
+            $updated++;
+        }
     }
 
-    return ['success' => true, 'updated' => $updated, 'inserted' => $inserted, 'total_rows' => count($data['rows']), 'matched_url' => $matched_url];
+    // ── Auto-filter off-topic queries from the freshly-imported batch ──
+    // GSC pulls every search Google decided to show this site for, and
+    // long-tail blog/news drift tends to dominate ("amazon stuck centers
+    // with months", "claude vs gpt4", etc. when a tech-news blog ranks
+    // for them). Claude scans the new arrivals against the business
+    // profile and ignores anything a real customer of THIS business
+    // would never type. User can always restore from the Ignored tab.
+    $auto_ignored = 0;
+    if (!empty($new_keywords)) {
+        try {
+            require_once __DIR__ . '/../keyword_intelligence.php';
+            $auto_ignored = keywords_auto_ignore_offtopic($db, $site_id, $new_keywords);
+        } catch (Throwable $e) {
+            error_log('[google_update_rankings] auto-ignore pass failed: ' . $e->getMessage());
+        }
+    }
+
+    return [
+        'success'      => true,
+        'updated'      => $updated,
+        'inserted'     => $inserted,
+        'auto_ignored' => $auto_ignored,
+        'total_rows'   => count($data['rows']),
+        'matched_url'  => $matched_url,
+    ];
 }
 
 /**
