@@ -274,19 +274,19 @@ endif; ?>
         <div style="flex:1; min-width:260px;">
             <div style="font-weight:600; font-size:14px; color:var(--primary);">🧠 Run Deep Keyword Research</div>
             <div style="font-size:12px; color:#475569; margin-top:4px; line-height:1.5;">
-                Expands your topics into 300-500 keyword candidates, pulls real volume + difficulty + CPC from DataForSEO,
-                classifies buyer intent with Claude, and scores each one against your business profile + GSC data.
+                Expands your topics into 300-500 keyword candidates, fetches real search volume + difficulty,
+                infers buyer intent, and scores each one against your business profile + Google data.
                 Bucketed into <strong>Quick Wins</strong>, <strong>New Content</strong>, <strong>AEO Gaps</strong>, <strong>Watch</strong>, <strong>Skip</strong>.
-                <span style="color:#94a3b8;">Runs in background — ~3-8 minutes. ~$0.50-2 per run.</span>
+                <span style="color:#94a3b8;">Runs in background — typically 3-8 minutes.</span>
             </div>
         </div>
         <?php if ($_dfso_ok): ?>
             <div style="display:flex; gap:6px; flex-direction:column; align-items:stretch;">
                 <button onclick="runDeepResearch(<?= (int)$filter_site ?>)" id="kr-run-btn" class="btn btn-primary" style="background:#7c3aed; border-color:#7c3aed; font-weight:600;">🧠 Run Deep Research</button>
-                <button onclick="enrichKeywords(<?= (int)$filter_site ?>, true, this)" class="btn btn-outline btn-sm" title="Just pull volume + difficulty for existing rows that lack it" style="font-size:11px;">Just refresh metrics</button>
+                <button onclick="enrichKeywords(<?= (int)$filter_site ?>, true, this)" class="btn btn-outline btn-sm" title="Refresh search volume + difficulty for existing keywords" style="font-size:11px;">Just refresh metrics</button>
             </div>
         <?php else: ?>
-            <a href="<?= url('/dashboard/integrations.php') ?>" class="btn btn-outline btn-sm" style="font-size:11px;">Set up DataForSEO →</a>
+            <a href="<?= url('/dashboard/integrations.php') ?>" class="btn btn-outline btn-sm" style="font-size:11px;">Connect search data →</a>
         <?php endif; ?>
     </div>
     <div id="kr-status" style="font-size:12px; margin-top:8px;"></div>
@@ -371,7 +371,7 @@ async function enrichKeywords(siteId, onlyMissing, btn) {
     btn.disabled = true;
     document.querySelectorAll('button[onclick^="enrichKeywords"]').forEach(b => b.disabled = true);
     btn.textContent = 'Enriching…';
-    document.getElementById('enrich-msg').innerHTML = '<span style="color:#64748b;">Calling DataForSEO… can take 5-20 seconds depending on keyword count.</span>';
+    document.getElementById('enrich-msg').innerHTML = '<span style="color:#64748b;">Refreshing metrics… can take 5-20 seconds depending on keyword count.</span>';
     try {
         const res = await fetch('<?= url('/api/keywords-enrich.php') ?>', {
             method: 'POST', headers: {'Content-Type': 'application/json'},
@@ -486,9 +486,9 @@ if (!empty($intent_counts)):
     <div style="padding:8px 12px;background:#f8fafc;border:1px solid var(--border);border-radius:6px;margin-top:6px;line-height:1.7;">
         <div><strong>Intent:</strong> What the searcher wants. <em>Trans</em>actional (ready to buy) · <em>Comm</em>ercial (comparing) · <em>Info</em>rmational (learning) · <em>Nav</em>igational (a specific brand).</div>
         <div><strong>Score:</strong> 0-100 opportunity score blending volume × intent × difficulty × your current rank. Higher = better.</div>
-        <div><strong>Volume:</strong> Monthly searches (DataForSEO). <strong>Diff:</strong> 0-100 keyword difficulty — lower is easier.</div>
+        <div><strong>Volume:</strong> Estimated monthly searches. <strong>Diff:</strong> 0-100 keyword difficulty — lower is easier.</div>
         <div><strong>Impr / Pos:</strong> Your Google Search Console impressions and average rank for this keyword.</div>
-        <div><strong>Source:</strong> Google = real GSC · Manual = you typed it · AI = autocomplete · DFSO = DataForSEO ideas/suggestions · Comp = from a competitor.</div>
+        <div><strong>Source:</strong> Google = real GSC data · Manual = you typed it · AI = found by ContentAgent's research · Comp = from a competitor.</div>
         <div style="margin-top:6px;padding-top:6px;border-top:1px dashed #e2e8f0;">
             <strong>Buckets (set by 🧠 Deep Research):</strong>
             <div>💎 <strong>Quick Wins</strong> — already ranking page 2-3, push to page 1.</div>
@@ -536,9 +536,9 @@ if (!empty($intent_counts)):
                 <tr>
                     <th style="width:32px;"><input type="checkbox" id="kw-select-all" onchange="toggleAll(this)"></th>
                     <th>Keyword</th>
-                    <th title="Buyer intent — Claude classified">Intent</th>
+                    <th title="Buyer intent — AI-classified">Intent</th>
                     <th title="0-100 opportunity score">Score</th>
-                    <th title="Monthly searches (DataForSEO)">Volume</th>
+                    <th title="Estimated monthly searches">Volume</th>
                     <th title="0-100, lower is easier">Diff</th>
                     <th title="Times shown in Google">Impr</th>
                     <th title="Your average position">Pos</th>
@@ -630,8 +630,8 @@ if (!empty($intent_counts)):
                             'manual'                 => ['Manual', '#7c3aed', '#ede9fe'],
                             'autocomplete'           => ['AI',     '#64748b', '#f1f5f9'],
                             'paa'                    => ['PAA',    '#0284c7', '#e0f2fe'],
-                            'dataforseo_ideas'       => ['DFSO',   '#dc2626', '#fee2e2'],
-                            'dataforseo_suggestions' => ['DFSO',   '#dc2626', '#fee2e2'],
+                            'dataforseo_ideas'       => ['AI',     '#64748b', '#f1f5f9'],
+                            'dataforseo_suggestions' => ['AI',     '#64748b', '#f1f5f9'],
                             'competitor'             => ['Comp',   '#ea580c', '#ffedd5'],
                         ];
                         [$slabel, $sfg, $sbg] = $src_styles[$source] ?? $src_styles['autocomplete'];

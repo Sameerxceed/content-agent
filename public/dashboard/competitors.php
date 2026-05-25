@@ -215,7 +215,7 @@ ob_start();
             <button onclick="toggleDrawer(<?= (int)$comp['id'] ?>)">View shared keywords ▾</button>
         <?php endif; ?>
         <?php if (!$is_ignored && !empty(config('dataforseo_login'))): ?>
-            <button onclick="importCompetitorKeywords(<?= (int)$comp['id'] ?>, this)" title="Pull every keyword this competitor ranks for on Google (DataForSEO) and add them as target keywords for your site.">⬇ Import their keywords</button>
+            <button onclick="importCompetitorKeywords(<?= (int)$comp['id'] ?>, this)" title="Pull every keyword this competitor ranks for on Google and add them as target keywords for your site.">⬇ Import their keywords</button>
         <?php endif; ?>
         <?php if ($is_ignored): ?>
             <button onclick="restoreOne(<?= (int)$comp['id'] ?>)" class="restore-btn">↺ Restore</button>
@@ -398,7 +398,7 @@ function restoreOne(id) { call({action:'restore', ids:[id]}); }
 function deleteOne(id)  { if (confirm('Delete this competitor permanently? Their shared keyword data will also be removed.')) call({action:'delete', ids:[id]}); }
 
 async function importCompetitorKeywords(id, btn) {
-    if (!confirm('Pull every keyword this competitor ranks for on Google (top 100) and add them as YOUR target keywords?\n\nCost: ~$0.05 (DataForSEO charges ~$0.0001 per keyword × ~500).')) return;
+    if (!confirm('Pull every keyword this competitor ranks for on Google (top 100) and add them as YOUR target keywords?')) return;
     const orig = btn.textContent;
     btn.disabled = true; btn.textContent = 'Importing…';
     try {
@@ -408,7 +408,7 @@ async function importCompetitorKeywords(id, btn) {
         });
         const data = await res.json();
         if (data.success) {
-            alert('Done.\n\nCompetitor: ' + data.competitor + '\nKeywords returned by DataForSEO: ' + data.returned + '\nImported as new targets: ' + data.imported + '\nSkipped (already tracked): ' + data.skipped);
+            alert('Done.\n\nCompetitor: ' + data.competitor + '\nKeywords found: ' + data.returned + '\nImported as new targets: ' + data.imported + '\nSkipped (already tracked): ' + data.skipped);
             location.reload();
         } else {
             alert('Failed: ' + (data.error || 'unknown'));
