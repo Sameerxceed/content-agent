@@ -1,293 +1,125 @@
 <?php
 /**
- * Keyword Research Agent
- * Scrapes Google Autocomplete + People Also Ask for keyword ideas.
+ * Keyword Research CLI — background-job version.
  *
- * CLI Usage: php agent/keyword-research.php --site=1
- *            php agent/keyword-research.php --site=1 --seed="web design"
+ * The thin web endpoint public/api/keyword-research-start.php creates an
+ * agent_runs row, fires this script via nohup/START, and returns job_id.
+ * UI polls /api/keyword-research-status.php for current_step + final result.
+ *
+ * Steps written into agent_runs.current_step for live progress:
+ *   1. Building seed phrases from your business profile
+ *   2. Google Autocomplete [N/M]
+ *   3. DataForSEO ideas [N/M]
+ *   4. Picking top N candidates by volume
+ *   5. Enriching X keywords with volume + difficulty
+ *   6. Cross-referencing your Google Search Console data
+ *   7. Classifying buyer intent
+ *   8. Scoring opportunities + recommending actions
+ *   9. Saving results
+ *
+ * Usage: php agent/keyword-research.php --site=N --run=M
  */
 
 require_once __DIR__ . '/../includes/helpers.php';
-require_once __DIR__ . '/../includes/scraper.php';
-require_once __DIR__ . '/../includes/haiku.php';
-require_once __DIR__ . '/../includes/business_profile.php';
+require_once __DIR__ . '/../includes/keyword_intelligence.php';
 
 $db = require __DIR__ . '/../includes/db.php';
 
-// ── Parse CLI arguments ──────────────────────────────────
-$opts = getopt('', ['site:', 'seed:']);
-$site_id = $opts['site'] ?? null;
-$seed_kw = $opts['seed'] ?? null;
+$opts    = getopt('', ['site:', 'run:']);
+$site_id = (int)($opts['site'] ?? 0);
+$run_id  = (int)($opts['run']  ?? 0);
 
-if (!$site_id) {
-    echo "Usage: php keyword-research.php --site=1 [--seed=\"topic\"]\n";
+if (!$site_id || !$run_id) {
+    fwrite(STDERR, "Usage: php keyword-research.php --site=N --run=M\n");
     exit(1);
 }
 
-$stmt = $db->prepare('SELECT * FROM sites WHERE id = ?');
-$stmt->execute([$site_id]);
-$site = $stmt->fetch();
-
-if (!$site) {
-    echo "Site #{$site_id} not found.\n";
+// agent_runs heartbeat helpers (same shape as competitors-discover.php)
+$progress = function (string $step, int $pct, ?array $partial = null) use ($db, $run_id) {
+    $sql = 'UPDATE agent_runs SET current_step = ?, progress = ?';
+    $params = [$step, $pct];
+    if ($partial !== null) {
+        $sql .= ', result_summary = ?';
+        $params[] = json_encode($partial);
+    }
+    $sql .= ' WHERE id = ?';
+    $params[] = $run_id;
+    $db->prepare($sql)->execute($params);
+};
+$mark_done = function (array $summary) use ($db, $run_id) {
+    $db->prepare('UPDATE agent_runs SET status = "done", progress = 100, current_step = "Done", result_summary = ?, finished_at = NOW() WHERE id = ?')
+       ->execute([json_encode($summary), $run_id]);
+};
+$mark_failed = function (string $error) use ($db, $run_id) {
+    $db->prepare('UPDATE agent_runs SET status = "failed", current_step = "Failed", error = ?, finished_at = NOW() WHERE id = ?')
+       ->execute([$error, $run_id]);
     exit(1);
-}
+};
 
-$start_time = microtime(true);
-$topics = json_decode($site['topics'] ?? '[]', true) ?: [];
-$topics_confirmed = !empty($site['topics_confirmed']);
+try {
+    $stmt = $db->prepare('SELECT id, domain FROM sites WHERE id = ?');
+    $stmt->execute([$site_id]);
+    $site = $stmt->fetch();
+    if (!$site) $mark_failed('Site not found.');
 
-// HARD STOP: AI cannot run without explicitly confirmed topics. Garbage in = garbage out.
-if (!$seed_kw && (empty($topics) || !$topics_confirmed)) {
-    echo "ERROR: Business Focus not confirmed for this site. AI refuses to guess.\n";
-    echo "Action: open the site in the dashboard and fill in the 'Business Focus' section (description + topics).\n";
-    exit(1);
-}
+    $result = ki_run($db, $site_id, $progress);
 
-// Load business profile up-front — used for both seed augmentation and clustering.
-$kw_profile = profile_get($db, (int)$site_id);
+    // ── Persist rows ────────────────────────────────────────
+    $progress('Saving ' . count($result['rows']) . ' keywords...', 95);
 
-$seeds = [];
-if ($seed_kw) {
-    $seeds[] = $seed_kw;
-} else {
-    $seeds = array_slice($topics, 0, 5);
+    // We never overwrite GSC/manual-source rows' priority; we just enrich them
+    // with the new intelligence fields. Brand-new candidates take all the AI fields.
+    $upsert = $db->prepare("INSERT INTO keywords
+        (site_id, keyword, source, keyword_type, cluster, intent, buyer_question,
+         search_volume, difficulty, cpc, priority, opportunity_score, recommended_action,
+         metrics_refreshed_at, last_checked)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW(), NOW())
+        ON DUPLICATE KEY UPDATE
+            keyword_type        = COALESCE(VALUES(keyword_type), keyword_type),
+            intent              = IF(VALUES(intent) = 'unknown', intent, VALUES(intent)),
+            buyer_question      = COALESCE(VALUES(buyer_question), buyer_question),
+            search_volume       = COALESCE(VALUES(search_volume), search_volume),
+            difficulty          = COALESCE(VALUES(difficulty), difficulty),
+            cpc                 = COALESCE(VALUES(cpc), cpc),
+            opportunity_score   = VALUES(opportunity_score),
+            recommended_action  = VALUES(recommended_action),
+            priority            = IF(source IN ('gsc', 'manual'), priority, VALUES(priority)),
+            metrics_refreshed_at = NOW(),
+            last_checked        = NOW()
+    ");
 
-    // Profile-aware seed augmentation — when the business is local/regional,
-    // mix in geo-suffixed seeds so we surface localised long-tail (e.g. "AI
-    // consulting Pune" alongside "AI consulting"). Without this, a Pune-based
-    // boutique gets the same generic head terms as a global SaaS.
-    if ($kw_profile) {
-        $geo   = trim($kw_profile['hq_city'] ?? '') ?: trim($kw_profile['hq_country'] ?? '');
-        $scope = $kw_profile['market_scope'] ?? '';
-        if ($geo !== '' && in_array($scope, ['local', 'regional', 'national'], true)) {
-            foreach (array_slice($topics, 0, 3) as $t) $seeds[] = "{$t} {$geo}";
-        }
-        // Small-business seeds — surface "for small business" / "for startups" intent
-        if (in_array($kw_profile['size_tier'] ?? '', ['solo', 'small'], true)) {
-            foreach (array_slice($topics, 0, 2) as $t) $seeds[] = "{$t} for small business";
-        }
-        $seeds = array_values(array_unique($seeds));
-    }
-}
-
-echo "Keyword Research for: {$site['domain']}\n";
-echo "Seed keywords: " . implode(', ', $seeds) . "\n";
-echo str_repeat('=', 60) . "\n";
-
-$all_keywords = [];
-
-// ── Step 1: Google Autocomplete ─────────────────────────
-echo "\n[1/4] Google Autocomplete...\n";
-
-foreach ($seeds as $seed) {
-    $suggestions = google_autocomplete($seed);
-    echo "  '{$seed}' → " . count($suggestions) . " suggestions\n";
-
-    foreach ($suggestions as $kw) {
-        $all_keywords[$kw] = ['source' => 'autocomplete', 'seed' => $seed];
+    $saved = 0;
+    foreach ($result['rows'] as $row) {
+        $upsert->execute([
+            $site_id,
+            $row['keyword'],
+            $row['source'],
+            $row['keyword_type'],
+            $row['cluster'],
+            $row['intent'],
+            $row['buyer_question'],
+            $row['search_volume'],
+            $row['difficulty'],
+            $row['cpc'],
+            $row['priority'],
+            $row['opportunity_score'],
+            $row['recommended_action'],
+        ]);
+        $saved++;
     }
 
-    // Also try with common modifiers
-    $modifiers = ['best', 'how to', 'what is', 'why', 'top', 'cheap', 'near me'];
-    foreach (array_slice($modifiers, 0, 3) as $mod) {
-        $modified = google_autocomplete("$mod $seed");
-        foreach ($modified as $kw) {
-            $all_keywords[$kw] = ['source' => 'autocomplete', 'seed' => "$mod $seed"];
-        }
-    }
+    $summary = [
+        'seeds'            => $result['seeds'],
+        'total_raw'        => $result['total_raw'],
+        'total_kept'       => $result['total_kept'],
+        'saved'            => $saved,
+        'counts_by_action' => $result['counts_by_action'],
+        'counts_by_intent' => $result['counts_by_intent'],
+    ];
+    $mark_done($summary);
 
-    usleep(500000); // 500ms delay between requests
-}
-
-echo "  Total from autocomplete: " . count($all_keywords) . "\n";
-
-// ── Step 2: People Also Ask ─────────────────────────────
-echo "\n[2/4] People Also Ask...\n";
-
-foreach (array_slice($seeds, 0, 3) as $seed) {
-    $questions = people_also_ask($seed);
-    echo "  '{$seed}' → " . count($questions) . " questions\n";
-
-    foreach ($questions as $q) {
-        $all_keywords[$q] = ['source' => 'paa', 'seed' => $seed];
-    }
-
-    usleep(500000);
-}
-
-echo "  Total keywords so far: " . count($all_keywords) . "\n";
-
-// ── Step 3: AI Clustering ───────────────────────────────
-echo "\n[3/4] Clustering keywords with AI...\n";
-
-$keyword_list = array_keys($all_keywords);
-$clusters = cluster_keywords($keyword_list, $kw_profile ?? null);
-
-if ($clusters) {
-    echo "  Created " . count($clusters) . " clusters\n";
-    foreach ($clusters as $name => $kws) {
-        echo "    {$name}: " . count($kws) . " keywords\n";
-    }
-}
-
-// ── Step 4: Estimate difficulty & save ──────────────────
-echo "\n[4/4] Estimating difficulty & saving...\n";
-
-// Preserve manual entries and never demote GSC rows on re-research
-$insert_stmt = $db->prepare('INSERT INTO keywords (site_id, keyword, cluster, priority, search_volume, difficulty, source, last_checked)
-    VALUES (?, ?, ?, ?, ?, ?, ?, NOW())
-    ON DUPLICATE KEY UPDATE
-        cluster = COALESCE(VALUES(cluster), cluster),
-        priority = IF(source IN ("gsc", "manual"), priority, VALUES(priority)),
-        last_checked = NOW()');
-
-$saved = 0;
-foreach ($all_keywords as $keyword => $info) {
-    // Find which cluster this keyword belongs to
-    $cluster_name = null;
-    if ($clusters) {
-        foreach ($clusters as $name => $kws) {
-            if (in_array($keyword, $kws)) {
-                $cluster_name = $name;
-                break;
-            }
-        }
-    }
-
-    $word_count = str_word_count($keyword);
-    $difficulty = estimate_difficulty($word_count);
-
-    $priority = 50;
-    if ($info['source'] === 'paa') $priority = 70;
-    if ($word_count >= 4) $priority += 10;
-    if ($word_count <= 2) $priority -= 10;
-    $priority = max(0, min(100, $priority));
-
-    $source = $info['source'] === 'paa' ? 'paa' : 'autocomplete';
-
-    $insert_stmt->execute([
-        $site_id,
-        mb_substr($keyword, 0, 255),
-        $cluster_name,
-        $priority,
-        null,
-        $difficulty,
-        $source,
-    ]);
-
-    $saved++;
-}
-
-$duration = round((microtime(true) - $start_time) * 1000);
-
-echo "\nDone! Saved {$saved} keywords in {$duration}ms\n";
-
-// Log agent action
-$stmt = $db->prepare('INSERT INTO agent_log (site_id, action, details, status, duration_ms) VALUES (?, ?, ?, ?, ?)');
-$stmt->execute([
-    $site_id,
-    'keyword_research',
-    json_encode(['total' => $saved, 'clusters' => count($clusters ?? []), 'seeds' => $seeds]),
-    'success',
-    $duration,
-]);
-
-// ── Functions ───────────────────────────────────────────
-
-/**
- * Fetch Google Autocomplete suggestions.
- */
-function google_autocomplete(string $query): array
-{
-    $url = 'https://suggestqueries.google.com/complete/search?client=firefox&q=' . urlencode($query);
-    $result = http_get($url, [], 10);
-
-    if ($result['status'] !== 200) return [];
-
-    $data = json_decode($result['body'], true);
-    if (!$data || !isset($data[1])) return [];
-
-    return array_filter($data[1], fn($s) => strtolower($s) !== strtolower($query));
-}
-
-/**
- * Scrape People Also Ask from Google search results.
- */
-function people_also_ask(string $query): array
-{
-    $url = 'https://www.google.com/search?q=' . urlencode($query) . '&hl=en';
-    $result = http_get($url, [
-        'Accept: text/html',
-        'Accept-Language: en-US,en;q=0.9',
-    ], 10);
-
-    if ($result['status'] !== 200) return [];
-
-    $questions = [];
-
-    // Extract "People Also Ask" questions from HTML
-    // They typically appear in data-q attributes or specific div structures
-    preg_match_all('/data-q="([^"]+)"/', $result['body'], $matches);
-    if (!empty($matches[1])) {
-        $questions = array_merge($questions, $matches[1]);
-    }
-
-    // Also try aria-label patterns
-    preg_match_all('/aria-label="([^"]*\?)"/', $result['body'], $matches2);
-    if (!empty($matches2[1])) {
-        $questions = array_merge($questions, $matches2[1]);
-    }
-
-    // Related searches
-    preg_match_all('/<div[^>]*class="[^"]*related[^"]*"[^>]*>.*?<a[^>]*>([^<]+)<\/a>/is', $result['body'], $matches3);
-    if (!empty($matches3[1])) {
-        $questions = array_merge($questions, $matches3[1]);
-    }
-
-    return array_unique(array_map('trim', $questions));
-}
-
-/**
- * Use Haiku to cluster keywords into topic groups.
- */
-function cluster_keywords(array $keywords, ?array $profile = null): ?array
-{
-    if (count($keywords) < 5) return null;
-
-    // Limit to 100 keywords to keep API costs low
-    $kw_sample = array_slice($keywords, 0, 100);
-    $kw_list = implode("\n", $kw_sample);
-
-    $profile_context = '';
-    if ($profile && function_exists('profile_prompt_block')) {
-        $profile_context = "\n\n" . profile_prompt_block($profile)
-            . "\n\nUse this profile to label clusters in terms a reader of THIS business would search for. "
-            . "Cluster names should reflect the business's actual scale and audience — not generic enterprise SEO categories.";
-    }
-
-    $system = "You are an SEO strategist. Group keywords into topic clusters for blog content planning.
-Output ONLY valid JSON: an object where keys are cluster names (2-4 words) and values are arrays of keywords from the input list.
-Each keyword should appear in exactly one cluster. Aim for 5-10 clusters.{$profile_context}";
-
-    $prompt = "Group these keywords into topic clusters:\n\n{$kw_list}";
-
-    $result = haiku_chat($system, $prompt, 2048);
-
-    if (!$result['success']) return null;
-
-    $parsed = json_decode($result['content'], true);
-    return is_array($parsed) ? $parsed : null;
-}
-
-/**
- * Basic difficulty estimation based on keyword characteristics.
- */
-function estimate_difficulty(int $word_count): int
-{
-    if ($word_count <= 1) return 90;
-    if ($word_count === 2) return 70;
-    if ($word_count === 3) return 50;
-    if ($word_count === 4) return 35;
-    return 20; // 5+ words = long tail, easier
+    echo "Done. Saved {$saved} keywords ({$result['total_raw']} candidates discovered).\n";
+} catch (Throwable $e) {
+    error_log('[keyword-research CLI] ' . $e->getMessage() . ' | ' . $e->getTraceAsString());
+    $mark_failed($e->getMessage());
 }

@@ -104,7 +104,7 @@ ob_start();
 
 <div style="text-align:center;margin-bottom:14px;">
     <h2 style="font-size:20px;color:var(--primary);margin-bottom:4px;">Competitors — <?= e($site['name']) ?></h2>
-    <p style="font-size:13px;color:#64748b;">Sites that rank on Google for the same keywords as you.</p>
+    <p style="font-size:13px;color:#64748b;">AI-suggested candidates from your business profile. Curate freely — Ignore or Delete anything that doesn't belong, and use <strong>+ Add Manually</strong> for ones we missed.</p>
 </div>
 
 <?php if (!$cse_configured): ?>
@@ -325,11 +325,13 @@ async function pollDiscoveryStatus(jobId) {
 
         if (s.status === 'done') {
             const sum = s.summary || {};
+            // Reset the button BEFORE the alert pops so the user doesn't see
+            // the stale "Filtering candidates..." text under the modal.
+            resetDiscoverBtn();
             if (sum.error_headline) {
                 let msg = sum.error_headline;
                 if (sum.fix_hint) msg += '\n\nFix: ' + sum.fix_hint;
                 alert(msg);
-                resetDiscoverBtn();
                 return;
             }
             let msg = 'Discovered ' + (sum.competitors_saved ?? 0) + ' competitors from ' + (sum.queries_searched ?? 0) + ' Google searches.';

@@ -185,6 +185,94 @@ function dataforseo_serp_results(string $keyword, int $depth = 30, int $location
 }
 
 /**
+ * Semantic keyword expansion. Given a seed, DataForSEO Labs returns related
+ * keywords that share the seed's semantic neighbourhood — same intent space,
+ * adjacent topics — with their own volume / difficulty / CPC baked in. This
+ * is the "Ubersuggest-style" expansion: 500-1000 ideas per seed.
+ *
+ * Returns rows already enriched, so the caller does NOT need a second
+ * keyword_overview call for the same words.
+ *
+ * @return array<int, array{keyword:string, search_volume:int|null, keyword_difficulty:int|null, cpc:float|null, competition:string|null}>
+ */
+function dataforseo_keyword_ideas(string $seed, int $limit = 200, int $location_code = DFSO_DEFAULT_LOCATION, string $language_code = DFSO_DEFAULT_LANGUAGE): array
+{
+    $seed = trim($seed);
+    if ($seed === '') return [];
+
+    $resp = dataforseo_call('/v3/dataforseo_labs/google/keyword_ideas/live', [[
+        'keywords'      => [$seed],
+        'location_code' => $location_code,
+        'language_code' => $language_code,
+        'limit'         => min(1000, max(10, $limit)),
+        'order_by'      => ['keyword_info.search_volume,desc'],
+    ]]);
+    if (empty($resp['success'])) {
+        error_log('[dataforseo_keyword_ideas] ' . ($resp['error'] ?? 'unknown'));
+        return [];
+    }
+
+    $items = $resp['data']['tasks'][0]['result'][0]['items'] ?? [];
+    $out = [];
+    foreach ($items as $row) {
+        $kw = strtolower(trim($row['keyword'] ?? ''));
+        if ($kw === '') continue;
+        $info  = $row['keyword_info'] ?? [];
+        $props = $row['keyword_properties'] ?? [];
+        $out[] = [
+            'keyword'            => $kw,
+            'search_volume'      => isset($info['search_volume']) ? (int)$info['search_volume'] : null,
+            'keyword_difficulty' => isset($props['keyword_difficulty']) ? (int)$props['keyword_difficulty'] : null,
+            'cpc'                => isset($info['cpc']) ? (float)$info['cpc'] : null,
+            'competition'        => $info['competition_level'] ?? null,
+        ];
+    }
+    return $out;
+}
+
+/**
+ * Autocomplete-style expansion — returns suggestions DataForSEO has observed
+ * being typed into Google after the seed term. Narrower and longer-tail than
+ * keyword_ideas, useful for surfacing question-shaped and modifier-prefixed
+ * variants ("best X for Y", "how to X", etc.).
+ *
+ * @return array<int, array{keyword:string, search_volume:int|null, keyword_difficulty:int|null, cpc:float|null}>
+ */
+function dataforseo_keyword_suggestions(string $seed, int $limit = 200, int $location_code = DFSO_DEFAULT_LOCATION, string $language_code = DFSO_DEFAULT_LANGUAGE): array
+{
+    $seed = trim($seed);
+    if ($seed === '') return [];
+
+    $resp = dataforseo_call('/v3/dataforseo_labs/google/keyword_suggestions/live', [[
+        'keyword'       => $seed,
+        'location_code' => $location_code,
+        'language_code' => $language_code,
+        'limit'         => min(1000, max(10, $limit)),
+        'order_by'      => ['keyword_info.search_volume,desc'],
+    ]]);
+    if (empty($resp['success'])) {
+        error_log('[dataforseo_keyword_suggestions] ' . ($resp['error'] ?? 'unknown'));
+        return [];
+    }
+
+    $items = $resp['data']['tasks'][0]['result'][0]['items'] ?? [];
+    $out = [];
+    foreach ($items as $row) {
+        $kw = strtolower(trim($row['keyword'] ?? ''));
+        if ($kw === '') continue;
+        $info  = $row['keyword_info'] ?? [];
+        $props = $row['keyword_properties'] ?? [];
+        $out[] = [
+            'keyword'            => $kw,
+            'search_volume'      => isset($info['search_volume']) ? (int)$info['search_volume'] : null,
+            'keyword_difficulty' => isset($props['keyword_difficulty']) ? (int)$props['keyword_difficulty'] : null,
+            'cpc'                => isset($info['cpc']) ? (float)$info['cpc'] : null,
+        ];
+    }
+    return $out;
+}
+
+/**
  * Get the current Google SERP for a keyword and find a target domain's position.
  * Returns null if domain not in top 100, otherwise the rank (1-100).
  */

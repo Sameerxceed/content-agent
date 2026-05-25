@@ -13,10 +13,11 @@ auth_require();
 $db = require __DIR__ . '/../../includes/db.php';
 $user_id = auth_user_id();
 
-$filter_site = $_GET['site'] ?? '';
+$filter_site    = $_GET['site']    ?? '';
 $filter_cluster = $_GET['cluster'] ?? '';
-$filter_status = $_GET['status'] ?? 'active'; // active | ignored | quick_wins | all
-$top_view = $_GET['view'] ?? 'keywords';    // keywords | gsc
+$filter_status  = $_GET['status']  ?? 'active'; // active | ignored | quick_wins | new_content | aeo_gap | watch | skip | all
+$filter_intent  = $_GET['intent']  ?? '';       // informational | commercial | transactional | navigational | ''
+$top_view       = $_GET['view']    ?? 'keywords'; // keywords | gsc
 
 $page_title = 'Keywords';
 
@@ -48,28 +49,45 @@ if ($filter_status === 'active') {
 } elseif ($filter_status === 'ignored') {
     $where[] = "k.status = 'ignored'";
 } elseif ($filter_status === 'quick_wins') {
-    // Page 2-3 with real impressions = quick wins
-    $where[] = "k.status = 'active' AND k.gsc_position BETWEEN 11 AND 30 AND k.impressions > 0";
+    // Prefer the AI-recommended action; fall back to the old GSC-position heuristic for legacy rows
+    $where[] = "k.status = 'active' AND (k.recommended_action = 'quick_win' OR (k.recommended_action IS NULL AND k.gsc_position BETWEEN 11 AND 30 AND k.impressions > 0))";
+} elseif (in_array($filter_status, ['new_content', 'aeo_gap', 'watch', 'skip'], true)) {
+    $where[] = "k.status = 'active' AND k.recommended_action = ?";
+    $params[] = $filter_status;
 }
 // 'all' = no extra filter
 
+if ($filter_intent !== '' && in_array($filter_intent, ['informational','commercial','transactional','navigational'], true)) {
+    $where[] = 'k.intent = ?';
+    $params[] = $filter_intent;
+}
+
 $where_sql = implode(' AND ', $where);
 
-$stmt = $db->prepare("SELECT k.*, s.domain FROM keywords k JOIN sites s ON k.site_id = s.id WHERE {$where_sql} ORDER BY k.impressions DESC, k.priority DESC, k.keyword LIMIT 300");
+$stmt = $db->prepare("SELECT k.*, s.domain FROM keywords k JOIN sites s ON k.site_id = s.id WHERE {$where_sql} ORDER BY COALESCE(k.opportunity_score, k.priority) DESC, k.impressions DESC, k.keyword LIMIT 300");
 $stmt->execute($params);
 $keywords = $stmt->fetchAll();
 
-// Per-site status counts
-$status_counts = ['active' => 0, 'ignored' => 0, 'quick_wins' => 0, 'all' => 0];
+// Per-site status + action counts
+$status_counts = ['active' => 0, 'ignored' => 0, 'quick_wins' => 0, 'new_content' => 0, 'aeo_gap' => 0, 'watch' => 0, 'skip' => 0, 'all' => 0];
 if ($filter_site) {
     $stmt = $db->prepare("SELECT status, COUNT(*) c FROM keywords WHERE site_id = ? GROUP BY status");
     $stmt->execute([(int)$filter_site]);
     foreach ($stmt->fetchAll() as $r) { $status_counts[$r['status']] = (int)$r['c']; }
     $status_counts['all'] = $status_counts['active'] + $status_counts['ignored'];
 
-    $stmt = $db->prepare("SELECT COUNT(*) FROM keywords WHERE site_id = ? AND status = 'active' AND gsc_position BETWEEN 11 AND 30 AND impressions > 0");
+    $stmt = $db->prepare("SELECT COUNT(*) FROM keywords WHERE site_id = ? AND status = 'active' AND (recommended_action = 'quick_win' OR (recommended_action IS NULL AND gsc_position BETWEEN 11 AND 30 AND impressions > 0))");
     $stmt->execute([(int)$filter_site]);
     $status_counts['quick_wins'] = (int)$stmt->fetchColumn();
+
+    $stmt = $db->prepare("SELECT recommended_action, COUNT(*) c FROM keywords WHERE site_id = ? AND status = 'active' AND recommended_action IS NOT NULL GROUP BY recommended_action");
+    $stmt->execute([(int)$filter_site]);
+    foreach ($stmt->fetchAll() as $r) {
+        if (isset($status_counts[$r['recommended_action']])) {
+            // quick_wins is computed above with fallback; don't overwrite
+            if ($r['recommended_action'] !== 'quick_win') $status_counts[$r['recommended_action']] = (int)$r['c'];
+        }
+    }
 }
 
 // GSC integration when filtered to one site
@@ -250,24 +268,104 @@ endif; ?>
 </div>
 
 <?php $_dfso_ok = !empty(config('dataforseo_login')) && !empty(config('dataforseo_password')); ?>
-<div class="card" style="margin-bottom:10px; padding:12px 14px; border-left:3px solid <?= $_dfso_ok ? '#10b981' : '#94a3b8' ?>;">
-    <div style="display:flex; justify-content:space-between; align-items:center; gap:10px; flex-wrap:wrap;">
-        <div style="flex:1; min-width:240px;">
-            <div style="font-weight:600; font-size:13px; color:var(--primary);">🔮 Enrich keywords with DataForSEO</div>
-            <div style="font-size:11px; color:#64748b; margin-top:2px;">Fills in real search volume + difficulty for keywords that don't yet have GSC data. ~$0.0001 per keyword.</div>
+<!-- Deep Research card — runs the full keyword_intelligence pipeline as a background job -->
+<div class="card" style="margin-bottom:10px; padding:14px; border-left:3px solid <?= $_dfso_ok ? '#7c3aed' : '#94a3b8' ?>;">
+    <div style="display:flex; justify-content:space-between; align-items:flex-start; gap:10px; flex-wrap:wrap;">
+        <div style="flex:1; min-width:260px;">
+            <div style="font-weight:600; font-size:14px; color:var(--primary);">🧠 Run Deep Keyword Research</div>
+            <div style="font-size:12px; color:#475569; margin-top:4px; line-height:1.5;">
+                Expands your topics into 300-500 keyword candidates, pulls real volume + difficulty + CPC from DataForSEO,
+                classifies buyer intent with Claude, and scores each one against your business profile + GSC data.
+                Bucketed into <strong>Quick Wins</strong>, <strong>New Content</strong>, <strong>AEO Gaps</strong>, <strong>Watch</strong>, <strong>Skip</strong>.
+                <span style="color:#94a3b8;">Runs in background — ~3-8 minutes. ~$0.50-2 per run.</span>
+            </div>
         </div>
         <?php if ($_dfso_ok): ?>
-            <div style="display:flex; gap:6px;">
-                <button onclick="enrichKeywords(<?= (int)$filter_site ?>, true, this)" class="btn btn-primary btn-sm" title="Only enrich keywords missing volume/difficulty">Enrich missing</button>
-                <button onclick="enrichKeywords(<?= (int)$filter_site ?>, false, this)" class="btn btn-outline btn-sm" title="Refresh ALL active keywords with fresh data">Refresh all</button>
+            <div style="display:flex; gap:6px; flex-direction:column; align-items:stretch;">
+                <button onclick="runDeepResearch(<?= (int)$filter_site ?>)" id="kr-run-btn" class="btn btn-primary" style="background:#7c3aed; border-color:#7c3aed; font-weight:600;">🧠 Run Deep Research</button>
+                <button onclick="enrichKeywords(<?= (int)$filter_site ?>, true, this)" class="btn btn-outline btn-sm" title="Just pull volume + difficulty for existing rows that lack it" style="font-size:11px;">Just refresh metrics</button>
             </div>
         <?php else: ?>
-            <a href="<?= url('/dashboard/integrations.php') ?>" class="btn btn-outline btn-sm" style="font-size:11px;">Set up DataForSEO</a>
+            <a href="<?= url('/dashboard/integrations.php') ?>" class="btn btn-outline btn-sm" style="font-size:11px;">Set up DataForSEO →</a>
         <?php endif; ?>
     </div>
+    <div id="kr-status" style="font-size:12px; margin-top:8px;"></div>
     <div id="enrich-msg" style="font-size:11px; margin-top:6px;"></div>
 </div>
 <script>
+// ── Deep Research (background job) ─────────────────────────────────────
+async function runDeepResearch(siteId) {
+    const btn    = document.getElementById('kr-run-btn');
+    const status = document.getElementById('kr-status');
+    btn.disabled = true;
+    btn.textContent = 'Queuing…';
+    status.innerHTML = '<span style="color:#64748b;">Starting background job…</span>';
+    try {
+        const res  = await fetch('<?= url('/api/keyword-research-start.php') ?>', {
+            method: 'POST', headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({ site_id: siteId })
+        });
+        const data = await res.json();
+        if (!data.success || !data.job_id) {
+            status.innerHTML = '<span style="color:#dc2626;">✗ ' + (data.error || 'Failed to start') + '</span>';
+            btn.disabled = false;
+            btn.textContent = '🧠 Run Deep Research';
+            return;
+        }
+        pollResearchStatus(data.job_id);
+    } catch (e) {
+        status.innerHTML = '<span style="color:#dc2626;">✗ ' + e.message + '</span>';
+        btn.disabled = false;
+        btn.textContent = '🧠 Run Deep Research';
+    }
+}
+
+function pollResearchStatus(jobId) {
+    const btn    = document.getElementById('kr-run-btn');
+    const status = document.getElementById('kr-status');
+
+    const tick = async () => {
+        try {
+            const res  = await fetch('<?= url('/api/keyword-research-status.php') ?>?id=' + jobId);
+            const data = await res.json();
+            const step = data.current_step || 'Working…';
+            const pct  = data.progress || 0;
+
+            if (data.status === 'running') {
+                btn.textContent = step + ' (' + pct + '%)';
+                status.innerHTML = '<span style="color:#7c3aed;">⟳ ' + step + ' — ' + pct + '%</span>';
+                setTimeout(tick, 3000);
+                return;
+            }
+            if (data.status === 'done') {
+                const s = data.summary || {};
+                const a = s.counts_by_action || {};
+                btn.disabled = false;
+                btn.textContent = '🧠 Run Deep Research';
+                const msg = '✓ Done. Saved ' + (s.saved || 0) + ' keywords from ' + (s.total_raw || 0) + ' candidates · '
+                    + (a.quick_win   || 0) + ' Quick Wins · '
+                    + (a.new_content || 0) + ' New Content · '
+                    + (a.aeo_gap     || 0) + ' AEO Gaps';
+                status.innerHTML = '<span style="color:#065f46;">' + msg + '</span>';
+                setTimeout(() => location.reload(), 1500);
+                return;
+            }
+            if (data.status === 'failed') {
+                btn.disabled = false;
+                btn.textContent = '🧠 Run Deep Research';
+                status.innerHTML = '<span style="color:#dc2626;">✗ ' + (data.error || 'Job failed') + '</span>';
+                return;
+            }
+            // unknown status — back off
+            setTimeout(tick, 5000);
+        } catch (e) {
+            status.innerHTML = '<span style="color:#dc2626;">Polling error: ' + e.message + ' — retrying…</span>';
+            setTimeout(tick, 5000);
+        }
+    };
+    tick();
+}
+
 async function enrichKeywords(siteId, onlyMissing, btn) {
     const orig = btn.textContent;
     btn.disabled = true;
@@ -326,37 +424,79 @@ async function enrichKeywords(siteId, onlyMissing, btn) {
     </form>
 </div>
 
-<!-- Status tabs -->
+<!-- Status / Action bucket tabs -->
 <?php if ($filter_site): ?>
-<div style="display:flex;gap:4px;margin-bottom:10px;border-bottom:1px solid var(--border);">
+<div style="display:flex;gap:2px;margin-bottom:10px;border-bottom:1px solid var(--border);flex-wrap:wrap;">
     <?php
     $tabs = [
-        'active'     => ['Active', $status_counts['active']],
-        'quick_wins' => ['Quick Wins', $status_counts['quick_wins']],
-        'ignored'    => ['Ignored', $status_counts['ignored']],
-        'all'        => ['All', $status_counts['all']],
+        'active'      => ['Active',       '#0f172a', $status_counts['active']],
+        'quick_wins'  => ['💎 Quick Wins', '#10b981', $status_counts['quick_wins']],
+        'new_content' => ['🆕 New Content','#7c3aed', $status_counts['new_content']],
+        'aeo_gap'     => ['🎯 AEO Gaps',   '#0284c7', $status_counts['aeo_gap']],
+        'watch'       => ['👀 Watch',      '#64748b', $status_counts['watch']],
+        'skip'        => ['⏭ Skip',        '#94a3b8', $status_counts['skip']],
+        'ignored'     => ['Ignored',       '#f59e0b', $status_counts['ignored']],
+        'all'         => ['All',           '#0f172a', $status_counts['all']],
     ];
-    foreach ($tabs as $key => [$label, $count]):
+    foreach ($tabs as $key => [$label, $color, $count]):
         $is_active = $filter_status === $key;
+        // Skip empty buckets to reduce visual noise (except always-shown core tabs)
+        if ($count === 0 && !in_array($key, ['active','quick_wins','ignored','all'], true)) continue;
     ?>
-    <a href="<?= tab_url($current_filters, $key) ?>" style="text-decoration:none;padding:8px 14px;font-size:13px;border-bottom:2px solid <?= $is_active ? 'var(--accent)' : 'transparent' ?>;color:<?= $is_active ? 'var(--accent)' : '#64748b' ?>;font-weight:<?= $is_active ? '600' : '500' ?>;">
+    <a href="<?= tab_url($current_filters, $key) ?>" style="text-decoration:none;padding:8px 12px;font-size:12px;border-bottom:2px solid <?= $is_active ? $color : 'transparent' ?>;color:<?= $is_active ? $color : '#64748b' ?>;font-weight:<?= $is_active ? '600' : '500' ?>;">
         <?= $label ?> <span style="font-size:11px;color:#94a3b8;">(<?= $count ?>)</span>
     </a>
     <?php endforeach; ?>
 </div>
+
+<!-- Intent filter pills (only show when there's something to filter on) -->
+<?php
+$intent_count_stmt = $db->prepare("SELECT intent, COUNT(*) c FROM keywords WHERE site_id = ? AND status = 'active' AND intent != 'unknown' GROUP BY intent");
+$intent_count_stmt->execute([(int)$filter_site]);
+$intent_counts = [];
+foreach ($intent_count_stmt->fetchAll() as $r) $intent_counts[$r['intent']] = (int)$r['c'];
+if (!empty($intent_counts)):
+?>
+<div style="display:flex;gap:6px;margin-bottom:10px;font-size:11px;align-items:center;">
+    <span style="color:#94a3b8;">Intent:</span>
+    <?php
+    $intent_pills = [
+        ''              => ['All',           '#475569'],
+        'transactional' => ['Transactional', '#059669'],
+        'commercial'    => ['Commercial',    '#0284c7'],
+        'informational' => ['Informational', '#7c3aed'],
+        'navigational'  => ['Navigational',  '#94a3b8'],
+    ];
+    foreach ($intent_pills as $key => [$label, $color]):
+        if ($key !== '' && empty($intent_counts[$key])) continue;
+        $is_on = $filter_intent === $key;
+        $q = array_filter(['site' => $filter_site, 'cluster' => $filter_cluster, 'status' => $filter_status, 'intent' => $key]);
+        $href = url('/dashboard/keywords.php?' . http_build_query($q));
+        $count_label = $key === '' ? '' : ' (' . ($intent_counts[$key] ?? 0) . ')';
+    ?>
+    <a href="<?= $href ?>" style="text-decoration:none;padding:3px 10px;border-radius:10px;font-weight:600;background:<?= $is_on ? $color : '#f1f5f9' ?>;color:<?= $is_on ? '#fff' : $color ?>;border:1px solid <?= $is_on ? $color : 'transparent' ?>;"><?= $label . $count_label ?></a>
+    <?php endforeach; ?>
+</div>
+<?php endif; ?>
 <?php endif; ?>
 
 <!-- Column legend -->
 <details style="margin-bottom:10px;font-size:12px;color:#64748b;">
-    <summary style="cursor:pointer;color:var(--primary);font-weight:600;">What do these columns mean?</summary>
-    <div style="padding:8px 12px;background:#f8fafc;border:1px solid var(--border);border-radius:6px;margin-top:6px;line-height:1.6;">
-        <div><strong>Impressions:</strong> Times this keyword showed your site in Google (last 30 days).</div>
-        <div><strong>Clicks:</strong> People who clicked through to your site.</div>
-        <div><strong>CTR:</strong> Click-through rate. Low CTR + high impressions = your title/description needs work.</div>
-        <div><strong>Position:</strong> Avg rank on Google. 1-10 = page 1, 11-30 = page 2-3, 30+ = barely visible.</div>
-        <div><strong>Priority:</strong> Auto-calculated from clicks + impressions.</div>
-        <div><strong>Source:</strong> AI = autocomplete research · GSC = real Google data · Manual = you added it.</div>
-        <div><strong>Quick Wins tab:</strong> Keywords ranked 11-30 with real impressions — small content tweaks can push these to page 1.</div>
+    <summary style="cursor:pointer;color:var(--primary);font-weight:600;">What do these columns and buckets mean?</summary>
+    <div style="padding:8px 12px;background:#f8fafc;border:1px solid var(--border);border-radius:6px;margin-top:6px;line-height:1.7;">
+        <div><strong>Intent:</strong> What the searcher wants. <em>Trans</em>actional (ready to buy) · <em>Comm</em>ercial (comparing) · <em>Info</em>rmational (learning) · <em>Nav</em>igational (a specific brand).</div>
+        <div><strong>Score:</strong> 0-100 opportunity score blending volume × intent × difficulty × your current rank. Higher = better.</div>
+        <div><strong>Volume:</strong> Monthly searches (DataForSEO). <strong>Diff:</strong> 0-100 keyword difficulty — lower is easier.</div>
+        <div><strong>Impr / Pos:</strong> Your Google Search Console impressions and average rank for this keyword.</div>
+        <div><strong>Source:</strong> Google = real GSC · Manual = you typed it · AI = autocomplete · DFSO = DataForSEO ideas/suggestions · Comp = from a competitor.</div>
+        <div style="margin-top:6px;padding-top:6px;border-top:1px dashed #e2e8f0;">
+            <strong>Buckets (set by 🧠 Deep Research):</strong>
+            <div>💎 <strong>Quick Wins</strong> — already ranking page 2-3, push to page 1.</div>
+            <div>🆕 <strong>New Content</strong> — not ranking, realistic difficulty, real buyer intent. Write something.</div>
+            <div>🎯 <strong>AEO Gaps</strong> — informational queries you're invisible on. Candidates for AI-friendly content.</div>
+            <div>👀 <strong>Watch</strong> — interesting but not actionable yet.</div>
+            <div>⏭ <strong>Skip</strong> — wrong intent or too hard for your scale.</div>
+        </div>
     </div>
 </details>
 
@@ -366,9 +506,11 @@ async function enrichKeywords(siteId, onlyMissing, btn) {
         <?php if ($filter_status === 'ignored'): ?>
             No ignored keywords. Use the 👁 button to ignore off-brand ones.
         <?php elseif ($filter_status === 'quick_wins'): ?>
-            No quick wins yet. Sync Google Search Console to see keywords ranked 11-30 that could be pushed to page 1.
+            No quick wins yet. Sync Google Search Console and run <strong>🧠 Deep Research</strong> to find keywords ranked 11-30 that could be pushed to page 1.
+        <?php elseif (in_array($filter_status, ['new_content','aeo_gap','watch','skip'], true)): ?>
+            No keywords in this bucket yet. Run <strong>🧠 Deep Research</strong> above to populate it.
         <?php else: ?>
-            No keywords yet. Use <strong>Find Keywords</strong> from your site page, or add custom keywords above.
+            No keywords yet. Run <strong>🧠 Deep Research</strong> to expand from your business profile, or add custom keywords above.
         <?php endif; ?>
         </p>
     <?php else: ?>
@@ -394,13 +536,13 @@ async function enrichKeywords(siteId, onlyMissing, btn) {
                 <tr>
                     <th style="width:32px;"><input type="checkbox" id="kw-select-all" onchange="toggleAll(this)"></th>
                     <th>Keyword</th>
-                    <th title="Times shown in Google">Impressions</th>
-                    <th>Clicks</th>
-                    <th>CTR</th>
-                    <th title="Your average position">Position</th>
-                    <th title="0-100 score">Priority</th>
+                    <th title="Buyer intent — Claude classified">Intent</th>
+                    <th title="0-100 opportunity score">Score</th>
+                    <th title="Monthly searches (DataForSEO)">Volume</th>
+                    <th title="0-100, lower is easier">Diff</th>
+                    <th title="Times shown in Google">Impr</th>
+                    <th title="Your average position">Pos</th>
                     <th>Source</th>
-                    <th>Cluster</th>
                     <th title="SERP content brief — what's ranking and how to compete">📊 Brief</th>
                     <th style="width:90px;text-align:right;">Actions</th>
                 </tr>
@@ -413,14 +555,63 @@ async function enrichKeywords(siteId, onlyMissing, btn) {
                 ?>
                 <tr id="kw-row-<?= (int)$kw['id'] ?>" style="<?= $is_ignored ? 'opacity:0.55;' : '' ?>">
                     <td><input type="checkbox" class="kw-check" data-id="<?= (int)$kw['id'] ?>" onchange="updateSelectedCount()"></td>
-                    <td style="font-weight: 500;<?= $is_ignored ? 'text-decoration:line-through;' : '' ?>"><?= e($kw['keyword']) ?>
+                    <td style="font-weight: 500;<?= $is_ignored ? 'text-decoration:line-through;' : '' ?>">
+                        <?= e($kw['keyword']) ?>
+                        <?php if (!empty($kw['buyer_question'])): ?>
+                            <div style="font-size:10px;color:#64748b;margin-top:2px;font-style:italic;" title="<?= e($kw['buyer_question']) ?>">→ <?= e(mb_substr($kw['buyer_question'], 0, 90)) ?><?= mb_strlen($kw['buyer_question']) > 90 ? '…' : '' ?></div>
+                        <?php endif; ?>
                         <?php if ($is_ignored && !empty($kw['ignored_reason'])): ?>
                             <div style="font-size:10px;color:#94a3b8;font-style:italic;">— <?= e($kw['ignored_reason']) ?></div>
                         <?php endif; ?>
                     </td>
+                    <td>
+                        <?php
+                        $intent_styles = [
+                            'transactional' => ['Trans', '#059669', '#d1fae5'],
+                            'commercial'    => ['Comm',  '#0284c7', '#e0f2fe'],
+                            'informational' => ['Info',  '#7c3aed', '#ede9fe'],
+                            'navigational'  => ['Nav',   '#94a3b8', '#f1f5f9'],
+                            'unknown'       => ['—',     '#cbd5e1', 'transparent'],
+                        ];
+                        $intent_val = $kw['intent'] ?? 'unknown';
+                        [$ilab, $ifg, $ibg] = $intent_styles[$intent_val] ?? $intent_styles['unknown'];
+                        ?>
+                        <span style="font-size:10px;font-weight:600;padding:2px 6px;border-radius:8px;background:<?= $ibg ?>;color:<?= $ifg ?>;"><?= $ilab ?></span>
+                    </td>
+                    <td>
+                        <?php
+                        $score = $kw['opportunity_score'] ?? $kw['priority'] ?? null;
+                        if ($score !== null):
+                            $sc = $score >= 70 ? 'var(--success)' : ($score >= 40 ? 'var(--warning)' : '#94a3b8');
+                            // Show recommended_action as a subtle chip under the score when present
+                            $action = $kw['recommended_action'] ?? null;
+                            $action_styles = [
+                                'quick_win'  => ['💎',  '#10b981'],
+                                'new_content'=> ['🆕',  '#7c3aed'],
+                                'aeo_gap'    => ['🎯',  '#0284c7'],
+                                'watch'      => ['👀',  '#64748b'],
+                                'skip'       => ['⏭',  '#cbd5e1'],
+                            ];
+                        ?>
+                            <span style="font-weight:700;color:<?= $sc ?>;font-size:14px;"><?= (int)$score ?></span>
+                            <?php if ($action && isset($action_styles[$action])): ?>
+                                <div style="font-size:10px;color:<?= $action_styles[$action][1] ?>;" title="<?= e($action) ?>"><?= $action_styles[$action][0] ?></div>
+                            <?php endif; ?>
+                        <?php else: ?>
+                            <span style="color:#cbd5e1;">—</span>
+                        <?php endif; ?>
+                    </td>
+                    <td class="text-sm"><?= $kw['search_volume'] !== null ? number_format((int)$kw['search_volume']) : '<span style="color:#cbd5e1;">—</span>' ?></td>
+                    <td class="text-sm">
+                        <?php if ($kw['difficulty'] !== null):
+                            $dc = $kw['difficulty'] <= 30 ? 'var(--success)' : ($kw['difficulty'] <= 60 ? 'var(--warning)' : 'var(--danger)');
+                        ?>
+                            <span style="color:<?= $dc ?>;font-weight:600;"><?= (int)$kw['difficulty'] ?></span>
+                        <?php else: ?>
+                            <span style="color:#cbd5e1;">—</span>
+                        <?php endif; ?>
+                    </td>
                     <td class="text-sm"><?= $kw['impressions'] !== null ? number_format($kw['impressions']) : '<span style="color:#cbd5e1;">—</span>' ?></td>
-                    <td class="text-sm"><?= $kw['clicks'] !== null ? number_format($kw['clicks']) : '<span style="color:#cbd5e1;">—</span>' ?></td>
-                    <td class="text-sm"><?= $kw['ctr'] !== null ? $kw['ctr'] . '%' : '<span style="color:#cbd5e1;">—</span>' ?></td>
                     <td>
                         <?php
                         $pos = $kw['gsc_position'] ?? $kw['current_rank'] ?? null;
@@ -434,25 +625,19 @@ async function enrichKeywords(siteId, onlyMissing, btn) {
                     </td>
                     <td>
                         <?php
-                        $p_color = '#64748b';
-                        if ($kw['priority'] >= 70) $p_color = 'var(--success)';
-                        elseif ($kw['priority'] >= 40) $p_color = 'var(--warning)';
-                        ?>
-                        <span style="font-weight: 600; color: <?= $p_color ?>;"><?= $kw['priority'] ?></span>
-                    </td>
-                    <td>
-                        <?php
                         $src_styles = [
-                            'gsc'          => ['Google', '#10b981', '#d1fae5'],
-                            'manual'       => ['Manual', '#7c3aed', '#ede9fe'],
-                            'autocomplete' => ['AI', '#64748b', '#f1f5f9'],
-                            'paa'          => ['PAA', '#0284c7', '#e0f2fe'],
+                            'gsc'                    => ['Google', '#10b981', '#d1fae5'],
+                            'manual'                 => ['Manual', '#7c3aed', '#ede9fe'],
+                            'autocomplete'           => ['AI',     '#64748b', '#f1f5f9'],
+                            'paa'                    => ['PAA',    '#0284c7', '#e0f2fe'],
+                            'dataforseo_ideas'       => ['DFSO',   '#dc2626', '#fee2e2'],
+                            'dataforseo_suggestions' => ['DFSO',   '#dc2626', '#fee2e2'],
+                            'competitor'             => ['Comp',   '#ea580c', '#ffedd5'],
                         ];
                         [$slabel, $sfg, $sbg] = $src_styles[$source] ?? $src_styles['autocomplete'];
                         ?>
                         <span style="font-size:10px;font-weight:600;padding:2px 8px;border-radius:10px;background:<?= $sbg ?>;color:<?= $sfg ?>;"><?= $slabel ?></span>
                     </td>
-                    <td class="text-sm text-muted"><?= e($kw['cluster'] ?? '—') ?></td>
                     <td>
                         <?php $has_brief = !empty($kw['serp_brief']); ?>
                         <?php if ($has_brief): ?>
