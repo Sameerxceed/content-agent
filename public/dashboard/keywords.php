@@ -258,12 +258,13 @@ endif; ?>
 <div class="card" style="margin-bottom:12px; padding:14px;">
     <!-- Row 1: primary actions — add manual keyword + Run Deep Research -->
     <div style="display:flex; gap:10px; align-items:stretch; flex-wrap:wrap;">
-        <div style="flex:1; min-width:280px; position:relative;">
+        <div style="flex:1; min-width:280px; position:relative; display:flex; gap:6px;">
             <input type="text" id="add-keyword-input"
-                placeholder="+  Add a keyword you want to target (Enter to save)"
-                style="width:100%;padding:11px 14px;font-size:14px;border:1px solid var(--border);border-radius:6px;outline:none;transition:border-color .15s;"
-                onfocus="this.style.borderColor='var(--accent)'" onblur="this.style.borderColor='var(--border)'"
-                onkeydown="if(event.key==='Enter'){event.preventDefault();addKeywords();}">
+                placeholder="+  Add a keyword you want to target (press Enter or click Add)"
+                style="flex:1;padding:11px 14px;font-size:14px;border:1px solid var(--border);border-radius:6px;outline:none;transition:border-color .15s;"
+                onfocus="this.style.borderColor='var(--accent)'" onblur="this.style.borderColor='var(--border)'">
+            <button type="button" id="add-keyword-btn"
+                style="background:#fff;border:1px solid var(--border);color:#334155;padding:0 16px;font-size:13px;font-weight:500;border-radius:6px;cursor:pointer;white-space:nowrap;">Add</button>
         </div>
         <?php if ($_dfso_ok): ?>
             <button onclick="runDeepResearch(<?= (int)$filter_site ?>)" id="kr-run-btn"
@@ -280,28 +281,40 @@ endif; ?>
             <button onclick="toggleKwMenu(event)" id="kw-more-btn"
                 style="background:#fff;border:1px solid var(--border);color:#475569;padding:11px 14px;font-size:14px;border-radius:6px;cursor:pointer;"
                 title="More options">⋯</button>
-            <div id="kw-more-menu" style="display:none;position:absolute;right:0;top:calc(100% + 4px);background:#fff;border:1px solid var(--border);border-radius:6px;box-shadow:0 8px 20px rgba(15,23,42,.08);min-width:240px;z-index:50;overflow:hidden;">
+            <div id="kw-more-menu" style="display:none;position:absolute;right:0;top:calc(100% + 4px);background:#fff;border:1px solid var(--border);border-radius:6px;box-shadow:0 8px 20px rgba(15,23,42,.08);min-width:260px;z-index:50;overflow:hidden;">
                 <?php if ($_dfso_ok): ?>
-                <button onclick="enrichKeywords(<?= (int)$filter_site ?>, true, this);hideKwMenu();" style="display:block;width:100%;text-align:left;padding:10px 14px;background:transparent;border:none;font-size:13px;color:#334155;cursor:pointer;" onmouseover="this.style.background='#f8fafc'" onmouseout="this.style.background='transparent'">
-                    🔄 Just refresh metrics
-                    <div style="font-size:11px;color:#94a3b8;margin-top:2px;">Re-pull volume + difficulty for existing keywords only</div>
-                </button>
-                <?php endif; ?>
-                <a href="<?= url('/dashboard/keywords.php?site=' . (int)$filter_site . '&view=gsc' . ($gsc_connected ? '&action=sync' : '')) ?>" style="display:block;padding:10px 14px;font-size:13px;color:#334155;text-decoration:none;border-top:1px solid #f1f5f9;" onmouseover="this.style.background='#f8fafc'" onmouseout="this.style.background='transparent'">
-                    <?= $gsc_connected ? '🔁 Re-sync Google Search Console' : '🔗 Connect Google Search Console' ?>
+                <a href="#" onclick="event.preventDefault();hideKwMenu();enrichKeywords(<?= (int)$filter_site ?>, true, this);return false;" class="kw-menu-item" style="display:block;padding:10px 14px;font-size:13px;color:#334155;text-decoration:none;cursor:pointer;">
+                    <span style="display:block;font-weight:500;">🔄 Just refresh metrics</span>
+                    <span style="display:block;font-size:11px;color:#94a3b8;margin-top:2px;">Re-pull volume + difficulty for existing keywords only</span>
                 </a>
+                <?php endif; ?>
+                <?php if ($gsc_connected): ?>
+                <a href="#" onclick="event.preventDefault();hideKwMenu();syncGsc(<?= (int)$filter_site ?>);return false;" class="kw-menu-item" style="display:block;padding:10px 14px;font-size:13px;color:#334155;text-decoration:none;cursor:pointer;border-top:1px solid #f1f5f9;">
+                    <span style="display:block;font-weight:500;">🔁 Re-sync Google Search Console</span>
+                    <span style="display:block;font-size:11px;color:#94a3b8;margin-top:2px;">Pull fresh impressions, clicks, and position</span>
+                </a>
+                <?php else: ?>
+                <a href="<?= url('/dashboard/keywords.php?site=' . (int)$filter_site . '&view=gsc') ?>" class="kw-menu-item" style="display:block;padding:10px 14px;font-size:13px;color:#334155;text-decoration:none;cursor:pointer;border-top:1px solid #f1f5f9;">
+                    <span style="display:block;font-weight:500;">🔗 Connect Google Search Console</span>
+                    <span style="display:block;font-size:11px;color:#94a3b8;margin-top:2px;">Get real ranking data instead of estimates</span>
+                </a>
+                <?php endif; ?>
                 <?php if ($ai_keyword_count > 0): ?>
-                <button onclick="deleteAll(<?= (int)$filter_site ?>, <?= $ai_keyword_count ?>);hideKwMenu();" style="display:block;width:100%;text-align:left;padding:10px 14px;background:transparent;border:none;border-top:1px solid #f1f5f9;font-size:13px;color:#dc2626;cursor:pointer;" onmouseover="this.style.background='#fef2f2'" onmouseout="this.style.background='transparent'">
-                    🗑 Clear AI-found keywords (<?= number_format($ai_keyword_count) ?>)
-                    <div style="font-size:11px;color:#94a3b8;margin-top:2px;">Manual + Google-synced rows are preserved</div>
-                </button>
+                <a href="#" onclick="event.preventDefault();hideKwMenu();deleteAll(<?= (int)$filter_site ?>, <?= $ai_keyword_count ?>);return false;" class="kw-menu-item kw-menu-danger" style="display:block;padding:10px 14px;font-size:13px;color:#dc2626;text-decoration:none;cursor:pointer;border-top:1px solid #f1f5f9;">
+                    <span style="display:block;font-weight:500;">🗑 Clear AI-found keywords (<?= number_format($ai_keyword_count) ?>)</span>
+                    <span style="display:block;font-size:11px;color:#94a3b8;margin-top:2px;">Manual + Google-synced rows are preserved</span>
+                </a>
                 <?php endif; ?>
             </div>
+            <style>
+                .kw-menu-item:hover { background:#f8fafc; }
+                .kw-menu-item.kw-menu-danger:hover { background:#fef2f2; }
+            </style>
         </div>
     </div>
 
-    <!-- Row 2: GSC sync status — compact footer line -->
-    <div style="margin-top:10px;font-size:11px;color:<?= $gsc_connected ? '#065f46' : '#92400e' ?>;display:flex;align-items:center;gap:6px;">
+    <!-- Row 2: GSC sync status — compact footer line (id let's syncGsc() update it in place) -->
+    <div id="gsc-status" style="margin-top:10px;font-size:11px;color:<?= $gsc_connected ? '#065f46' : '#92400e' ?>;display:flex;align-items:center;gap:6px;">
         <span style="display:inline-block;width:6px;height:6px;border-radius:50%;background:<?= $gsc_connected ? '#10b981' : '#f59e0b' ?>;"></span>
         <?php if ($gsc_connected): ?>
             Real data from Google · Last synced <?= $gsc_last_sync ? format_date($gsc_last_sync) : 'never' ?>
@@ -660,6 +673,42 @@ async function enrichKeywords(siteId, onlyMissing, btn) {
 <script>
 const KW_API = '<?= url('/api/keywords-manage.php') ?>';
 const SITE_ID = <?= $filter_site ? (int)$filter_site : 'null' ?>;
+
+// Wire up the keyword-add input + button. Inline onkeydown wasn't always
+// firing (probably swallowed by browser autofill or focus shifts) — explicit
+// listeners are more reliable.
+(function () {
+    const input = document.getElementById('add-keyword-input');
+    const btn   = document.getElementById('add-keyword-btn');
+    if (input) {
+        input.addEventListener('keydown', (e) => {
+            if (e.key === 'Enter') { e.preventDefault(); addKeywords(); }
+        });
+    }
+    if (btn) btn.addEventListener('click', (e) => { e.preventDefault(); addKeywords(); });
+})();
+
+// GSC sync — replaces the full-page navigation with an inline AJAX call so
+// the user gets a loader and stays on the keywords page. The legacy URL
+// keywords.php?view=gsc&action=sync still works as a fallback.
+async function syncGsc(siteId) {
+    const dot = document.getElementById('gsc-status');
+    if (dot) dot.innerHTML = '<span style="display:inline-block;width:6px;height:6px;border-radius:50%;background:#7c3aed;"></span> Syncing Google Search Console…';
+    try {
+        const res  = await fetch('<?= url('/dashboard/keywords.php?view=gsc&action=sync&ajax=1&site=' . (int)$filter_site) ?>', {credentials: 'same-origin'});
+        const text = await res.text();
+        // The current sync endpoint returns HTML — we just need to know it succeeded.
+        const ok = res.ok && (text.includes('Synced') || text.includes('synced'));
+        if (ok) {
+            if (dot) dot.innerHTML = '<span style="display:inline-block;width:6px;height:6px;border-radius:50%;background:#10b981;"></span> Google sync complete — refreshing…';
+            setTimeout(() => location.reload(), 700);
+        } else {
+            if (dot) dot.innerHTML = '<span style="display:inline-block;width:6px;height:6px;border-radius:50%;background:#dc2626;"></span> Google sync failed. <a href="<?= url('/dashboard/keywords.php?site=' . (int)$filter_site . '&view=gsc') ?>" style="color:#dc2626;font-weight:600;">Open GSC view →</a>';
+        }
+    } catch (e) {
+        if (dot) dot.innerHTML = '<span style="display:inline-block;width:6px;height:6px;border-radius:50%;background:#dc2626;"></span> Sync error: ' + e.message;
+    }
+}
 
 function toggleAll(cb) {
     document.querySelectorAll('.kw-check').forEach(c => c.checked = cb.checked);
