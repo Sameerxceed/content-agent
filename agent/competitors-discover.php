@@ -233,9 +233,15 @@ try {
         $cid = (int)$cid_stmt->fetchColumn();
         if (!$cid) continue;
         $inserted++;
-        foreach ($info['rankings'] as $r) {
-            $insert_rank->execute([$cid, 0, $r['position'], mb_substr($r['url'], 0, 2048), mb_substr($r['title'], 0, 500)]);
-        }
+        // Per-keyword rankings are skipped for profile-driven discovery: our
+        // queries are AI-generated buyer-perspective strings, not rows in the
+        // keywords table, so competitor_keyword_rankings.keyword_id (FK to
+        // keywords.id) can't be satisfied. The competitor record itself
+        // captures overlap_score + shared count, which is all the UI shows.
+        // Power-user per-keyword detail returns when the user clicks
+        // "View shared keywords" — that query joins against the real
+        // keywords table, so it'll show user keywords this domain also
+        // ranks for, surfaced separately.
     }
 
     // ── Build headline + finalize ─────────────────────────
