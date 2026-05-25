@@ -254,32 +254,32 @@ endif; ?>
 <?php if ($filter_site):
     $_dfso_ok = !empty(config('dataforseo_login')) && !empty(config('dataforseo_password'));
 ?>
-<!-- Consolidated keyword toolbar: add input + Deep Research CTA + GSC status footer + more-options menu -->
-<div class="card" style="margin-bottom:12px; padding:14px;">
-    <!-- Row 1: primary actions — add manual keyword + Run Deep Research -->
-    <div style="display:flex; gap:10px; align-items:stretch; flex-wrap:wrap;">
+<!-- Consolidated keyword toolbar: add input + Find New Keywords CTA + GSC status footer + more-options menu -->
+<div class="card" style="margin-bottom:8px; padding:10px 12px;">
+    <!-- Row 1: primary actions — add manual keyword + Find New Keywords -->
+    <div style="display:flex; gap:8px; align-items:stretch; flex-wrap:wrap;">
         <div style="flex:1; min-width:280px; position:relative; display:flex; gap:6px;">
             <input type="text" id="add-keyword-input"
-                placeholder="+  Add a keyword you want to target (press Enter or click Add)"
-                style="flex:1;padding:11px 14px;font-size:14px;border:1px solid var(--border);border-radius:6px;outline:none;transition:border-color .15s;"
+                placeholder="+  Add a keyword you want to target (Enter to save)"
+                style="flex:1;padding:8px 12px;font-size:13px;border:1px solid var(--border);border-radius:6px;outline:none;transition:border-color .15s;"
                 onfocus="this.style.borderColor='var(--accent)'" onblur="this.style.borderColor='var(--border)'">
             <button type="button" id="add-keyword-btn"
-                style="background:#fff;border:1px solid var(--border);color:#334155;padding:0 16px;font-size:13px;font-weight:500;border-radius:6px;cursor:pointer;white-space:nowrap;">Add</button>
+                style="background:#fff;border:1px solid var(--border);color:#334155;padding:0 14px;font-size:13px;font-weight:500;border-radius:6px;cursor:pointer;white-space:nowrap;">Add</button>
         </div>
         <?php if ($_dfso_ok): ?>
             <button onclick="runDeepResearch(<?= (int)$filter_site ?>)" id="kr-run-btn"
                 title="Expands your topics into 300-500 candidates, fetches real search data, infers buyer intent, scores everything against your business profile. Runs in background, ~3-8 min."
-                style="background:#7c3aed;border:1px solid #7c3aed;color:#fff;padding:11px 18px;font-size:14px;font-weight:600;border-radius:6px;cursor:pointer;white-space:nowrap;">
+                style="background:#7c3aed;border:1px solid #7c3aed;color:#fff;padding:8px 14px;font-size:13px;font-weight:600;border-radius:6px;cursor:pointer;white-space:nowrap;">
                 🧠 Find New Keywords
             </button>
         <?php else: ?>
-            <a href="<?= url('/dashboard/integrations.php') ?>" style="display:inline-flex;align-items:center;padding:11px 18px;font-size:13px;background:#f1f5f9;color:#475569;border:1px solid var(--border);border-radius:6px;text-decoration:none;white-space:nowrap;">
+            <a href="<?= url('/dashboard/integrations.php') ?>" style="display:inline-flex;align-items:center;padding:8px 14px;font-size:13px;background:#f1f5f9;color:#475569;border:1px solid var(--border);border-radius:6px;text-decoration:none;white-space:nowrap;">
                 Connect search data →
             </a>
         <?php endif; ?>
         <div style="position:relative;">
             <button onclick="toggleKwMenu(event)" id="kw-more-btn"
-                style="background:#fff;border:1px solid var(--border);color:#475569;padding:11px 14px;font-size:14px;border-radius:6px;cursor:pointer;"
+                style="background:#fff;border:1px solid var(--border);color:#475569;padding:8px 12px;font-size:14px;border-radius:6px;cursor:pointer;"
                 title="More options">⋯</button>
             <div id="kw-more-menu" style="display:none;position:absolute;right:0;top:calc(100% + 4px);background:#fff;border:1px solid var(--border);border-radius:6px;box-shadow:0 8px 20px rgba(15,23,42,.08);min-width:260px;z-index:50;overflow:hidden;">
                 <?php if ($_dfso_ok): ?>
@@ -314,7 +314,7 @@ endif; ?>
     </div>
 
     <!-- Row 2: GSC sync status — compact footer line (id let's syncGsc() update it in place) -->
-    <div id="gsc-status" style="margin-top:10px;font-size:11px;color:<?= $gsc_connected ? '#065f46' : '#92400e' ?>;display:flex;align-items:center;gap:6px;">
+    <div id="gsc-status" style="margin-top:6px;font-size:11px;color:<?= $gsc_connected ? '#065f46' : '#92400e' ?>;display:flex;align-items:center;gap:6px;">
         <span style="display:inline-block;width:6px;height:6px;border-radius:50%;background:<?= $gsc_connected ? '#10b981' : '#f59e0b' ?>;"></span>
         <?php if ($gsc_connected): ?>
             Real data from Google · Last synced <?= $gsc_last_sync ? format_date($gsc_last_sync) : 'never' ?>
@@ -323,10 +323,10 @@ endif; ?>
         <?php endif; ?>
     </div>
 
-    <!-- Inline status messages from the actions above -->
-    <div id="add-msg"     style="font-size:11px;margin-top:6px;"></div>
-    <div id="kr-status"   style="font-size:12px;margin-top:6px;"></div>
-    <div id="enrich-msg"  style="font-size:11px;margin-top:6px;"></div>
+    <!-- Inline status messages — only take vertical space when populated -->
+    <div id="add-msg"    style="font-size:11px;"></div>
+    <div id="kr-status"  style="font-size:12px;"></div>
+    <div id="enrich-msg" style="font-size:11px;"></div>
 </div>
 <script>
 function toggleKwMenu(e) {
@@ -444,14 +444,20 @@ async function enrichKeywords(siteId, onlyMissing, btn) {
 </script>
 <?php endif; ?>
 
-<!-- Filters: site + cluster -->
-<div class="card" style="padding: 10px 16px;margin-bottom:10px;">
+<?php
+// Site/cluster filter card only renders on the multi-site "All Sites" view OR
+// when this site has legacy clusters. With the new action-bucket system on a
+// single site, the card was dead UI with a confusing 'Apply' button.
+$show_filter_form = !$filter_site || !empty($clusters);
+?>
+<?php if ($show_filter_form): ?>
+<div class="card" style="padding:8px 12px;margin-bottom:8px;">
     <form method="GET" class="flex gap-4 items-center" style="flex-wrap: wrap;">
         <input type="hidden" name="status" value="<?= e($filter_status) ?>">
         <?php if ($filter_site): ?>
             <input type="hidden" name="site" value="<?= (int)$filter_site ?>">
         <?php else: ?>
-        <select name="site" class="form-control" style="width: auto; min-width: 180px;">
+        <select name="site" class="form-control" style="width:auto;min-width:180px;font-size:13px;padding:5px 8px;">
             <option value="">All Sites</option>
             <?php foreach ($sites as $s): ?>
                 <option value="<?= $s['id'] ?>" <?= $filter_site == $s['id'] ? 'selected' : '' ?>><?= e($s['name']) ?></option>
@@ -459,7 +465,7 @@ async function enrichKeywords(siteId, onlyMissing, btn) {
         </select>
         <?php endif; ?>
         <?php if (!empty($clusters)): ?>
-        <select name="cluster" class="form-control" style="width: auto; min-width: 150px;">
+        <select name="cluster" class="form-control" style="width:auto;min-width:150px;font-size:13px;padding:5px 8px;">
             <option value="">All Clusters</option>
             <?php foreach ($clusters as $c): ?>
                 <option value="<?= e($c) ?>" <?= $filter_cluster === $c ? 'selected' : '' ?>><?= e($c) ?></option>
@@ -472,10 +478,11 @@ async function enrichKeywords(siteId, onlyMissing, btn) {
         <?php endif; ?>
     </form>
 </div>
+<?php endif; ?>
 
 <!-- Single guided tab row — action buckets first, admin tabs after -->
 <?php if ($filter_site): ?>
-<div id="kw-tabs" style="display:flex;gap:2px;margin-bottom:10px;border-bottom:1px solid var(--border);flex-wrap:wrap;align-items:center;">
+<div id="kw-tabs" style="display:flex;gap:2px;margin-bottom:6px;border-bottom:1px solid var(--border);flex-wrap:wrap;align-items:center;">
     <?php
     // Action buckets — what the user should DO. Listed in actionability order.
     $tabs = [
@@ -490,17 +497,17 @@ async function enrichKeywords(siteId, onlyMissing, btn) {
     foreach ($tabs as $key => [$label, $color, $count, $hint]):
         $is_active = $filter_status === $key;
     ?>
-    <a href="<?= tab_url($current_filters, $key) ?>" data-status="<?= e($key) ?>" data-color="<?= e($color) ?>" title="<?= e($hint) ?>" class="kw-tab" style="text-decoration:none;padding:8px 12px;font-size:12px;border-bottom:2px solid <?= $is_active ? $color : 'transparent' ?>;color:<?= $is_active ? $color : '#64748b' ?>;font-weight:<?= $is_active ? '600' : '500' ?>;">
+    <a href="<?= tab_url($current_filters, $key) ?>" data-status="<?= e($key) ?>" data-color="<?= e($color) ?>" title="<?= e($hint) ?>" class="kw-tab" style="text-decoration:none;padding:6px 10px;font-size:12px;border-bottom:2px solid <?= $is_active ? $color : 'transparent' ?>;color:<?= $is_active ? $color : '#64748b' ?>;font-weight:<?= $is_active ? '600' : '500' ?>;">
         <?= $label ?> <span style="font-size:11px;color:#94a3b8;">(<?= $count ?>)</span>
     </a>
     <?php endforeach; ?>
     <span style="flex:1;"></span>
     <!-- Inline legend popover trigger -->
-    <a href="#" onclick="event.preventDefault();document.getElementById('kw-legend').classList.toggle('hidden');" style="font-size:11px;color:#94a3b8;text-decoration:none;padding:8px 8px;" title="What do these columns mean?">ⓘ legend</a>
+    <a href="#" onclick="event.preventDefault();document.getElementById('kw-legend').classList.toggle('hidden');" style="font-size:11px;color:#94a3b8;text-decoration:none;padding:6px 8px;" title="What do these columns mean?">ⓘ legend</a>
 </div>
 
 <!-- Collapsible column legend (hidden by default; toggled by the ⓘ link above) -->
-<div id="kw-legend" class="hidden" style="margin-bottom:10px;padding:10px 14px;background:#f8fafc;border:1px solid var(--border);border-radius:6px;font-size:12px;color:#475569;line-height:1.7;">
+<div id="kw-legend" class="hidden" style="margin-bottom:6px;padding:8px 12px;background:#f8fafc;border:1px solid var(--border);border-radius:6px;font-size:12px;color:#475569;line-height:1.6;">
     <div><strong>Intent:</strong> What the searcher wants. <em>Trans</em>actional (ready to buy) · <em>Comm</em>ercial (comparing) · <em>Info</em>rmational (learning) · <em>Nav</em>igational (a specific brand).</div>
     <div><strong>Score:</strong> 0-100 opportunity score blending volume × intent × difficulty × your current rank. Higher = better.</div>
     <div><strong>Volume / Diff:</strong> Estimated monthly searches and keyword difficulty (lower = easier).</div>
