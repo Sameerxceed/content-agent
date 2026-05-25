@@ -47,7 +47,10 @@ if (auth_is_super_admin()) {
 if ($filter_site)    { $where[] = 'k.site_id = ?'; $params[] = (int)$filter_site; }
 if ($filter_cluster) { $where[] = 'k.cluster = ?'; $params[] = $filter_cluster; }
 
-if ($filter_status === 'active') {
+if ($filter_status === 'active' || $filter_status === 'all') {
+    // 'All' is now the user's actual keyword list — active rows only. Ignored
+    // rows live behind the Ignored tab so the off-topic auto-filtered junk
+    // doesn't pollute the main view with strikethrough noise.
     $where[] = "k.status = 'active'";
 } elseif ($filter_status === 'ignored') {
     $where[] = "k.status = 'ignored'";
@@ -58,7 +61,6 @@ if ($filter_status === 'active') {
     $where[] = "k.status = 'active' AND k.recommended_action = ?";
     $params[] = $filter_status;
 }
-// 'all' = no extra filter
 
 if ($filter_intent !== '' && in_array($filter_intent, ['informational','commercial','transactional','navigational'], true)) {
     $where[] = 'k.intent = ?';
@@ -77,7 +79,9 @@ if ($filter_site) {
     $stmt = $db->prepare("SELECT status, COUNT(*) c FROM keywords WHERE site_id = ? GROUP BY status");
     $stmt->execute([(int)$filter_site]);
     foreach ($stmt->fetchAll() as $r) { $status_counts[$r['status']] = (int)$r['c']; }
-    $status_counts['all'] = $status_counts['active'] + $status_counts['ignored'];
+    // 'All' now reflects what the user actually sees on the All tab (active
+    // rows only). Ignored rows are accessible via the Ignored tab.
+    $status_counts['all'] = $status_counts['active'];
 
     $stmt = $db->prepare("SELECT COUNT(*) FROM keywords WHERE site_id = ? AND status = 'active' AND (recommended_action = 'quick_win' OR (recommended_action IS NULL AND gsc_position BETWEEN 11 AND 30 AND impressions > 0))");
     $stmt->execute([(int)$filter_site]);
@@ -507,7 +511,7 @@ $show_filter_form = !$filter_site || !empty($clusters);
         'watch'       => ['👀 Watch',      '#64748b', $status_counts['watch'],      'Interesting but not actionable yet.'],
         'skip'        => ['⏭ Skip',        '#94a3b8', $status_counts['skip'],       'Wrong intent or too hard for your scale.'],
         'ignored'     => ['Ignored',       '#f59e0b', $status_counts['ignored'],    'Keywords you\'ve marked off-brand or irrelevant.'],
-        'all'         => ['All',           '#0f172a', $status_counts['all'],        'Every keyword for this site, including ignored ones.'],
+        'all'         => ['All',           '#0f172a', $status_counts['all'],        'Every active keyword for this site. Ignored rows are in the Ignored tab.'],
     ];
     foreach ($tabs as $key => [$label, $color, $count, $hint]):
         $is_active = $filter_status === $key;
