@@ -71,18 +71,41 @@ function ki_run(PDO $db, int $site_id, callable $progress, array $opts = []): ar
     }
 
     // ── Step 2: Enrich each with DataForSEO metrics (volume/difficulty/CPC) ──
+    // Query against the business's actual market — defaulting to US (2840)
+    // misses real search volume for India-only / UK-only / etc. keywords.
+    // An India-based consultancy targeting "hire developers india" gets zero
+    // data from a US query but plenty from an India query.
+    $location_code = ki_location_code_for_profile($profile);
     $dfso_ready = !empty(config('dataforseo_login')) && !empty(config('dataforseo_password'));
     $dfso_metrics = [];
     if ($dfso_ready) {
         $progress('Looking up real search volume + difficulty for ' . count($generated) . ' keywords...', 50);
         $kw_strings = array_values(array_unique(array_column($generated, 'keyword')));
-        $bulk = dataforseo_keyword_overview($kw_strings);
+        $bulk = dataforseo_keyword_overview($kw_strings, $location_code);
         foreach ($bulk as $kw => $info) {
             $dfso_metrics[$kw] = [
                 'search_volume'      => $info['search_volume']      ?? null,
                 'keyword_difficulty' => $info['keyword_difficulty'] ?? null,
                 'cpc'                => $info['cpc']                ?? null,
             ];
+        }
+        // Fallback: for any keyword DataForSEO had nothing for in the local
+        // market, retry against worldwide (2840 / US is the closest proxy)
+        // so very-long-tail still picks up at least minimal signal.
+        if ($location_code !== DFSO_DEFAULT_LOCATION) {
+            $missing = array_values(array_filter($kw_strings, fn($kw) => empty($dfso_metrics[$kw])));
+            if ($missing) {
+                $bulk2 = dataforseo_keyword_overview($missing, DFSO_DEFAULT_LOCATION);
+                foreach ($bulk2 as $kw => $info) {
+                    if (empty($dfso_metrics[$kw])) {
+                        $dfso_metrics[$kw] = [
+                            'search_volume'      => $info['search_volume']      ?? null,
+                            'keyword_difficulty' => $info['keyword_difficulty'] ?? null,
+                            'cpc'                => $info['cpc']                ?? null,
+                        ];
+                    }
+                }
+            }
         }
     }
 
@@ -622,6 +645,76 @@ function ki_shape(string $keyword): string
     if ($wc >= 5) return 'long_tail';
     if ($wc <= 2) return 'head';
     return 'related';
+}
+
+// ─────────────────────────────────────────────────────────────────
+// Geo
+// ─────────────────────────────────────────────────────────────────
+
+/**
+ * Map the business's HQ country to a DataForSEO location_code. Used when
+ * querying volume / difficulty / CPC so we get the actual market data
+ * instead of US defaults that miss India/UK/etc. local search volumes.
+ *
+ * Global businesses fall back to US (2840) since that's typically the
+ * largest search market and a reasonable worldwide proxy.
+ */
+function ki_location_code_for_profile(array $profile): int
+{
+    $country = strtolower(trim((string)($profile['hq_country'] ?? '')));
+    if ($country === '') return DFSO_DEFAULT_LOCATION;
+
+    // Strip common variants — "United States of America" → "united states"
+    $country = trim(preg_replace('/\s+of\s+america$/i', '', $country));
+
+    // Top-20-ish search markets. DataForSEO codes from their location list.
+    static $map = [
+        'india'           => 2356,
+        'united states'   => 2840,
+        'usa'             => 2840,
+        'us'              => 2840,
+        'united kingdom'  => 2826,
+        'uk'              => 2826,
+        'britain'         => 2826,
+        'canada'          => 2124,
+        'australia'       => 2036,
+        'germany'         => 2276,
+        'france'          => 2250,
+        'spain'           => 2724,
+        'italy'           => 2380,
+        'netherlands'     => 2528,
+        'brazil'          => 2076,
+        'mexico'          => 2484,
+        'japan'           => 2392,
+        'south korea'     => 2410,
+        'korea'           => 2410,
+        'singapore'       => 2702,
+        'philippines'     => 2608,
+        'indonesia'       => 2360,
+        'malaysia'        => 2458,
+        'thailand'        => 2764,
+        'vietnam'         => 2704,
+        'united arab emirates' => 2784,
+        'uae'             => 2784,
+        'saudi arabia'    => 2682,
+        'south africa'    => 2710,
+        'new zealand'     => 2554,
+        'ireland'         => 2372,
+        'sweden'          => 2752,
+        'norway'          => 2578,
+        'denmark'         => 2208,
+        'poland'          => 2616,
+        'turkey'          => 2792,
+        'argentina'       => 2032,
+        'chile'           => 2152,
+        'colombia'        => 2170,
+    ];
+
+    // For global businesses, US is the largest market and a reasonable default
+    if (($profile['market_scope'] ?? '') === 'global') {
+        return DFSO_DEFAULT_LOCATION;
+    }
+    return $map[$country] ?? DFSO_DEFAULT_LOCATION;
 }
 
 // ─────────────────────────────────────────────────────────────────
