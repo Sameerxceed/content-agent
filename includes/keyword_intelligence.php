@@ -71,40 +71,44 @@ function ki_run(PDO $db, int $site_id, callable $progress, array $opts = []): ar
     }
 
     // ── Step 2: Enrich each with DataForSEO metrics (volume/difficulty/CPC) ──
-    // Query against the business's actual market — defaulting to US (2840)
-    // misses real search volume for India-only / UK-only / etc. keywords.
-    // An India-based consultancy targeting "hire developers india" gets zero
-    // data from a US query but plenty from an India query.
-    $location_code = ki_location_code_for_profile($profile);
+    // Query BOTH the local market AND the US — for B2B service exporters
+    // (e.g. an Indian consultancy selling to US clients), most volume on
+    // 'hire developers india' originates in the US, but 'AI consulting
+    // Pune' obviously has India-only volume. Picking the higher-volume
+    // result per keyword gives the truest picture of the addressable
+    // search demand for THIS business.
+    $local_code = ki_location_code_for_profile($profile);
     $dfso_ready = !empty(config('dataforseo_login')) && !empty(config('dataforseo_password'));
     $dfso_metrics = [];
     if ($dfso_ready) {
         $progress('Looking up real search volume + difficulty for ' . count($generated) . ' keywords...', 50);
         $kw_strings = array_values(array_unique(array_column($generated, 'keyword')));
-        $bulk = dataforseo_keyword_overview($kw_strings, $location_code);
-        foreach ($bulk as $kw => $info) {
-            $dfso_metrics[$kw] = [
-                'search_volume'      => $info['search_volume']      ?? null,
-                'keyword_difficulty' => $info['keyword_difficulty'] ?? null,
-                'cpc'                => $info['cpc']                ?? null,
-            ];
+
+        // Always query both: local market + US. US is the largest English search
+        // market and the dominant origin of B2B service exporter buying intent.
+        $bulks = [];
+        $bulks[] = dataforseo_keyword_overview($kw_strings, $local_code);
+        if ($local_code !== DFSO_DEFAULT_LOCATION) {
+            $bulks[] = dataforseo_keyword_overview($kw_strings, DFSO_DEFAULT_LOCATION);
         }
-        // Fallback: for any keyword DataForSEO had nothing for in the local
-        // market, retry against worldwide (2840 / US is the closest proxy)
-        // so very-long-tail still picks up at least minimal signal.
-        if ($location_code !== DFSO_DEFAULT_LOCATION) {
-            $missing = array_values(array_filter($kw_strings, fn($kw) => empty($dfso_metrics[$kw])));
-            if ($missing) {
-                $bulk2 = dataforseo_keyword_overview($missing, DFSO_DEFAULT_LOCATION);
-                foreach ($bulk2 as $kw => $info) {
-                    if (empty($dfso_metrics[$kw])) {
-                        $dfso_metrics[$kw] = [
-                            'search_volume'      => $info['search_volume']      ?? null,
-                            'keyword_difficulty' => $info['keyword_difficulty'] ?? null,
-                            'cpc'                => $info['cpc']                ?? null,
-                        ];
-                    }
+
+        foreach ($kw_strings as $kw) {
+            $best = null;
+            $best_vol = -1;
+            foreach ($bulks as $b) {
+                if (!isset($b[$kw])) continue;
+                $vol = (int)($b[$kw]['search_volume'] ?? 0);
+                if ($vol > $best_vol) {
+                    $best_vol = $vol;
+                    $best = $b[$kw];
                 }
+            }
+            if ($best !== null) {
+                $dfso_metrics[$kw] = [
+                    'search_volume'      => $best['search_volume']      ?? null,
+                    'keyword_difficulty' => $best['keyword_difficulty'] ?? null,
+                    'cpc'                => $best['cpc']                ?? null,
+                ];
             }
         }
     }
