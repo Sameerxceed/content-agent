@@ -86,28 +86,56 @@ function ki_run(PDO $db, int $site_id, callable $progress, array $opts = []): ar
 
         // Always query both: local market + US. US is the largest English search
         // market and the dominant origin of B2B service exporter buying intent.
-        $bulks = [];
-        $bulks[] = dataforseo_keyword_overview($kw_strings, $local_code);
+        //
+        // We query TWO endpoints per market:
+        //   1. Labs keyword_overview — has keyword_difficulty (Labs-only metric)
+        //   2. Google Ads search_volume — far better coverage for long-tail
+        //      buyer-shaped phrases, because it's backed by AdWords data.
+        // Labs is volume-authoritative when it has the keyword; Ads is the
+        // safety net that catches what Labs missed.
+        $labs_bulks = [];
+        $ads_bulks  = [];
+        $labs_bulks[] = dataforseo_keyword_overview($kw_strings, $local_code);
+        $ads_bulks[]  = dataforseo_ads_search_volume($kw_strings, $local_code);
         if ($local_code !== DFSO_DEFAULT_LOCATION) {
-            $bulks[] = dataforseo_keyword_overview($kw_strings, DFSO_DEFAULT_LOCATION);
+            $labs_bulks[] = dataforseo_keyword_overview($kw_strings, DFSO_DEFAULT_LOCATION);
+            $ads_bulks[]  = dataforseo_ads_search_volume($kw_strings, DFSO_DEFAULT_LOCATION);
         }
 
         foreach ($kw_strings as $kw) {
-            $best = null;
-            $best_vol = -1;
-            foreach ($bulks as $b) {
+            // Volume: pick the highest reported across all queries (Labs + Ads × markets)
+            $best_vol  = null;
+            $best_cpc  = null;
+            foreach ($labs_bulks as $b) {
                 if (!isset($b[$kw])) continue;
-                $vol = (int)($b[$kw]['search_volume'] ?? 0);
-                if ($vol > $best_vol) {
-                    $best_vol = $vol;
-                    $best = $b[$kw];
+                $v = $b[$kw]['search_volume'] ?? null;
+                if ($v !== null && ($best_vol === null || $v > $best_vol)) {
+                    $best_vol = (int)$v;
+                    if (isset($b[$kw]['cpc'])) $best_cpc = (float)$b[$kw]['cpc'];
                 }
             }
-            if ($best !== null) {
+            foreach ($ads_bulks as $b) {
+                if (!isset($b[$kw])) continue;
+                $v = $b[$kw]['search_volume'] ?? null;
+                if ($v !== null && ($best_vol === null || $v > $best_vol)) {
+                    $best_vol = (int)$v;
+                    if (isset($b[$kw]['cpc'])) $best_cpc = (float)$b[$kw]['cpc'];
+                }
+            }
+            // Difficulty: only Labs has it. Take whichever Labs query had it.
+            $best_diff = null;
+            foreach ($labs_bulks as $b) {
+                if (isset($b[$kw]['keyword_difficulty']) && $b[$kw]['keyword_difficulty'] !== null) {
+                    $best_diff = (int)$b[$kw]['keyword_difficulty'];
+                    break;
+                }
+            }
+
+            if ($best_vol !== null || $best_diff !== null || $best_cpc !== null) {
                 $dfso_metrics[$kw] = [
-                    'search_volume'      => $best['search_volume']      ?? null,
-                    'keyword_difficulty' => $best['keyword_difficulty'] ?? null,
-                    'cpc'                => $best['cpc']                ?? null,
+                    'search_volume'      => $best_vol,
+                    'keyword_difficulty' => $best_diff,
+                    'cpc'                => $best_cpc,
                 ];
             }
         }

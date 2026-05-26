@@ -101,6 +101,52 @@ function dataforseo_keyword_overview(array $keywords, int $location_code = DFSO_
 }
 
 /**
+ * Google Ads search-volume endpoint. Better coverage than the Labs
+ * keyword_overview endpoint for specific / long-tail / buyer-shaped phrases,
+ * because it's backed by the AdWords keyword planner (which sees actual
+ * advertiser-bid data, not just SERP indexing).
+ *
+ * Trade-off: no keyword_difficulty here (that's a Labs-only metric). Pair
+ * this with keyword_overview to get the full picture — use Ads as the
+ * authoritative source for volume + CPC, Labs for difficulty.
+ *
+ * Batches in chunks of 1000 (the endpoint's hard limit).
+ *
+ * @return array<string, array{search_volume:int|null, cpc:float|null, competition:string|null, low_bid:float|null, high_bid:float|null}>
+ */
+function dataforseo_ads_search_volume(array $keywords, int $location_code = DFSO_DEFAULT_LOCATION, string $language_code = DFSO_DEFAULT_LANGUAGE): array
+{
+    $keywords = array_values(array_filter(array_map('trim', $keywords)));
+    if (empty($keywords)) return [];
+
+    $out = [];
+    foreach (array_chunk($keywords, 1000) as $chunk) {
+        $resp = dataforseo_call('/v3/keywords_data/google_ads/search_volume/live', [[
+            'keywords'      => $chunk,
+            'location_code' => $location_code,
+            'language_code' => $language_code,
+        ]]);
+        if (empty($resp['success'])) {
+            error_log('[dataforseo_ads_search_volume] ' . ($resp['error'] ?? 'unknown'));
+            continue;
+        }
+        foreach (($resp['data']['tasks'][0]['result'] ?? []) as $row) {
+            $kw = strtolower(trim($row['keyword'] ?? ''));
+            if ($kw === '') continue;
+            $out[$kw] = [
+                'search_volume' => isset($row['search_volume']) ? (int)$row['search_volume'] : null,
+                'cpc'           => isset($row['cpc']) ? (float)$row['cpc'] : null,
+                'competition'   => $row['competition'] ?? null,
+                'low_bid'       => isset($row['low_top_of_page_bid']) ? (float)$row['low_top_of_page_bid'] : null,
+                'high_bid'      => isset($row['high_top_of_page_bid']) ? (float)$row['high_top_of_page_bid'] : null,
+            ];
+        }
+        usleep(120000);
+    }
+    return $out;
+}
+
+/**
  * Pull every keyword a domain ranks for in Google's top 100 (organic).
  * Used for competitor keyword imports.
  *
