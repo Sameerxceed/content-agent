@@ -122,7 +122,7 @@ function ki_run(PDO $db, int $site_id, callable $progress, array $opts = []): ar
                     if (isset($b[$kw]['cpc'])) $best_cpc = (float)$b[$kw]['cpc'];
                 }
             }
-            // Difficulty: only Labs has it. Take whichever Labs query had it.
+            // Difficulty: try Labs first (came with keyword_overview).
             $best_diff = null;
             foreach ($labs_bulks as $b) {
                 if (isset($b[$kw]['keyword_difficulty']) && $b[$kw]['keyword_difficulty'] !== null) {
@@ -137,6 +137,36 @@ function ki_run(PDO $db, int $site_id, callable $progress, array $opts = []): ar
                     'keyword_difficulty' => $best_diff,
                     'cpc'                => $best_cpc,
                 ];
+            }
+        }
+
+        // Difficulty fallback — for keywords keyword_overview didn't have a
+        // difficulty for, hit bulk_keyword_difficulty which calculates a
+        // 0-100 score on the fly for ANY keyword. This catches the long-tail
+        // buyer-shaped phrases that aren't in the Labs catalog.
+        $needs_diff = array_values(array_filter($kw_strings, function ($kw) use ($dfso_metrics) {
+            return !isset($dfso_metrics[$kw]['keyword_difficulty']) || $dfso_metrics[$kw]['keyword_difficulty'] === null;
+        }));
+        if ($needs_diff) {
+            $progress('Calculating difficulty for ' . count($needs_diff) . ' long-tail keywords...', 65);
+            // Query against the local market — difficulty is geo-sensitive
+            $diff_map = dataforseo_bulk_keyword_difficulty($needs_diff, $local_code);
+            // If the local market didn't have it, try US
+            if ($local_code !== DFSO_DEFAULT_LOCATION) {
+                $still_missing = array_values(array_filter($needs_diff, fn($k) => !isset($diff_map[$k])));
+                if ($still_missing) {
+                    $us_diff = dataforseo_bulk_keyword_difficulty($still_missing, DFSO_DEFAULT_LOCATION);
+                    foreach ($us_diff as $k => $v) {
+                        if (!isset($diff_map[$k])) $diff_map[$k] = $v;
+                    }
+                }
+            }
+            foreach ($diff_map as $kw => $diff) {
+                if (!isset($dfso_metrics[$kw])) {
+                    $dfso_metrics[$kw] = ['search_volume' => null, 'keyword_difficulty' => $diff, 'cpc' => null];
+                } else {
+                    $dfso_metrics[$kw]['keyword_difficulty'] = $diff;
+                }
             }
         }
     }

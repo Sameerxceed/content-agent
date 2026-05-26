@@ -101,6 +101,44 @@ function dataforseo_keyword_overview(array $keywords, int $location_code = DFSO_
 }
 
 /**
+ * Bulk keyword difficulty endpoint. Calculates a 0-100 difficulty score
+ * for any keyword — works on the long-tail phrases that keyword_overview
+ * doesn't have in its indexed catalog. Use this as a fallback when
+ * keyword_overview returned a row without keyword_difficulty.
+ *
+ * Batches of 1000 (endpoint limit).
+ *
+ * @return array<string, int>  map of keyword => difficulty 0-100
+ */
+function dataforseo_bulk_keyword_difficulty(array $keywords, int $location_code = DFSO_DEFAULT_LOCATION, string $language_code = DFSO_DEFAULT_LANGUAGE): array
+{
+    $keywords = array_values(array_filter(array_map('trim', $keywords)));
+    if (empty($keywords)) return [];
+
+    $out = [];
+    foreach (array_chunk($keywords, 1000) as $chunk) {
+        $resp = dataforseo_call('/v3/dataforseo_labs/google/bulk_keyword_difficulty/live', [[
+            'keywords'      => $chunk,
+            'location_code' => $location_code,
+            'language_code' => $language_code,
+        ]]);
+        if (empty($resp['success'])) {
+            error_log('[dataforseo_bulk_keyword_difficulty] ' . ($resp['error'] ?? 'unknown'));
+            continue;
+        }
+        foreach (($resp['data']['tasks'][0]['result'] ?? []) as $row) {
+            $kw = strtolower(trim($row['keyword'] ?? ''));
+            if ($kw === '') continue;
+            if (isset($row['keyword_difficulty'])) {
+                $out[$kw] = (int)$row['keyword_difficulty'];
+            }
+        }
+        usleep(120000);
+    }
+    return $out;
+}
+
+/**
  * Google Ads search-volume endpoint. Better coverage than the Labs
  * keyword_overview endpoint for specific / long-tail / buyer-shaped phrases,
  * because it's backed by the AdWords keyword planner (which sees actual
