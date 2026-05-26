@@ -126,7 +126,10 @@ function dataforseo_bulk_keyword_difficulty(array $keywords, int $location_code 
             error_log('[dataforseo_bulk_keyword_difficulty] ' . ($resp['error'] ?? 'unknown'));
             continue;
         }
-        foreach (($resp['data']['tasks'][0]['result'] ?? []) as $row) {
+        // This endpoint wraps results: tasks[0].result[0].items[].keyword_difficulty
+        // (Different from keyword_overview which has tasks[0].result[].keyword.)
+        $items = $resp['data']['tasks'][0]['result'][0]['items'] ?? [];
+        foreach ($items as $row) {
             $kw = strtolower(trim($row['keyword'] ?? ''));
             if ($kw === '') continue;
             if (isset($row['keyword_difficulty'])) {
