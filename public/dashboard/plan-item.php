@@ -106,7 +106,19 @@ $lock_badges = [
 
 .pi-hero { background:#fff; border:1px solid var(--border); border-radius:8px; padding:14px; margin-bottom:12px; }
 .pi-hero .label { font-size:11px; text-transform:uppercase; letter-spacing:0.6px; color:#64748b; font-weight:600; margin-bottom:8px; }
-.pi-hero .preview { width:100%; aspect-ratio: 16/9; background:#f1f5f9 url('data:image/svg+xml;utf8,<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"%2394a3b8\" stroke-width=\"1.5\"><circle cx=\"12\" cy=\"12\" r=\"9\"/><path d=\"M12 8v4l3 2\"/></svg>') center / 48px no-repeat; border-radius:6px; overflow:hidden; display:flex; align-items:center; justify-content:center; }
+.pi-hero .preview { width:100%; aspect-ratio: 16/9; background:#f8fafb; border:2px dashed #cbd5e1; border-radius:6px; overflow:hidden; display:flex; flex-direction:column; align-items:center; justify-content:center; gap:8px; color:#94a3b8; }
+.pi-hero .preview .empty-icon { font-size:42px; opacity:0.6; }
+.pi-hero .preview .empty-text { font-size:13px; font-weight:500; }
+.pi-hero .preview .empty-sub { font-size:11px; color:#cbd5e1; }
+.pi-blog-preview { background:#fff; border:1px solid var(--border); border-radius:8px; padding:24px 28px; font-size:15px; line-height:1.7; color:#1e293b; max-height:620px; overflow-y:auto; }
+.pi-blog-preview h1, .pi-blog-preview h2, .pi-blog-preview h3 { font-weight:600; color:#0f172a; margin:1.5em 0 0.5em; line-height:1.3; }
+.pi-blog-preview h1 { font-size:24px; } .pi-blog-preview h2 { font-size:20px; } .pi-blog-preview h3 { font-size:17px; }
+.pi-blog-preview h1:first-child, .pi-blog-preview h2:first-child, .pi-blog-preview h3:first-child { margin-top:0; }
+.pi-blog-preview p { margin:0.8em 0; }
+.pi-blog-preview ul, .pi-blog-preview ol { margin:0.8em 0; padding-left:1.6em; }
+.pi-blog-preview li { margin:0.3em 0; }
+.pi-blog-preview strong { color:#0f172a; font-weight:600; }
+.pi-blog-preview blockquote { border-left:3px solid #6366f1; padding:0.4em 1em; margin:1em 0; color:#475569; background:#f8fafb; }
 .pi-hero .preview img { width:100%; height:100%; object-fit:cover; }
 .pi-hero .prompt { background:#f8fafb; border:1px dashed var(--border); padding:8px 10px; font-size:11px; color:#475569; border-radius:4px; margin-top:8px; font-family:ui-monospace, monospace; line-height:1.5; max-height:70px; overflow:auto; }
 .pi-hero .chooser { display:flex; gap:6px; margin-top:10px; flex-wrap:wrap; }
@@ -224,6 +236,10 @@ $lock_badges = [
                 <div class="preview">
                     <?php if (!empty($item['hero_image_url'])): ?>
                         <img src="<?= e($item['hero_image_url']) ?>" alt="<?= e($item['hero_image_alt'] ?? '') ?>">
+                    <?php else: ?>
+                        <div class="empty-icon">🖼️</div>
+                        <div class="empty-text">No hero image yet</div>
+                        <div class="empty-sub">Upload your own, generate with AI, or pick a stock photo below</div>
                     <?php endif; ?>
                 </div>
                 <?php if (!empty($item['hero_image_prompt'])): ?>
@@ -270,11 +286,15 @@ $lock_badges = [
                     <input class="field" value="<?= e($item['post_seo_title'] ?? '') ?>" readonly>
                     <h3>SEO description</h3>
                     <input class="field" value="<?= e($item['post_seo_desc'] ?? '') ?>" readonly>
-                    <h3>Body (HTML)</h3>
-                    <textarea class="field large" readonly><?= e($item['post_body'] ?? '') ?></textarea>
-                    <div style="font-size:11px;color:#94a3b8;text-align:right;">
-                        Approximate word count: <?= number_format(str_word_count(strip_tags($item['post_body'] ?? ''))) ?>
+                    <h3>Body preview</h3>
+                    <div class="pi-blog-preview">
+                        <?= $item['post_body'] ?? '' ?>
                     </div>
+                    <div style="display:flex;justify-content:space-between;align-items:center;font-size:11px;color:#94a3b8;margin-top:8px;">
+                        <a href="#" onclick="event.preventDefault();document.getElementById('pi-blog-html').style.display=document.getElementById('pi-blog-html').style.display==='none'?'block':'none';" style="color:#6366f1;text-decoration:none;">View raw HTML ⇅</a>
+                        <span>Approximate word count: <?= number_format(str_word_count(strip_tags($item['post_body'] ?? ''))) ?></span>
+                    </div>
+                    <textarea id="pi-blog-html" class="field large" readonly style="display:none;margin-top:8px;font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:12px;"><?= e($item['post_body'] ?? '') ?></textarea>
                 </div>
 
                 <?php foreach (['linkedin','twitter','reddit','newsletter','schema'] as $ch):
