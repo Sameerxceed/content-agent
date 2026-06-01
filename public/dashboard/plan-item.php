@@ -65,9 +65,9 @@ $siblings = $siblings->fetchAll();
 $channels_for_item = json_decode($item['channels'] ?? '[]', true) ?: [];
 $variants = [];
 if ($item['post_id_loaded']) {
-    $ch = $db->prepare("SELECT channel_id, status, variant_content, variant_meta FROM post_channels WHERE post_id = ?");
+    $ch = $db->prepare("SELECT channel, status, variant_content, variant_meta FROM post_channels WHERE post_id = ?");
     $ch->execute([(int)$item['post_id_loaded']]);
-    foreach ($ch->fetchAll() as $row) $variants[$row['channel_id']] = $row;
+    foreach ($ch->fetchAll() as $row) $variants[$row['channel']] = $row;
 }
 
 $page_title = ($item['proposed_title'] ?: 'Plan item') . ' — ' . $site['name'];
