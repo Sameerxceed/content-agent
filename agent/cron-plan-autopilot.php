@@ -198,7 +198,7 @@ function _autopilot_queue_channels(PDO $db, int $post_id, array $channels, strin
     // row with variant_content pre-populated. Existing cron-publish.php will
     // pick these up on scheduled_for and distribute.
     $insert = $db->prepare("INSERT INTO post_channels
-        (post_id, channel_id, status, scheduled_for, variant_content, variant_meta, created_at)
+        (post_id, channel, status, scheduled_for, variant_content, variant_meta, created_at)
         VALUES (?, ?, 'draft', ?, ?, ?, NOW())
         ON DUPLICATE KEY UPDATE
             status = VALUES(status),
