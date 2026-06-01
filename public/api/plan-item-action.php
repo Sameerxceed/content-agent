@@ -82,6 +82,11 @@ switch ($action) {
     case 'draft_now':
         if (!$item) pia_respond(['error' => 'item_id required'], 400);
         if ($item['lock_state'] !== 'pipeline') pia_respond(['error' => 'Item already drafted or in flight'], 400);
+        // Flip to committed immediately so the UI enters the "Drafting in progress…"
+        // view + auto-poll. The autopilot CLI is the source of truth and will
+        // flip back to 'pipeline' if it errors out.
+        $db->prepare("UPDATE content_plan_items SET lock_state='committed' WHERE id=? AND lock_state='pipeline'")
+           ->execute([$item_id]);
         _pia_fire_autopilot_for_item($item_id);
         pia_respond(['success' => true]);
 
