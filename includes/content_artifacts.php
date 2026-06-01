@@ -194,10 +194,9 @@ function content_artifacts_generate_full_package(PDO $db, int $item_id): array
     if (empty($resp['success'])) {
         throw new RuntimeException('Claude error: ' . ($resp['error'] ?? 'unknown'));
     }
-    $clean = preg_replace('/^```(?:json)?\s*|\s*```$/m', '', trim($resp['content']));
-    $data = json_decode($clean, true);
+    $data = extract_json_from_text($resp['content'] ?? '');
     if (!is_array($data) || empty($data['blog']) || empty($data['blog']['body_html'])) {
-        error_log('[content_artifacts] malformed JSON, first 500 chars: ' . substr($clean, 0, 500));
+        error_log('[content_artifacts] malformed JSON, first 500 chars: ' . substr($resp['content'] ?? '', 0, 500));
         throw new RuntimeException('Full-package generator returned malformed JSON');
     }
     return $data;

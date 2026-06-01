@@ -365,10 +365,9 @@ function _plan_pass_a_cluster_keywords(array $keywords, array $profile): array
         error_log('[plan pass A] Claude error: ' . ($resp['error'] ?? 'unknown'));
         return [];
     }
-    $clean = preg_replace('/^```(?:json)?\s*|\s*```$/m', '', trim($resp['content']));
-    $data = json_decode($clean, true);
+    $data = extract_json_from_text($resp['content'] ?? '');
     if (!is_array($data) || empty($data['clusters'])) {
-        error_log('[plan pass A] malformed JSON: ' . substr($clean, 0, 500));
+        error_log('[plan pass A] malformed JSON: ' . substr($resp['content'] ?? '', 0, 500));
         return [];
     }
 
@@ -459,10 +458,9 @@ function _plan_pass_b_sequence_items(array $clusters, array $keywords, array $pr
         error_log('[plan pass B] Claude error: ' . ($resp['error'] ?? 'unknown'));
         return [];
     }
-    $clean = preg_replace('/^```(?:json)?\s*|\s*```$/m', '', trim($resp['content']));
-    $data = json_decode($clean, true);
+    $data = extract_json_from_text($resp['content'] ?? '');
     if (!is_array($data) || empty($data['items'])) {
-        error_log('[plan pass B] malformed JSON: ' . substr($clean, 0, 500));
+        error_log('[plan pass B] malformed JSON: ' . substr($resp['content'] ?? '', 0, 500));
         return [];
     }
 

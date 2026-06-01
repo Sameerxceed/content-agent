@@ -330,7 +330,6 @@ function _review_call_claude(array $plan, ?array $profile, array $summary, array
         error_log('[plan review] Claude error: ' . ($resp['error'] ?? 'unknown'));
         return null;
     }
-    $clean = preg_replace('/^```(?:json)?\s*|\s*```$/m', '', trim($resp['content']));
-    $data = json_decode($clean, true);
+    $data = extract_json_from_text($resp['content'] ?? '');
     return is_array($data) ? $data : null;
 }

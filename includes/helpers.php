@@ -4,6 +4,61 @@
  */
 
 /**
+ * Extract the first balanced JSON object/array from a text blob that may
+ * contain markdown fences, prose preamble, or trailing rationale. Tolerates
+ * the common Claude failure modes:
+ *   - ```json ... ``` fences (with or without language tag)
+ *   - leading "Here's the JSON:" prose
+ *   - trailing "**Rationale:**\n1. ..." prose after the JSON
+ * Returns the decoded array, or null if no parseable JSON was found.
+ */
+function extract_json_from_text(string $text): ?array
+{
+    $text = trim($text);
+    if ($text === '') return null;
+
+    // Strip a leading ```json or ``` fence if present
+    $text = preg_replace('/^```(?:json|JSON)?\s*\n?/', '', $text);
+
+    // Find the first { or [ — JSON object/array start
+    $start_obj = strpos($text, '{');
+    $start_arr = strpos($text, '[');
+    $start = false;
+    if ($start_obj !== false && $start_arr !== false) {
+        $start = min($start_obj, $start_arr);
+    } else {
+        $start = $start_obj !== false ? $start_obj : $start_arr;
+    }
+    if ($start === false) return null;
+
+    // Walk forward, tracking brace/bracket depth, respecting strings + escapes
+    $open  = $text[$start];
+    $close = $open === '{' ? '}' : ']';
+    $depth = 0;
+    $in_string = false;
+    $escape = false;
+    $end = -1;
+    $len = strlen($text);
+    for ($i = $start; $i < $len; $i++) {
+        $ch = $text[$i];
+        if ($escape) { $escape = false; continue; }
+        if ($ch === '\\') { $escape = true; continue; }
+        if ($ch === '"') { $in_string = !$in_string; continue; }
+        if ($in_string) continue;
+        if ($ch === $open)  $depth++;
+        elseif ($ch === $close) {
+            $depth--;
+            if ($depth === 0) { $end = $i; break; }
+        }
+    }
+    if ($end < 0) return null;
+
+    $json = substr($text, $start, $end - $start + 1);
+    $data = json_decode($json, true);
+    return is_array($data) ? $data : null;
+}
+
+/**
  * Load app config (cached after first call).
  */
 function config(string $key = null, $default = null)
