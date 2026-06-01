@@ -32,6 +32,19 @@ $stmt = $db->prepare('SELECT status, COUNT(*) AS cnt FROM posts WHERE site_id = 
 $stmt->execute([$site_id]);
 $_stp_posts = ['published' => 0, 'draft' => 0]; foreach ($stmt->fetchAll() as $r) $_stp_posts[$r['status']] = (int)$r['cnt'];
 
+// Content plan health (drives the Publish step's metric and href)
+$_stp_plan_total = 0;
+$_stp_plan_has_active = false;
+try {
+    $stmt = $db->prepare("SELECT total_items_scheduled, total_items_published FROM content_plans WHERE site_id = ? AND status = 'active' LIMIT 1");
+    $stmt->execute([$site_id]);
+    $_stp_plan = $stmt->fetch();
+    if ($_stp_plan) {
+        $_stp_plan_has_active = true;
+        $_stp_plan_total = (int)$_stp_plan['total_items_scheduled'];
+    }
+} catch (PDOException $e) {}
+
 $stmt = $db->prepare('SELECT 1 FROM integrations WHERE site_id = ? AND platform = "google_search_console" AND is_active = 1');
 $stmt->execute([$site_id]);
 $_stp_gsc = (bool)$stmt->fetchColumn();
@@ -63,13 +76,19 @@ try {
 } catch (PDOException $e) {}
 $_stp_has_grow = $_stp_grow_competitors > 0 || $_stp_grow_aeo > 0;
 
-// Write and Publish used to be separate steps, but for most sites they happen
-// together (auto-publish or write-then-publish-immediately) and the two
-// metrics ended up identical on the stepper. Merged into one "Publish" step
-// with the draft count appended only when drafts are actually waiting.
-$_stp_publish_metric = $_stp_has_publish
-    ? ($_stp_posts['published'] . ' live' . ($_stp_posts['draft'] > 0 ? ' · ' . $_stp_posts['draft'] . ' draft' : ''))
-    : ($_stp_posts['draft'] > 0 ? $_stp_posts['draft'] . ' draft' . ($_stp_posts['draft'] === 1 ? '' : 's') : 'nothing yet');
+// Publish step. With Content Plan v1, the natural destination is /dashboard/plan.php
+// (the plan view), where the user generates + reviews the content pipeline. The
+// metric prefers plan-aware language when a plan exists, falls back to raw post
+// counts when one doesn't.
+if ($_stp_plan_has_active) {
+    $_stp_publish_metric = $_stp_plan_total . ' planned'
+        . ($_stp_posts['draft'] > 0 ? ' · ' . $_stp_posts['draft'] . ' draft' : '')
+        . ($_stp_posts['published'] > 0 ? ' · ' . $_stp_posts['published'] . ' live' : '');
+} else {
+    $_stp_publish_metric = $_stp_has_publish
+        ? ($_stp_posts['published'] . ' live' . ($_stp_posts['draft'] > 0 ? ' · ' . $_stp_posts['draft'] . ' draft' : ''))
+        : ($_stp_posts['draft'] > 0 ? $_stp_posts['draft'] . ' draft' . ($_stp_posts['draft'] === 1 ? '' : 's') : 'no plan yet');
+}
 
 $_stp_steps = [
     'scan' => [
@@ -93,8 +112,8 @@ $_stp_steps = [
     'publish' => [
         'label'  => 'Publish',
         'metric' => $_stp_publish_metric,
-        'done'   => $_stp_has_publish,
-        'href'   => url('/dashboard/posts.php?site=' . $site_id),
+        'done'   => $_stp_has_publish || $_stp_plan_has_active,
+        'href'   => url('/dashboard/plan.php?site=' . $site_id),
     ],
     'track' => [
         'label'  => 'Track',

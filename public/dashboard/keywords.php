@@ -187,7 +187,29 @@ $current_filters = ['site' => $filter_site, 'cluster' => $filter_cluster, 'sort'
 
 <?php if ($filter_site):
     $_dfso_ok = !empty(config('dataforseo_login')) && !empty(config('dataforseo_password'));
+    // Show the "Generate Content Plan" hint when the user has enough keywords
+    // but hasn't yet generated a plan — guides them to the next step in the
+    // funnel (Keywords → Plan → Publish).
+    $_active_plan = null;
+    try {
+        $stmt = $db->prepare("SELECT id FROM content_plans WHERE site_id = ? AND status = 'active' LIMIT 1");
+        $stmt->execute([(int)$filter_site]);
+        $_active_plan = $stmt->fetchColumn() ?: null;
+    } catch (PDOException $e) {}
+    $_plan_ready_count = (int)($status_counts['active'] ?? 0);
 ?>
+<?php if (!$_active_plan && $_plan_ready_count >= 30): ?>
+<a href="<?= url('/dashboard/plan.php?site=' . (int)$filter_site) ?>"
+   style="display:flex;justify-content:space-between;align-items:center;gap:12px;padding:12px 16px;margin-bottom:8px;background:linear-gradient(135deg,#f5f3ff 0%,#ede9fe 100%);border:1px solid #ddd6fe;border-radius:8px;text-decoration:none;color:inherit;">
+    <div>
+        <div style="font-size:13px;font-weight:600;color:#5b21b6;">📋 Ready to build a 6-month content plan?</div>
+        <div style="font-size:11px;color:#6b21a8;margin-top:2px;line-height:1.4;">
+            ContentAgent can cluster these <?= $_plan_ready_count ?> keywords into topic groups, sequence ~24 posts across the next 12 weeks, and forecast clicks at 6 months. ~3-5 minutes to generate.
+        </div>
+    </div>
+    <span style="background:#7c3aed;color:#fff;padding:7px 14px;font-size:12px;font-weight:600;border-radius:6px;white-space:nowrap;">Build the plan →</span>
+</a>
+<?php endif; ?>
 <!-- Two-action toolbar: Add keywords + Find Keywords. Everything else (GSC
      sync, off-topic cleanup, metric refresh) is folded into Find Keywords so
      the user has exactly two decisions, not five. -->
