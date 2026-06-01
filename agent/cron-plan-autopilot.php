@@ -59,12 +59,16 @@ foreach ($items as $it) {
     $iid = (int)$it['id'];
     $isite = (int)$it['site_id'];
 
-    // Lock immediately so concurrent runs skip this one
-    $db->prepare("UPDATE content_plan_items SET lock_state='committed' WHERE id=? AND lock_state='pipeline'")
-       ->execute([$iid]);
-    if ((int)$db->prepare("SELECT 1 FROM content_plan_items WHERE id=? AND lock_state='committed'")->fetchColumn() === 0) {
-        // we lost the race — someone else committed it
-        echo "  ↷ item={$iid} already committed, skipping.\n";
+    // Lock immediately so concurrent runs skip this one. The UPDATE only
+    // affects rows currently in 'pipeline'; if the row is already past that
+    // state (drafted/published) someone else has it.
+    $stmt = $db->prepare("UPDATE content_plan_items SET lock_state='committed' WHERE id=? AND lock_state IN ('pipeline','committed')");
+    $stmt->execute([$iid]);
+    $check = $db->prepare("SELECT lock_state FROM content_plan_items WHERE id=?");
+    $check->execute([$iid]);
+    $current_lock = (string)$check->fetchColumn();
+    if ($current_lock !== 'committed') {
+        echo "  ↷ item={$iid} in state '{$current_lock}', skipping.\n";
         continue;
     }
 
