@@ -522,6 +522,11 @@ function sidebar_active(string $page, array $pages_or_query = []): string {
             <a href="<?= url('/dashboard/integrations.php') ?>" class="<?= sidebar_active('integrations') ?>">
                 <span class="nav-icon">&#128268;</span> <?= (function_exists('auth_is_super_admin') && auth_is_super_admin()) ? 'Integrations' : "What's included" ?>
             </a>
+            <?php if (function_exists('auth_is_super_admin') && auth_is_super_admin()): ?>
+            <a href="<?= url('/dashboard/cron-jobs.php') ?>" class="<?= sidebar_active('cron-jobs') ?>">
+                <span class="nav-icon">&#9201;</span> Cron Jobs
+            </a>
+            <?php endif; ?>
             <a href="<?= url('/dashboard/settings.php') ?>" class="<?= sidebar_active('settings') ?>">
                 <span class="nav-icon">&#9881;</span> Settings
             </a>
@@ -536,6 +541,11 @@ function sidebar_active(string $page, array $pages_or_query = []): string {
             <a href="<?= url('/dashboard/integrations.php') ?>" class="<?= sidebar_active('integrations') ?>">
                 <span class="nav-icon">&#128268;</span> <?= (function_exists('auth_is_super_admin') && auth_is_super_admin()) ? 'Integrations' : "What's included" ?>
             </a>
+            <?php if (function_exists('auth_is_super_admin') && auth_is_super_admin()): ?>
+            <a href="<?= url('/dashboard/cron-jobs.php') ?>" class="<?= sidebar_active('cron-jobs') ?>">
+                <span class="nav-icon">&#9201;</span> Cron Jobs
+            </a>
+            <?php endif; ?>
             <a href="<?= url('/dashboard/settings.php') ?>" class="<?= sidebar_active('settings') ?>">
                 <span class="nav-icon">&#9881;</span> Settings
             </a>

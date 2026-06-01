@@ -67,16 +67,19 @@ function cron_get_sites(PDO $db, ?int $site_id_filter): array
 
 $job = $argv[1] ?? '';
 
-// Parse --site=N from anywhere in argv (PHP's getopt stops at first positional arg)
+// Parse --site=N and --run=N from anywhere in argv
 $site_id_filter = null;
+$cron_run_id    = null;   // when set, we report completion back to cron_runs
 foreach (array_slice($argv, 1) as $a) {
-    if (preg_match('/^--site=(\d+)$/', $a, $m)) { $site_id_filter = (int)$m[1]; break; }
+    if (preg_match('/^--site=(\d+)$/', $a, $m)) $site_id_filter = (int)$m[1];
+    if (preg_match('/^--run=(\d+)$/',  $a, $m)) $cron_run_id    = (int)$m[1];
 }
 
 $valid_jobs = [
     'gsc-sync', 'competitor-redetect', 'competitor-pages-check', 'brand-monitor',
     'ai-visibility', 'gap-analysis', 'weekly-digest', 'news-scrape',
     'publish', 'performance-fetch', 'serp-tracking', 'seo-audit',
+    'plan-autopilot', 'plan-monthly-review',
 ];
 
 if (!in_array($job, $valid_jobs, true)) {
@@ -98,12 +101,34 @@ if ($site_id_filter) echo " (site={$site_id_filter})";
 echo "\n";
 
 $start_time = microtime(true);
+$run_status = 'done';
+$run_error  = null;
 try {
     require $script;
     $duration = round(microtime(true) - $start_time, 2);
     echo "[" . date('Y-m-d H:i:s') . "] cron-runner: {$job} finished in {$duration}s\n";
 } catch (\Throwable $e) {
+    $run_status = 'failed';
+    $run_error  = $e->getMessage();
     echo "[" . date('Y-m-d H:i:s') . "] cron-runner: {$job} FAILED — " . $e->getMessage() . "\n";
     echo $e->getTraceAsString() . "\n";
-    exit(1);
 }
+
+// Report back to cron_runs + cron_schedules if launched by the master scheduler
+if ($cron_run_id !== null) {
+    try {
+        $duration_seconds = (int)round(microtime(true) - $start_time);
+        $db->prepare("UPDATE cron_runs SET status = ?, error = ?, finished_at = NOW() WHERE id = ?")
+           ->execute([$run_status, $run_error, $cron_run_id]);
+        // Also bubble the result up to the schedule row for the dashboard
+        $db->prepare("UPDATE cron_schedules s
+            JOIN cron_runs r ON r.schedule_id = s.id
+            SET s.last_status = ?, s.last_error = ?, s.last_duration_seconds = ?
+            WHERE r.id = ?")
+           ->execute([$run_status, $run_error, $duration_seconds, $cron_run_id]);
+    } catch (\Throwable $e) {
+        error_log("[cron-runner] failed to update cron_runs row {$cron_run_id}: " . $e->getMessage());
+    }
+}
+
+if ($run_status === 'failed') exit(1);

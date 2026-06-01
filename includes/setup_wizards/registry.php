@@ -17,6 +17,8 @@ function setup_wizards_all(): array
         'gsc_app.php'      => 'GscAppWizard',
         'perplexity.php'   => 'PerplexityWizard',
         'dataforseo.php'   => 'DataForSeoWizard',
+        'openai.php'       => 'OpenAiWizard',
+        'unsplash.php'     => 'UnsplashWizard',
     ];
     foreach ($files as $file => $class) {
         require_once __DIR__ . '/' . $file;
