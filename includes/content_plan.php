@@ -246,9 +246,11 @@ function plan_get_full(PDO $db, int $plan_id): array
     $clusters->execute([$plan_id]);
     $cluster_rows = $clusters->fetchAll();
 
-    $items = $db->prepare("SELECT i.*, k.keyword AS primary_keyword, k.search_volume, k.difficulty, k.intent
+    $items = $db->prepare("SELECT i.*, k.keyword AS primary_keyword, k.search_volume, k.difficulty, k.intent,
+            p.status AS post_status
         FROM content_plan_items i
         JOIN keywords k ON i.primary_keyword_id = k.id
+        LEFT JOIN posts p ON p.id = i.post_id
         WHERE i.plan_id = ?
         ORDER BY i.target_publish_date ASC, i.position ASC");
     $items->execute([$plan_id]);

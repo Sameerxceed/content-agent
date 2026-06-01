@@ -80,6 +80,7 @@ include __DIR__ . '/_site_stepper.php';
 .lock-pipeline  { color:#94a3b8; }
 .lock-committed { color:#1e40af; }
 .lock-drafted   { color:#d97706; }
+.lock-scheduled { color:#065f46; }
 .lock-published { color:#166534; }
 
 .empty-state { padding:40px 32px; background:#fff; border:2px dashed #e2e8f0; border-radius:10px; text-align:center; }
@@ -167,7 +168,14 @@ include __DIR__ . '/_site_stepper.php';
     <div class="card" style="padding:0;">
         <?php foreach (array_slice($plan_full['items'], 0, 25) as $it):
             $date = date('D, d M', strtotime($it['target_publish_date']));
-            $lock_cls = 'lock-' . e($it['lock_state']);
+            // Display status: prefer post_status when it's progressed beyond draft
+            $display_status = $it['lock_state'];
+            if ($it['lock_state'] === 'drafted' && ($it['post_status'] ?? '') === 'approved') {
+                $display_status = 'scheduled';
+            } elseif (($it['post_status'] ?? '') === 'published') {
+                $display_status = 'published';
+            }
+            $lock_cls = 'lock-' . e($display_status);
         ?>
             <a href="<?= url('/dashboard/plan-item.php?id=' . (int)$it['id']) ?>" class="item-row" style="text-decoration:none;color:inherit;">
                 <div class="date"><?= $date ?></div>
@@ -177,7 +185,7 @@ include __DIR__ . '/_site_stepper.php';
                 </div>
                 <div><span class="badge badge-<?= e($it['role']) ?>"><?= e($it['role']) ?></span></div>
                 <div><span class="badge badge-<?= e($it['bucket']) ?>"><?= e(str_replace('_', ' ', $it['bucket'])) ?></span></div>
-                <div class="<?= $lock_cls ?>" style="font-size:10px;text-transform:uppercase;letter-spacing:0.4px;font-weight:600;"><?= e($it['lock_state']) ?></div>
+                <div class="<?= $lock_cls ?>" style="font-size:10px;text-transform:uppercase;letter-spacing:0.4px;font-weight:600;"><?= e($display_status) ?></div>
             </a>
         <?php endforeach; ?>
     </div>
