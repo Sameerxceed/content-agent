@@ -195,10 +195,26 @@ $lock_badges = [
         <?php elseif ($lock === 'committed'): ?>
 
             <div class="empty-pipeline">
-                <div class="icon">⟳</div>
+                <div class="icon" style="animation:pi-spin 1.2s linear infinite;display:inline-block;">⟳</div>
                 <div class="title">Drafting in progress…</div>
-                <div class="desc">The autopilot is generating this item now. Should be ready in 2-4 minutes. Reload this page in a moment.</div>
+                <div class="desc">
+                    The autopilot is generating blog body, FAQ, schema, and channel variants in one pass.
+                    Typically 2-4 minutes. This page will refresh automatically.
+                </div>
+                <div id="pi-poll-status" style="font-size:11px;color:#94a3b8;margin-top:12px;">Checking again in <span id="pi-poll-counter">10</span>s…</div>
             </div>
+            <style>@keyframes pi-spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }</style>
+            <script>
+            (function() {
+                let counter = 10;
+                const cEl = document.getElementById('pi-poll-counter');
+                const tick = setInterval(() => {
+                    counter--;
+                    if (cEl) cEl.textContent = counter;
+                    if (counter <= 0) { clearInterval(tick); location.reload(); }
+                }, 1000);
+            })();
+            </script>
 
         <?php else: ?>
 
@@ -418,10 +434,17 @@ async function regenerateItem(itemId) {
 
 async function draftNow(itemId) {
     if (!confirm('Draft this item now? (~2-3 min)')) return;
+    const btn = document.querySelector('.pi-btn-primary');
+    if (btn) { btn.disabled = true; btn.textContent = '⏳ Starting…'; }
     const data = await callAction('draft_now', {item_id: itemId});
     if (data.success) {
-        alert('Drafting started. Refresh in a couple of minutes.');
-    } else { alert('Failed: ' + (data.error || 'unknown')); }
+        // Server flipped lock_state to 'committed' — reload to enter the
+        // "Drafting in progress…" view which auto-polls until done.
+        location.reload();
+    } else {
+        alert('Failed: ' + (data.error || 'unknown'));
+        if (btn) { btn.disabled = false; btn.textContent = '⚡ Draft now'; }
+    }
 }
 
 async function skipItem(itemId) {
