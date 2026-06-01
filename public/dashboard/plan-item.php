@@ -77,6 +77,11 @@ $stepper_active = 'publish';
 include __DIR__ . '/_site_stepper.php';
 
 $lock = $item['lock_state'];
+$post_status = $item['post_status'] ?? null;
+// Once the post is approved, surface that on the header even though lock_state
+// remains 'drafted' until cron-publish actually ships it.
+$is_approved = ($lock === 'drafted' && $post_status === 'approved');
+$is_published = ($lock === 'published' || $post_status === 'published');
 $lock_badges = [
     'pipeline'  => ['Pipeline',  '#94a3b8', '#f1f5f9'],
     'committed' => ['Drafting…', '#1e40af', '#dbeafe'],
@@ -84,6 +89,8 @@ $lock_badges = [
     'published' => ['Published', '#166534', '#dcfce7'],
 ];
 [$lock_label, $lock_fg, $lock_bg] = $lock_badges[$lock] ?? $lock_badges['pipeline'];
+if ($is_approved) { $lock_label = 'Approved · scheduled'; $lock_fg = '#065f46'; $lock_bg = '#d1fae5'; }
+if ($is_published) { $lock_label = 'Published'; $lock_fg = '#166534'; $lock_bg = '#dcfce7'; }
 ?>
 
 <style>
@@ -176,7 +183,13 @@ $lock_badges = [
                         <span><?= e(ucfirst($item['role'])) ?> · <?= e(str_replace('_', ' ', $item['content_type'])) ?> · <?= e(str_replace('_', ' ', $item['bucket'])) ?></span>
                     </div>
                 </div>
-                <?php if ($lock === 'drafted'): ?>
+                <?php if ($is_approved || $is_published): ?>
+                <div class="pi-actions">
+                    <span class="pi-badge" style="background:#d1fae5;color:#065f46;">
+                        ✓ <?= $is_published ? 'Published' : 'Scheduled for ' . e(date('D, d M', strtotime($item['target_publish_date']))) ?>
+                    </span>
+                </div>
+                <?php elseif ($lock === 'drafted'): ?>
                 <div class="pi-actions">
                     <button class="pi-btn-primary" onclick="approveItem(<?= $item_id ?>)">✓ Approve &amp; Schedule</button>
                     <button class="pi-btn-outline" onclick="regenerateItem(<?= $item_id ?>)" title="Throw away the current draft and regenerate from scratch">🔄 Regenerate</button>
@@ -330,11 +343,21 @@ $lock_badges = [
 
             <!-- Footer with primary action repeated for scrolling visibility -->
             <div class="pi-footer">
-                <div style="font-size:11px;color:#94a3b8;">
-                    Drafted <?= e(format_date($item['drafted_at'] ?? '')) ?> · Approving will schedule this for publish on <strong><?= e(date('D, d M', strtotime($item['target_publish_date']))) ?></strong>
-                </div>
-                <button class="pi-btn-primary" onclick="approveItem(<?= $item_id ?>)">✓ Approve &amp; Schedule</button>
-                <button class="pi-btn-danger danger" onclick="skipItem(<?= $item_id ?>)" title="Skip this item — removes it from the pipeline">⏭ Skip</button>
+                <?php if ($is_approved || $is_published): ?>
+                    <div style="font-size:13px;color:#065f46;font-weight:500;">
+                        ✓ <?= $is_published
+                            ? 'Published'
+                            : 'Approved &amp; queued for publication on <strong>' . e(date('D, d M Y', strtotime($item['target_publish_date']))) . '</strong>'
+                        ?>
+                    </div>
+                    <a class="pi-btn-outline" href="<?= url('/dashboard/plan.php?site=' . $site_id) ?>">← Back to Plan</a>
+                <?php else: ?>
+                    <div style="font-size:11px;color:#94a3b8;">
+                        Drafted <?= e(format_date($item['drafted_at'] ?? '')) ?> · Approving will schedule this for publish on <strong><?= e(date('D, d M', strtotime($item['target_publish_date']))) ?></strong>
+                    </div>
+                    <button class="pi-btn-primary" onclick="approveItem(<?= $item_id ?>)">✓ Approve &amp; Schedule</button>
+                    <button class="pi-btn-danger danger" onclick="skipItem(<?= $item_id ?>)" title="Skip this item — removes it from the pipeline">⏭ Skip</button>
+                <?php endif; ?>
             </div>
 
         <?php endif; ?>
