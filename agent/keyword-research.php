@@ -68,10 +68,16 @@ try {
     // previous one. User would see 100 fresh keywords + 400 old garbage
     // from earlier looser-filter runs. Manual entries + Google-synced
     // rows are preserved — those are deliberate user data.
+    // Planned keywords (protected_by_plan=1) survive the wipe. They're
+    // referenced by an active content plan; deleting them would break the
+    // plan's foreign keys + force the user to regenerate. Drift handling
+    // (plan_apply_drift, below) updates the plan after the new keyword
+    // set is loaded.
     $wipe = $db->prepare("DELETE FROM keywords
         WHERE site_id = ?
           AND source IN ('autocomplete', 'paa', 'dataforseo_ideas', 'dataforseo_suggestions', 'competitor')
-          AND (gsc_synced_at IS NULL)");
+          AND (gsc_synced_at IS NULL)
+          AND (protected_by_plan = 0 OR protected_by_plan IS NULL)");
     $wipe->execute([$site_id]);
     $wiped = $wipe->rowCount();
     if ($wiped > 0) {
@@ -160,6 +166,26 @@ try {
         error_log('[keyword-research CLI] post-run GSC cleanup failed: ' . $e->getMessage());
     }
 
+    // ── Drift: if an active content plan exists, run the silent drift handler ──
+    // Pipeline items adapt to the refreshed keyword pool. Locked items
+    // (committed / drafted / published OR within next 2 weeks) don't move.
+    $drift_summary = ['skipped' => 'no plan'];
+    try {
+        require_once __DIR__ . '/../includes/content_plan.php';
+        require_once __DIR__ . '/../includes/plan_drift.php';
+        $plan = plan_get_active($db, $site_id);
+        if ($plan) {
+            $progress('Adapting plan to refreshed keywords...', 99);
+            $drift_summary = plan_apply_drift($db, (int)$plan['id']);
+            // Re-stamp the protection flag — newly inserted keywords that the plan
+            // ended up touching after drift adjustments need to be marked protected.
+            plan_protect_keywords($db, (int)$plan['id']);
+        }
+    } catch (Throwable $e) {
+        error_log('[keyword-research CLI] drift failed: ' . $e->getMessage());
+        $drift_summary = ['error' => $e->getMessage()];
+    }
+
     $summary = [
         'total_raw'        => $result['total_raw'],
         'total_kept'       => $result['total_kept'],
@@ -169,6 +195,7 @@ try {
         'counts_by_intent' => $result['counts_by_intent'],
         'gsc'              => $gsc_summary,
         'gsc_auto_ignored' => $cleaned,
+        'plan_drift'       => $drift_summary,
     ];
     $mark_done($summary);
 

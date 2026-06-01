@@ -1,0 +1,226 @@
+<?php
+/**
+ * Image generation + sourcing for blog hero images.
+ *
+ * Three sources, in priority order during autopilot drafting:
+ *   1. AI generation  — OpenAI DALL-E 3 (premium quality)
+ *   2. Stock photo    — Unsplash search (free, brand-safe)
+ *   3. Manual upload  — user replaces via Plan Item Studio
+ *
+ * Generated/sourced images get downloaded and stored locally under
+ *   public/uploads/posts/{site_id}/{post_id}/hero-{ts}.{ext}
+ * so we don't depend on remote URLs that expire (DALL-E URLs die in 60min).
+ *
+ * Public API:
+ *   image_gen_for_post(PDO $db, int $post_id, string $prompt, string $alt): array
+ *     - Tries DALL-E first if openai_api_key configured, falls back to Unsplash
+ *       if unsplash_access_key configured, returns null on total failure.
+ *     - On success: { url, provider, prompt, alt }
+ *
+ *   image_save_upload(PDO $db, int $post_id, array $upload_file): array
+ *     - For manual uploads via $_FILES.
+ *     - Validates MIME + size, stores under the same uploads path.
+ */
+
+require_once __DIR__ . '/helpers.php';
+
+const IMAGE_GEN_MAX_BYTES = 6 * 1024 * 1024;  // 6MB upload cap
+const IMAGE_GEN_TARGET_W  = 1792;
+const IMAGE_GEN_TARGET_H  = 1024;
+
+/**
+ * Generate or source a hero image for a post.
+ * Updates the posts row with hero_image_url + hero_image_prompt + provider + alt.
+ *
+ * @return array{provider:string, url:string, alt:string}|null
+ */
+function image_gen_for_post(PDO $db, int $post_id, string $prompt, string $alt = ''): ?array
+{
+    $prompt = trim($prompt);
+    if ($prompt === '') return null;
+
+    // Load post + site for storage path
+    $stmt = $db->prepare('SELECT p.id, p.site_id, p.title FROM posts p WHERE p.id = ?');
+    $stmt->execute([$post_id]);
+    $post = $stmt->fetch();
+    if (!$post) return null;
+    $site_id = (int)$post['site_id'];
+
+    if ($alt === '') $alt = mb_substr($post['title'] ?? '', 0, 250);
+
+    // Try DALL-E 3 first
+    $oai_key = config('openai_api_key');
+    if (!empty($oai_key)) {
+        $url = _image_gen_dalle3($prompt, $oai_key);
+        if ($url) {
+            $local = _image_gen_download_to_local($url, $site_id, $post_id, 'dalle3');
+            if ($local) {
+                _image_gen_save_to_post($db, $post_id, $local, $prompt, 'dalle3', $alt);
+                return ['provider' => 'dalle3', 'url' => $local, 'alt' => $alt];
+            }
+        }
+    }
+
+    // Fall back to Unsplash
+    $unsplash_key = config('unsplash_access_key');
+    if (!empty($unsplash_key)) {
+        $url = _image_gen_unsplash_search($prompt, $unsplash_key);
+        if ($url) {
+            $local = _image_gen_download_to_local($url, $site_id, $post_id, 'unsplash');
+            if ($local) {
+                _image_gen_save_to_post($db, $post_id, $local, $prompt, 'unsplash', $alt);
+                return ['provider' => 'unsplash', 'url' => $local, 'alt' => $alt];
+            }
+        }
+    }
+
+    return null;
+}
+
+/**
+ * Manual upload handler (called from /api/post-image-upload.php).
+ * Validates the uploaded file, stores under the post's uploads dir,
+ * updates the posts row. Returns the stored relative URL.
+ *
+ * @param array $upload_file $_FILES['hero_image'] entry
+ * @return array{url:string, alt:string}|array{error:string}
+ */
+function image_save_upload(PDO $db, int $post_id, array $upload_file, string $alt = ''): array
+{
+    if (empty($upload_file) || ($upload_file['error'] ?? UPLOAD_ERR_NO_FILE) !== UPLOAD_ERR_OK) {
+        return ['error' => 'Upload error'];
+    }
+    if (($upload_file['size'] ?? 0) > IMAGE_GEN_MAX_BYTES) {
+        return ['error' => 'File too large (max ' . (int)(IMAGE_GEN_MAX_BYTES / 1024 / 1024) . 'MB)'];
+    }
+    $mime = mime_content_type($upload_file['tmp_name']) ?: '';
+    $allowed = ['image/jpeg' => 'jpg', 'image/png' => 'png', 'image/webp' => 'webp', 'image/gif' => 'gif'];
+    if (!isset($allowed[$mime])) return ['error' => 'Only JPG/PNG/WebP/GIF allowed (got ' . $mime . ')'];
+
+    $stmt = $db->prepare('SELECT site_id, title FROM posts WHERE id = ?');
+    $stmt->execute([$post_id]);
+    $post = $stmt->fetch();
+    if (!$post) return ['error' => 'Post not found'];
+    $site_id = (int)$post['site_id'];
+    if ($alt === '') $alt = mb_substr($post['title'] ?? '', 0, 250);
+
+    $rel = _image_gen_local_path_for($site_id, $post_id, 'manual', $allowed[$mime]);
+    $abs = _image_gen_abs($rel);
+    if (!is_dir(dirname($abs))) @mkdir(dirname($abs), 0755, true);
+    if (!@move_uploaded_file($upload_file['tmp_name'], $abs)) {
+        return ['error' => 'Could not store uploaded file'];
+    }
+
+    _image_gen_save_to_post($db, $post_id, $rel, null, 'manual', $alt);
+    return ['url' => $rel, 'alt' => $alt];
+}
+
+// ─────────────────────────────────────────────────────────────────
+// Providers
+// ─────────────────────────────────────────────────────────────────
+
+function _image_gen_dalle3(string $prompt, string $api_key): ?string
+{
+    $payload = json_encode([
+        'model'   => 'dall-e-3',
+        'prompt'  => mb_substr($prompt, 0, 4000),
+        'size'    => '1792x1024',
+        'quality' => 'standard',
+        'n'       => 1,
+    ]);
+    $ch = curl_init('https://api.openai.com/v1/images/generations');
+    curl_setopt_array($ch, [
+        CURLOPT_RETURNTRANSFER => true,
+        CURLOPT_POST           => true,
+        CURLOPT_POSTFIELDS     => $payload,
+        CURLOPT_HTTPHEADER     => [
+            'Content-Type: application/json',
+            'Authorization: Bearer ' . $api_key,
+        ],
+        CURLOPT_TIMEOUT        => 60,
+    ]);
+    $body = curl_exec($ch);
+    $http = curl_getinfo($ch, CURLINFO_HTTP_CODE);
+    curl_close($ch);
+    if ($http !== 200 || !$body) {
+        error_log('[image_gen dalle3] HTTP ' . $http . ' body=' . substr((string)$body, 0, 250));
+        return null;
+    }
+    $data = json_decode($body, true);
+    return $data['data'][0]['url'] ?? null;
+}
+
+function _image_gen_unsplash_search(string $prompt, string $access_key): ?string
+{
+    // Unsplash search likes short queries, so trim down to ~6 keywords
+    $query = trim(preg_replace('/[^\p{L}\p{N}\s\-]/u', ' ', $prompt));
+    $words = preg_split('/\s+/', $query);
+    $query = implode(' ', array_slice($words, 0, 6));
+    if ($query === '') return null;
+
+    $url = 'https://api.unsplash.com/search/photos?per_page=1&orientation=landscape&query=' . urlencode($query);
+    $ch = curl_init($url);
+    curl_setopt_array($ch, [
+        CURLOPT_RETURNTRANSFER => true,
+        CURLOPT_HTTPHEADER     => ['Authorization: Client-ID ' . $access_key],
+        CURLOPT_TIMEOUT        => 20,
+    ]);
+    $body = curl_exec($ch);
+    $http = curl_getinfo($ch, CURLINFO_HTTP_CODE);
+    curl_close($ch);
+    if ($http !== 200 || !$body) {
+        error_log('[image_gen unsplash] HTTP ' . $http . ' body=' . substr((string)$body, 0, 250));
+        return null;
+    }
+    $data = json_decode($body, true);
+    return $data['results'][0]['urls']['regular'] ?? $data['results'][0]['urls']['full'] ?? null;
+}
+
+// ─────────────────────────────────────────────────────────────────
+// Local storage
+// ─────────────────────────────────────────────────────────────────
+
+/** Download a remote image to local storage. Returns the relative URL path or null. */
+function _image_gen_download_to_local(string $remote_url, int $site_id, int $post_id, string $provider): ?string
+{
+    $ch = curl_init($remote_url);
+    curl_setopt_array($ch, [
+        CURLOPT_RETURNTRANSFER => true,
+        CURLOPT_FOLLOWLOCATION => true,
+        CURLOPT_TIMEOUT        => 30,
+    ]);
+    $bin = curl_exec($ch);
+    $http = curl_getinfo($ch, CURLINFO_HTTP_CODE);
+    $ctype = curl_getinfo($ch, CURLINFO_CONTENT_TYPE);
+    curl_close($ch);
+    if ($http !== 200 || !$bin) return null;
+
+    $ext = match (true) {
+        str_contains((string)$ctype, 'png')  => 'png',
+        str_contains((string)$ctype, 'webp') => 'webp',
+        str_contains((string)$ctype, 'gif')  => 'gif',
+        default                              => 'jpg',
+    };
+    $rel = _image_gen_local_path_for($site_id, $post_id, $provider, $ext);
+    $abs = _image_gen_abs($rel);
+    if (!is_dir(dirname($abs))) @mkdir(dirname($abs), 0755, true);
+    if (@file_put_contents($abs, $bin) === false) return null;
+    return $rel;
+}
+
+function _image_gen_local_path_for(int $site_id, int $post_id, string $provider, string $ext): string
+{
+    $ts = time();
+    return "/uploads/posts/{$site_id}/{$post_id}/hero-{$provider}-{$ts}.{$ext}";
+}
+
+function _image_gen_abs(string $relative_url): string
+{
+    return realpath(__DIR__ . '/..') . '/public' . $relative_url;
+}
+
+function _image_gen_save_to_post(PDO $db, int $post_id, string $url, ?string $prompt, string $provider, string $alt): void
+{
+    $stmt = $db->prepare("UPDATE posts SET hero_image_url = ?, hero_image_prompt = ?, hero_image_provider = ?, hero_image_alt = ?, updated_at = NOW() WHERE id = ?");
+    $stmt->execute([$url, $prompt, $provider, mb_substr($alt, 0, 500), $post_id]);
+}

@@ -24,6 +24,14 @@ if (!$site) { http_response_code(404); exit('Site not found or access denied.');
 $plan = plan_get_active($db, $site_id);
 $plan_full = $plan ? plan_get_full($db, (int)$plan['id']) : null;
 
+// Pending monthly review (if any)
+$pending_review_id = null;
+if ($plan) {
+    $stmt = $db->prepare("SELECT id FROM plan_reviews WHERE plan_id = ? AND status = 'proposed' ORDER BY id DESC LIMIT 1");
+    $stmt->execute([(int)$plan['id']]);
+    $pending_review_id = $stmt->fetchColumn() ?: null;
+}
+
 // Pre-compute helpful counts for the empty-state CTA
 $active_keyword_count = 0;
 $stmt = $db->prepare("SELECT COUNT(*) FROM keywords WHERE site_id = ? AND status = 'active'");
@@ -56,7 +64,8 @@ include __DIR__ . '/_site_stepper.php';
 .cluster-card .meta { display:flex; justify-content:space-between; font-size:11px; color:#475569; padding-top:8px; border-top:1px solid #f1f5f9; }
 .cluster-card .meta strong { color:#5b21b6; }
 
-.item-row { display:grid; grid-template-columns:90px 1fr auto auto auto; gap:12px; padding:10px 14px; align-items:center; border-bottom:1px solid #f1f5f9; font-size:12px; }
+.item-row { display:grid; grid-template-columns:90px 1fr auto auto auto; gap:12px; padding:10px 14px; align-items:center; border-bottom:1px solid #f1f5f9; font-size:12px; transition:background 0.1s; }
+.item-row:hover { background:#f8fafb; }
 .item-row:last-child { border-bottom:0; }
 .item-row .date { font-weight:600; color:#475569; }
 .item-row .title { color:var(--primary); }
@@ -112,6 +121,17 @@ include __DIR__ . '/_site_stepper.php';
     $pct   = $total > 0 ? (int)round(($pub / $total) * 100) : 0;
 ?>
 
+    <?php if ($pending_review_id): ?>
+    <a href="<?= url('/dashboard/plan-review.php?id=' . (int)$pending_review_id) ?>"
+       style="display:flex;justify-content:space-between;align-items:center;gap:12px;padding:12px 16px;margin-bottom:10px;background:linear-gradient(135deg,#fef3c7 0%,#fde68a 100%);border:1px solid #f59e0b;border-radius:8px;text-decoration:none;color:inherit;">
+        <div>
+            <div style="font-size:13px;font-weight:600;color:#92400e;">📊 Monthly review is ready for your approval</div>
+            <div style="font-size:11px;color:#78350f;margin-top:2px;">The AI analysed last month's performance and is proposing pipeline updates. Click to review.</div>
+        </div>
+        <span style="background:#d97706;color:#fff;padding:7px 14px;font-size:12px;font-weight:600;border-radius:6px;white-space:nowrap;">Review now →</span>
+    </a>
+    <?php endif; ?>
+
     <div class="plan-hero">
         <div class="label">Forecast at <?= (int)$plan['forecast_horizon_weeks'] ?> weeks</div>
         <div class="number"><?= number_format($forecast_low) ?> – <?= number_format($forecast_high) ?> <span style="font-size:16px;font-weight:500;color:#7c3aed;">organic clicks / month</span></div>
@@ -149,7 +169,7 @@ include __DIR__ . '/_site_stepper.php';
             $date = date('D, d M', strtotime($it['target_publish_date']));
             $lock_cls = 'lock-' . e($it['lock_state']);
         ?>
-            <div class="item-row">
+            <a href="<?= url('/dashboard/plan-item.php?id=' . (int)$it['id']) ?>" class="item-row" style="text-decoration:none;color:inherit;">
                 <div class="date"><?= $date ?></div>
                 <div>
                     <div class="title"><?= e($it['proposed_title'] ?? '(untitled)') ?></div>
@@ -158,14 +178,15 @@ include __DIR__ . '/_site_stepper.php';
                 <div><span class="badge badge-<?= e($it['role']) ?>"><?= e($it['role']) ?></span></div>
                 <div><span class="badge badge-<?= e($it['bucket']) ?>"><?= e(str_replace('_', ' ', $it['bucket'])) ?></span></div>
                 <div class="<?= $lock_cls ?>" style="font-size:10px;text-transform:uppercase;letter-spacing:0.4px;font-weight:600;"><?= e($it['lock_state']) ?></div>
-            </div>
+            </a>
         <?php endforeach; ?>
     </div>
     <?php endif; ?>
 
-    <div style="margin-top:14px;display:flex;gap:8px;">
+    <div style="margin-top:14px;display:flex;gap:8px;flex-wrap:wrap;">
         <a href="<?= url('/dashboard/keywords.php?site=' . $site_id) ?>" class="btn btn-outline btn-sm">← Back to Keywords</a>
         <button onclick="if(confirm('Regenerate the plan? Existing pipeline items in the new plan will be re-sequenced.')) generateContentPlan(<?= $site_id ?>)" class="btn btn-outline btn-sm">🔄 Regenerate plan</button>
+        <button onclick="runReviewNow(<?= (int)$plan['id'] ?>)" class="btn btn-outline btn-sm" title="Generate a fresh monthly performance review now, instead of waiting for the 1st-of-month cron">📊 Run review now</button>
     </div>
 
 <?php endif; ?>
@@ -192,6 +213,24 @@ async function generateContentPlan(siteId) {
         if (status) status.innerHTML = '<span style="color:#dc2626;">✗ ' + e.message + '</span>';
         if (btn) { btn.disabled = false; btn.textContent = '📋 Generate Content Plan'; }
     }
+}
+
+async function runReviewNow(planId) {
+    if (!confirm('Generate a fresh monthly review now? It will analyse the last 30 days of performance and propose changes. (~1 min)')) return;
+    try {
+        const res = await fetch('<?= url('/api/plan-review-action.php') ?>', {
+            method: 'POST', headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({ action: 'generate_now', plan_id: planId })
+        });
+        const data = await res.json();
+        if (data.success) {
+            alert(data.message || 'Queued.');
+            // Reload after ~70s so the new review banner appears
+            setTimeout(() => location.reload(), 70000);
+        } else {
+            alert('Failed: ' + (data.error || 'unknown'));
+        }
+    } catch(e) { alert('Error: ' + e.message); }
 }
 
 function pollPlanStatus(jobId) {

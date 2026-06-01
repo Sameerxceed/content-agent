@@ -96,7 +96,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             business_model = ?, offering_type = ?, industry_category = ?, industry_sub = ?,
             customer_segment = ?, market_scope = ?, maturity_tier = ?, profile_confirmed = ?,
             rss_feeds = ?, cms_url = ?, cms_api_key = ?, server_type = ?, server_host = ?, server_user = ?, server_pass = ?, server_path = ?, git_repo = ?, hosting_panel = ?,
-            brand_colors = ?, brand_fonts = ?, is_active = ?, digest_email = ?
+            brand_colors = ?, brand_fonts = ?, is_active = ?, digest_email = ?,
+            autonomy_mode = ?, posts_per_week = ?
             WHERE id = ?');
         $stmt->execute([
             trim($_POST['name']),
@@ -134,6 +135,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             json_encode(array_values($brand_fonts)),
             isset($_POST['is_active']) ? 1 : 0,
             trim($_POST['digest_email'] ?? '') ?: null,
+            in_array($_POST['autonomy_mode'] ?? '', ['review', 'hands_off', 'manual'], true) ? $_POST['autonomy_mode'] : 'review',
+            max(1, min(7, (int)($_POST['posts_per_week'] ?? 2))),
             $id,
         ]);
 
@@ -441,6 +444,35 @@ if ($action === 'add'):
             <div class="form-group">
                 <label for="blog_path">Blog Path</label>
                 <input type="text" id="blog_path" name="blog_path" class="form-control" value="<?= e($site['blog_path']) ?>">
+            </div>
+
+            <!-- Content Plan settings — drive the autopilot cadence + autonomy mode -->
+            <div style="margin-top:14px;padding:12px 14px;background:#f5f3ff;border:1px solid #ddd6fe;border-radius:6px;">
+                <div style="font-size:11px;text-transform:uppercase;letter-spacing:0.5px;color:#6d28d9;font-weight:600;margin-bottom:8px;">📋 Content Plan settings</div>
+                <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;">
+                    <div class="form-group" style="margin:0;">
+                        <label for="posts_per_week" style="font-size:12px;color:#5b21b6;">Publishing cadence</label>
+                        <select id="posts_per_week" name="posts_per_week" class="form-control" style="font-size:13px;">
+                            <?php $_pw = (int)($site['posts_per_week'] ?? 2); ?>
+                            <option value="1" <?= $_pw === 1 ? 'selected' : '' ?>>1 post/week (13/quarter)</option>
+                            <option value="2" <?= $_pw === 2 ? 'selected' : '' ?>>2 posts/week (26/quarter) — recommended</option>
+                            <option value="3" <?= $_pw === 3 ? 'selected' : '' ?>>3 posts/week (39/quarter)</option>
+                        </select>
+                    </div>
+                    <div class="form-group" style="margin:0;">
+                        <label for="autonomy_mode" style="font-size:12px;color:#5b21b6;">Autopilot autonomy</label>
+                        <select id="autonomy_mode" name="autonomy_mode" class="form-control" style="font-size:13px;">
+                            <?php $_am = (string)($site['autonomy_mode'] ?? 'review'); ?>
+                            <option value="review"    <?= $_am === 'review'    ? 'selected' : '' ?>>Review-each (default — explicit approval per post)</option>
+                            <option value="hands_off" <?= $_am === 'hands_off' ? 'selected' : '' ?> disabled>Hands-off (auto-approve after 24h) — coming in v2</option>
+                            <option value="manual"    <?= $_am === 'manual'    ? 'selected' : '' ?>>Manual (no autopilot drafting)</option>
+                        </select>
+                    </div>
+                </div>
+                <div style="font-size:11px;color:#6b21a8;margin-top:8px;line-height:1.5;">
+                    Used by the Content Plan autopilot. Cadence controls how many items per week the plan schedules.
+                    Autonomy decides whether drafts wait for your approval (Review-each) or never get drafted at all (Manual).
+                </div>
             </div>
 
             <div id="focus" style="margin-top:14px;padding-top:14px;border-top:1px solid var(--border);">
