@@ -141,15 +141,17 @@ ob_start();
         <form method="POST">
             <?= csrf_field() ?>
             <input type="hidden" name="action" value="profile">
-            <div class="form-group">
-                <label for="name">Name</label>
-                <input type="text" id="name" name="name" class="form-control" value="<?= e($user['name']) ?>" required>
+            <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px 12px;">
+                <div class="form-group">
+                    <label for="name">Name</label>
+                    <input type="text" id="name" name="name" class="form-control" value="<?= e($user['name']) ?>" required>
+                </div>
+                <div class="form-group">
+                    <label for="email">Email</label>
+                    <input type="email" id="email" name="email" class="form-control" value="<?= e($user['email']) ?>" required>
+                </div>
             </div>
-            <div class="form-group">
-                <label for="email">Email</label>
-                <input type="email" id="email" name="email" class="form-control" value="<?= e($user['email']) ?>" required>
-            </div>
-            <div class="form-group">
+            <div class="form-group" style="max-width:240px;">
                 <label>Plan</label>
                 <input type="text" class="form-control" value="<?= ucfirst($user['plan']) ?>" disabled>
             </div>
@@ -166,13 +168,15 @@ ob_start();
                 <label>Current Password</label>
                 <input type="password" name="current_password" class="form-control" required>
             </div>
-            <div class="form-group">
-                <label>New Password</label>
-                <input type="password" name="new_password" class="form-control" required minlength="8">
-            </div>
-            <div class="form-group">
-                <label>Confirm New Password</label>
-                <input type="password" name="confirm_password" class="form-control" required>
+            <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px 12px;">
+                <div class="form-group">
+                    <label>New Password</label>
+                    <input type="password" name="new_password" class="form-control" required minlength="8">
+                </div>
+                <div class="form-group">
+                    <label>Confirm New Password</label>
+                    <input type="password" name="confirm_password" class="form-control" required>
+                </div>
             </div>
             <button type="submit" class="btn btn-primary">Change Password</button>
         </form>

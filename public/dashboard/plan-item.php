@@ -338,10 +338,16 @@ if ($is_published) { $lock_label = 'Published'; $lock_fg = '#166534'; $lock_bg =
                 </div>
 
                 <div class="pi-tab-content tab-blog" data-tab-content="blog">
-                    <h3>Title</h3>
-                    <input class="field" value="<?= e($item['post_title'] ?? '') ?>" readonly>
-                    <h3>SEO title</h3>
-                    <input class="field" value="<?= e($item['post_seo_title'] ?? '') ?>" readonly>
+                    <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px 12px;align-items:start;">
+                        <div>
+                            <h3>Title</h3>
+                            <input class="field" value="<?= e($item['post_title'] ?? '') ?>" readonly>
+                        </div>
+                        <div>
+                            <h3>SEO title</h3>
+                            <input class="field" value="<?= e($item['post_seo_title'] ?? '') ?>" readonly>
+                        </div>
+                    </div>
                     <h3>SEO description</h3>
                     <input class="field" value="<?= e($item['post_seo_desc'] ?? '') ?>" readonly>
                     <h3>Body preview</h3>

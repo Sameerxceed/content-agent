@@ -243,16 +243,17 @@ include __DIR__ . '/_site_stepper.php';
             <div class="setup-section">
                 <h3>Business focus</h3>
                 <p class="desc">Drives every AI decision — keyword research, content writing, SEO suggestions. <strong>If this is wrong, everything downstream will be wrong.</strong></p>
-                <div class="form-group"><label for="business_description">What does your business sell or offer?</label>
-                    <textarea id="business_description" name="business_description" class="form-control" rows="3" placeholder="In your own words — what does your business actually sell or do, and who do you do it for?"><?= e($site['business_description'] ?? '') ?></textarea></div>
-                <div class="form-group"><label for="topics">Main topics / products (comma-separated)</label>
-                    <input type="text" id="topics" name="topics" class="form-control" value="<?= e(implode(', ', json_decode($site['topics'] ?? '[]', true) ?: [])) ?>" placeholder="3–6 topics that describe what you sell or do">
-                    <div class="text-sm text-muted" style="margin-top:4px;">3–6 short phrases work best.</div></div>
-                <div class="form-group"><label for="persona">Who is your ideal customer? <span class="text-muted" style="font-weight:400;">(optional)</span></label>
-                    <textarea id="persona" name="persona" class="form-control" rows="2" placeholder="Describe who you're trying to reach"><?= e($site['persona'] ?? '') ?></textarea></div>
-                <div class="form-group"><label for="usp">What makes you different from competitors? <span class="text-muted" style="font-weight:400;">(your USP)</span></label>
-                    <textarea id="usp" name="usp" class="form-control" rows="2" placeholder="What you do that others don't"><?= e($site['usp'] ?? '') ?></textarea></div>
-                <div class="form-group">
+                <div class="setup-grid-2" style="align-items:start;">
+                    <div class="form-group"><label for="business_description">What does your business sell or offer?</label>
+                        <textarea id="business_description" name="business_description" class="form-control" rows="2" placeholder="In your own words — what does your business sell or do, and who for?"><?= e($site['business_description'] ?? '') ?></textarea></div>
+                    <div class="form-group"><label for="topics">Main topics / products <span class="text-muted" style="font-weight:400;">(comma-separated)</span></label>
+                        <textarea id="topics" name="topics" class="form-control" rows="2" placeholder="3–6 topics that describe what you sell or do"><?= e(implode(', ', json_decode($site['topics'] ?? '[]', true) ?: [])) ?></textarea></div>
+                    <div class="form-group"><label for="persona">Ideal customer <span class="text-muted" style="font-weight:400;">(optional)</span></label>
+                        <textarea id="persona" name="persona" class="form-control" rows="2" placeholder="Who you're trying to reach"><?= e($site['persona'] ?? '') ?></textarea></div>
+                    <div class="form-group"><label for="usp">USP <span class="text-muted" style="font-weight:400;">(what makes you different)</span></label>
+                        <textarea id="usp" name="usp" class="form-control" rows="2" placeholder="What you do that competitors don't"><?= e($site['usp'] ?? '') ?></textarea></div>
+                </div>
+                <div class="form-group" style="margin-top:4px;">
                     <label style="display:flex;align-items:center;gap:8px;cursor:pointer;font-weight:normal;font-size:12px;">
                         <input type="checkbox" name="topics_confirmed" value="1" <?= !empty($site['topics_confirmed']) ? 'checked' : '' ?>>
                         AI can use this for content + SEO work.

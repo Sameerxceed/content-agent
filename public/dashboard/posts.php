@@ -176,13 +176,15 @@ if ($action === 'edit' && isset($_GET['id'])):
                         <label for="seo_description">Meta Description <span class="text-muted">(<?= mb_strlen($post['seo_description'] ?? '') ?>/160)</span></label>
                         <textarea id="seo_description" name="seo_description" class="form-control" rows="3" maxlength="170"><?= e($post['seo_description'] ?? '') ?></textarea>
                     </div>
-                    <div class="form-group">
-                        <label for="seo_keywords">Keywords</label>
-                        <input type="text" id="seo_keywords" name="seo_keywords" class="form-control" value="<?= e($post['seo_keywords'] ?? '') ?>">
-                    </div>
-                    <div class="form-group">
-                        <label for="tags">Tags (comma-separated)</label>
-                        <input type="text" id="tags" name="tags" class="form-control" value="<?= e($tags) ?>">
+                    <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px 12px;">
+                        <div class="form-group">
+                            <label for="seo_keywords">Keywords</label>
+                            <input type="text" id="seo_keywords" name="seo_keywords" class="form-control" value="<?= e($post['seo_keywords'] ?? '') ?>">
+                        </div>
+                        <div class="form-group">
+                            <label for="tags">Tags (comma-separated)</label>
+                            <input type="text" id="tags" name="tags" class="form-control" value="<?= e($tags) ?>">
+                        </div>
                     </div>
                 </div>
 
