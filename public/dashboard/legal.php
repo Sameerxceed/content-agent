@@ -99,7 +99,7 @@ foreach ($docs as $d) {
 
 <div class="ld-intro">
     <h2>Legal documents</h2>
-    <p>Every website needs a Privacy Policy and Terms of Service to be legally compliant. Most need a Cookie Policy too. ContentAgent detects what's missing on your site, drafts each document tailored to your business + jurisdiction, then publishes them — so you stay on the right side of DPDP, GDPR, and CCPA without paying a lawyer.</p>
+    <p>Every website needs a Privacy Policy and Terms of Service to be legally compliant. Most need a Cookie Policy too. ContentAgent detects what's missing, drafts each document tailored to your business + jurisdiction, then hosts them for you — so you stay on the right side of DPDP, GDPR, and CCPA without paying a lawyer or touching your CMS. If you've connected a CMS we'll also push a copy there automatically.</p>
     <div class="ld-summary">
         <span><strong><?= $present ?></strong> already on your site</span>
         <span><strong><?= $drafted ?></strong> drafted, awaiting review</span>
@@ -124,8 +124,15 @@ foreach ($docs as $d) {
                 <?php endif; ?>
             </div>
             <div class="desc"><?= e($meta['why']) ?></div>
-            <?php if ($status === 'published' && !empty($d['found_url'])): ?>
-                <div class="status-line">Live at <a href="<?= e($d['found_url']) ?>" target="_blank" style="color:#0891b2;"><?= e($d['found_url']) ?></a></div>
+            <?php if ($status === 'published'): ?>
+                <?php $hosted = $d['published_url'] ?? '';
+                       $also_on_site = !empty($d['found_url']) && $d['found_url'] !== $hosted; ?>
+                <?php if ($hosted): ?>
+                    <div class="status-line">Hosted at <a href="<?= e($hosted) ?>" target="_blank" style="color:#0891b2;"><?= e($hosted) ?></a></div>
+                <?php endif; ?>
+                <?php if ($also_on_site): ?>
+                    <div class="status-line">Also live on your domain: <a href="<?= e($d['found_url']) ?>" target="_blank" style="color:#64748b;"><?= e($d['found_url']) ?></a></div>
+                <?php endif; ?>
             <?php elseif ($status === 'missing'): ?>
                 <div class="status-line">Scanner checked: <code><?= e(implode(' · ', json_decode($d['expected_paths'] ?? '[]', true) ?: [])) ?></code> — none returned 200.</div>
             <?php elseif ($status === 'drafted'): ?>
@@ -142,9 +149,9 @@ foreach ($docs as $d) {
                 <button class="ld-btn primary" disabled>⏳ Drafting…</button>
             <?php elseif ($status === 'drafted'): ?>
                 <a class="ld-btn outline" href="<?= url('/dashboard/legal-edit.php?site=' . $site_id . '&type=' . e($type)) ?>">Review draft</a>
-                <button class="ld-btn primary" onclick="publishDoc('<?= e($type) ?>', this)">Publish to site →</button>
+                <button class="ld-btn primary" onclick="publishDoc('<?= e($type) ?>', this)">Publish →</button>
             <?php elseif ($status === 'approved'): ?>
-                <button class="ld-btn primary" onclick="publishDoc('<?= e($type) ?>', this)">Publish to site →</button>
+                <button class="ld-btn primary" onclick="publishDoc('<?= e($type) ?>', this)">Publish →</button>
             <?php elseif ($status === 'published'): ?>
                 <?php $live = $d['published_url'] ?? $d['found_url'] ?? ''; ?>
                 <a class="ld-btn outline" href="<?= e($live) ?>" target="_blank">View on site ↗</a>
@@ -158,20 +165,52 @@ foreach ($docs as $d) {
 <?php if ($missing > 0): ?>
 <div style="margin-top:14px; display:flex; gap:10px; justify-content:flex-end;">
     <button class="ld-btn primary" style="padding:10px 22px;" onclick="generateAndPublishAll(this)">
-        ✨ Generate all missing &amp; publish to site
+        ✨ Generate all missing &amp; publish
     </button>
 </div>
 <?php endif; ?>
 
 <?php
-// Cookie consent banner snippet — only show once we have a Cookie Policy
-// the banner can point to (drafted, approved, or published).
+// Snippets shown for ContentAgent-hosted docs (Tier-1). The customer pastes
+// these into their site to surface the legal docs we host on their behalf.
 $cookies = $docs['cookies'] ?? null;
 $has_cookie_doc = $cookies && in_array($cookies['status'] ?? '', ['drafted', 'approved', 'published'], true);
 $app_url = rtrim((string)config('app_url', ''), '/');
 $embed_src = $app_url . '/embed/cookie-banner.php?site=' . $site_id;
 $embed_snippet = '<script src="' . $embed_src . '" async></script>';
+
+// Build the footer-link snippet from every published doc with a hosted URL.
+$footer_links = [];
+foreach ($docs as $t => $d) {
+    if (($d['status'] ?? '') === 'published' && !empty($d['published_url'])) {
+        $label = $doc_meta[$t]['name'] ?? ucfirst($t);
+        $footer_links[] = '  <a href="' . htmlspecialchars($d['published_url'], ENT_QUOTES) . '" target="_blank" rel="noopener">' . htmlspecialchars($label) . '</a>';
+    }
+}
+$has_footer_links = count($footer_links) > 0;
+$footer_snippet = $has_footer_links
+    ? "<nav class=\"legal-footer-links\">\n" . implode("\n", $footer_links) . "\n</nav>"
+    : '';
 ?>
+<?php if ($has_footer_links): ?>
+<div style="margin-top:22px;background:#fff;border:1px solid var(--border);border-radius:8px;padding:18px 20px;">
+    <div style="display:flex;align-items:center;gap:10px;margin-bottom:6px;">
+        <span style="font-size:18px;">🔗</span>
+        <h3 style="margin:0;font-size:14px;font-weight:600;color:var(--primary);">Footer links snippet</h3>
+    </div>
+    <p style="font-size:12px;color:var(--text-light);line-height:1.55;margin:0 0 12px;max-width:760px;">
+        Paste this block into your site's footer. Every published legal document is hosted by ContentAgent and updates instantly when you regenerate — no CMS work needed. Works on any website (WordPress, Shopify, Wix, Webflow, Next.js, plain HTML).
+    </p>
+    <div style="display:flex;gap:8px;align-items:flex-start;">
+        <textarea id="footer-snippet" readonly rows="<?= max(3, count($footer_links) + 2) ?>" style="flex:1;font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-size:11px;padding:10px 12px;border:1px solid var(--border);border-radius:6px;background:#f8fafb;color:#0f172a;resize:none;"><?= e($footer_snippet) ?></textarea>
+        <button class="ld-btn primary" type="button" onclick="copySnippet('footer-snippet', this)" style="white-space:nowrap;">📋 Copy</button>
+    </div>
+    <div style="margin-top:10px;font-size:11px;color:#94a3b8;">
+        Or just copy individual URLs above. Each document is reachable directly — no auth, no API, just a link.
+    </div>
+</div>
+<?php endif; ?>
+
 <?php if ($has_cookie_doc): ?>
 <div style="margin-top:22px;background:#fff;border:1px solid var(--border);border-radius:8px;padding:18px 20px;">
     <div style="display:flex;align-items:center;gap:10px;margin-bottom:6px;">
@@ -183,15 +222,17 @@ $embed_snippet = '<script src="' . $embed_src . '" async></script>';
     </p>
     <div style="display:flex;gap:8px;align-items:flex-start;">
         <textarea id="cb-snippet" readonly rows="2" style="flex:1;font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-size:11px;padding:10px 12px;border:1px solid var(--border);border-radius:6px;background:#f8fafb;color:#0f172a;resize:none;"><?= e($embed_snippet) ?></textarea>
-        <button class="ld-btn primary" type="button" onclick="copyEmbed(this)" style="white-space:nowrap;">📋 Copy</button>
+        <button class="ld-btn primary" type="button" onclick="copySnippet('cb-snippet', this)" style="white-space:nowrap;">📋 Copy</button>
     </div>
     <div style="margin-top:10px;font-size:11px;color:#94a3b8;">
         Banner fires <code>cookies-accepted</code> / <code>cookies-rejected</code> events on <code>window</code> — your analytics/ads scripts can listen and only initialise after consent. Visitor can re-open the banner via <code>ContentAgentCookieBanner.reset()</code>.
     </div>
 </div>
+<?php endif; ?>
 <script>
-function copyEmbed(btn) {
-    const ta = document.getElementById('cb-snippet');
+function copySnippet(id, btn) {
+    const ta = document.getElementById(id);
+    if (!ta) return;
     ta.select();
     navigator.clipboard.writeText(ta.value).then(function(){
         const orig = btn.textContent;
@@ -200,7 +241,6 @@ function copyEmbed(btn) {
     }).catch(function(){ document.execCommand('copy'); });
 }
 </script>
-<?php endif; ?>
 
 <div style="margin-top:18px;font-size:11px;color:#94a3b8;line-height:1.6;">
     <strong>About the generated documents:</strong> ContentAgent uses your business profile + the data your site actually collects (cookies, forms, third-party tools) to draft accurate policies. They cover DPDP (India), GDPR (EU/UK), and CCPA (California) by default. <em>Important: these are AI-generated baseline documents. For material legal exposure — fundraising, M&amp;A, regulated industries — review with a qualified lawyer.</em>
@@ -227,13 +267,15 @@ async function generateDoc(type, btn) {
 }
 
 async function publishDoc(type, btn) {
-    if (!confirm('Publish the ' + type + ' document to your live website?')) return;
-    btn.disabled = true; btn.textContent = '⏳ Pushing…';
+    if (!confirm('Publish the ' + type + ' document?\n\nIt will be hosted by ContentAgent and instantly reachable via a public URL you can link from your site footer.')) return;
+    btn.disabled = true; btn.textContent = '⏳ Publishing…';
     const r = await callAction({ action:'publish', site_id:SITE_ID, doc_type:type });
     if (r.success) {
-        alert('✓ Published at ' + (r.published_url || 'your site'));
+        let msg = '✓ Published\n\n' + (r.published_url || '');
+        if (r.note) msg += '\n\n' + r.note;
+        alert(msg);
         location.reload();
-    } else { alert('Failed: ' + (r.error || 'unknown')); btn.disabled = false; btn.textContent = 'Publish to site →'; }
+    } else { alert('Failed: ' + (r.error || 'unknown')); btn.disabled = false; btn.textContent = 'Publish →'; }
 }
 
 async function regenerateDoc(type, btn) {

@@ -348,9 +348,25 @@ function legal_docs_generate(PDO $db, int $site_id, string $doc_type): array
 }
 
 /**
- * Push an approved doc to the customer's CMS as a standalone page.
- * Uses the same cms-connector path as blog posts, with type='page' so the
- * Xceed CMS (or whichever) routes it to /privacy, /terms, etc.
+ * Compute the canonical hosted URL for a legal doc.
+ * This is the Tier-1 universal URL that works for every customer regardless
+ * of whether their site has a CMS we can push to.
+ */
+function legal_docs_hosted_url(int $site_id, string $slug): string
+{
+    $base = rtrim((string)config('app_url', ''), '/');
+    return $base . '/legal/' . $site_id . '/' . $slug;
+}
+
+/**
+ * Publish a doc.
+ *
+ * Strategy: ContentAgent always hosts the doc at /legal/{site_id}/{slug} —
+ * that URL is the canonical published_url and works on day one for every
+ * customer, no integrations required. If the site has a CMS configured we
+ * ALSO try a best-effort push so the doc lives on the customer's own
+ * domain too — but failure there does NOT roll the doc back to drafted.
+ * The customer always has a working link to share.
  */
 function legal_docs_publish(PDO $db, int $site_id, string $doc_type, int $user_id = 0): array
 {
@@ -367,45 +383,53 @@ function legal_docs_publish(PDO $db, int $site_id, string $doc_type, int $user_i
     if (!$row) return ['success' => false, 'error' => 'no draft found — generate first'];
     if (empty($row['body_html'])) return ['success' => false, 'error' => 'draft body is empty'];
 
-    if (empty($site['cms_url']) || empty($site['cms_api_key'])) {
-        return ['success' => false, 'error' => 'CMS not configured on this site (cms_url / cms_api_key missing)'];
-    }
-
     // Mark approved if not already
     if ($row['status'] !== 'approved') {
         $db->prepare("UPDATE legal_docs SET status='approved', approved_at=NOW(), approved_by=? WHERE id=?")
            ->execute([$user_id ?: null, (int)$row['id']]);
     }
 
-    // The cms-connector treats this as a 'page' type (Xceed CMS routes /privacy, /terms, etc.)
-    $post = [
-        'title'            => (string)$row['title'],
-        'slug'             => (string)$row['slug'],
-        'excerpt'          => '',
-        'body'             => (string)$row['body_html'],
-        'tags'             => '[]',
-        'type'             => 'page',
-        'seo_title'        => (string)$row['title'],
-        'seo_description'  => 'Read our ' . (string)$row['title'] . '.',
-        'seo_keywords'     => '',
-        'published_at'     => date('Y-m-d'),
+    $slug = (string)$row['slug'];
+    $hosted_url = legal_docs_hosted_url($site_id, $slug);
+
+    // Tier-1: hosted URL is always the canonical published location.
+    // Mark published immediately — works for every customer regardless of
+    // their tech stack.
+    $db->prepare("UPDATE legal_docs SET status='published', published_at=NOW(), published_url=?, last_error=NULL WHERE id=?")
+       ->execute([$hosted_url, (int)$row['id']]);
+
+    $cms_result = null;
+    $cms_note   = null;
+
+    // Tier-2: opportunistic push to the customer's CMS if connected.
+    // Failure here does NOT downgrade the publish — the hosted URL still works.
+    if (!empty($site['cms_url']) && !empty($site['cms_api_key'])) {
+        $post = [
+            'title'            => (string)$row['title'],
+            'slug'             => $slug,
+            'excerpt'          => '',
+            'body'             => (string)$row['body_html'],
+            'tags'             => '[]',
+            'type'             => 'page',
+            'seo_title'        => (string)$row['title'],
+            'seo_description'  => 'Read our ' . (string)$row['title'] . '.',
+            'seo_keywords'     => '',
+            'published_at'     => date('Y-m-d'),
+        ];
+        $cms_result = cms_push_post($post, (string)$site['cms_url'], (string)$site['cms_api_key']);
+        if (!empty($cms_result['success'])) {
+            $cms_note = 'Also pushed to your CMS at ' . rtrim((string)$site['cms_url'], '/') . '/' . $slug;
+        } else {
+            $cms_note = 'CMS push skipped: ' . (string)($cms_result['error'] ?? 'unknown error') . ' — your hosted URL still works.';
+        }
+    } else {
+        $cms_note = 'No CMS connected — hosting on ContentAgent only.';
+    }
+
+    return [
+        'success'       => true,
+        'published_url' => $hosted_url,
+        'cms_pushed'    => !empty($cms_result['success']),
+        'note'          => $cms_note,
     ];
-
-    $result = cms_push_post($post, (string)$site['cms_url'], (string)$site['cms_api_key']);
-    if (empty($result['success'])) {
-        $err = (string)($result['error'] ?? 'unknown CMS error');
-        $db->prepare("UPDATE legal_docs SET status='failed', last_error=? WHERE id=?")
-           ->execute(['publish failed: ' . $err, (int)$row['id']]);
-        return ['success' => false, 'error' => $err, 'http_status' => $result['http_status'] ?? null];
-    }
-
-    $public_url = rtrim((string)$site['cms_url'], '/') . '/' . (string)$row['slug'];
-    if (!empty($site['domain'])) {
-        $public_url = 'https://' . ltrim((string)$site['domain'], 'https://') . '/' . (string)$row['slug'];
-    }
-
-    $db->prepare("UPDATE legal_docs SET status='published', published_at=NOW(), published_url=? WHERE id=?")
-       ->execute([$public_url, (int)$row['id']]);
-
-    return ['success' => true, 'published_url' => $public_url];
 }
