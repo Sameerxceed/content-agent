@@ -105,33 +105,48 @@ function legal_docs_detect_missing(PDO $db, int $site_id): array
 
         if ($hit_url) {
             $found++;
-            $new_status = 'published';
-            if ($row) {
-                $db->prepare("UPDATE legal_docs SET status = ?, found_url = ?, expected_paths = ?, relevance = ?, detected_at = NOW() WHERE id = ?")
-                   ->execute([$new_status, $hit_url, json_encode($paths), $relevance, (int)$row['id']]);
+            // Live URL found. But if a fresh draft exists locally, don't
+            // overwrite — the draft is more current than whatever is live.
+            // Only auto-mark 'published' when there's nothing better in flight.
+            $draft_in_flight = $row && in_array($row['status'], ['drafted', 'approved', 'generating'], true);
+            if ($row && $draft_in_flight) {
+                $db->prepare("UPDATE legal_docs SET found_url = ?, expected_paths = ?, relevance = ?, detected_at = NOW() WHERE id = ?")
+                   ->execute([$hit_url, json_encode($paths), $relevance, (int)$row['id']]);
+                $types_out[$doc_type] = ['status' => $row['status'], 'url' => $hit_url, 'relevance' => $relevance, 'note' => 'draft pending, live URL found too'];
+            } elseif ($row) {
+                $db->prepare("UPDATE legal_docs SET status = 'published', found_url = ?, expected_paths = ?, relevance = ?, detected_at = NOW() WHERE id = ?")
+                   ->execute([$hit_url, json_encode($paths), $relevance, (int)$row['id']]);
+                $types_out[$doc_type] = ['status' => 'present', 'url' => $hit_url, 'relevance' => $relevance];
             } else {
                 $db->prepare("INSERT INTO legal_docs (site_id, doc_type, status, found_url, expected_paths, relevance, detected_at, published_url)
-                              VALUES (?, ?, ?, ?, ?, ?, NOW(), ?)")
-                   ->execute([$site_id, $doc_type, $new_status, $hit_url, json_encode($paths), $relevance, $hit_url]);
+                              VALUES (?, ?, 'published', ?, ?, ?, NOW(), ?)")
+                   ->execute([$site_id, $doc_type, $hit_url, json_encode($paths), $relevance, $hit_url]);
+                $types_out[$doc_type] = ['status' => 'present', 'url' => $hit_url, 'relevance' => $relevance];
             }
-            $types_out[$doc_type] = ['status' => 'present', 'url' => $hit_url, 'relevance' => $relevance];
         } else {
             $missing++;
-            // Preserve a drafted/approved row's body — they may have already
-            // generated a doc that the customer just hasn't published yet.
-            $preserve = $row && in_array($row['status'], ['drafted', 'approved', 'generating'], true);
-            if ($row && $preserve) {
+            // Detection didn't find a live URL. NEVER auto-downgrade from any
+            // post-detection state — drafts, approvals, and published rows all
+            // stay put. Cache propagation, CDN lag, or a slug-format mismatch
+            // can cause false 404s on the HEAD check, and silently overwriting
+            // the user's progress is the worst possible UX. Only refresh
+            // paths/relevance/detected_at metadata.
+            $immutable_statuses = ['drafted', 'approved', 'generating', 'published', 'failed'];
+            if ($row && in_array($row['status'], $immutable_statuses, true)) {
                 $db->prepare("UPDATE legal_docs SET expected_paths = ?, relevance = ?, detected_at = NOW() WHERE id = ?")
                    ->execute([json_encode($paths), $relevance, (int)$row['id']]);
+                $types_out[$doc_type] = ['status' => $row['status'], 'url' => $row['published_url'] ?? null, 'relevance' => $relevance];
             } elseif ($row) {
+                // Existing row in status='missing' or 'unknown' — just refresh the timestamp
                 $db->prepare("UPDATE legal_docs SET status = 'missing', found_url = NULL, expected_paths = ?, relevance = ?, detected_at = NOW() WHERE id = ?")
                    ->execute([json_encode($paths), $relevance, (int)$row['id']]);
+                $types_out[$doc_type] = ['status' => 'missing', 'url' => null, 'relevance' => $relevance];
             } else {
                 $db->prepare("INSERT INTO legal_docs (site_id, doc_type, status, expected_paths, relevance, detected_at)
                               VALUES (?, ?, 'missing', ?, ?, NOW())")
                    ->execute([$site_id, $doc_type, json_encode($paths), $relevance]);
+                $types_out[$doc_type] = ['status' => 'missing', 'url' => null, 'relevance' => $relevance];
             }
-            $types_out[$doc_type] = ['status' => 'missing', 'url' => null, 'relevance' => $relevance];
         }
     }
 
