@@ -139,10 +139,34 @@ try {
 
         $merged_state = array_merge($progress['state'], $step_input);
         if (isset($step['save']) && is_callable($step['save'])) {
-            $step['save']($merged_state, $db, $user_id);
+            try {
+                $step['save']($merged_state, $db, $user_id);
+            } catch (Throwable $e) {
+                // Save failed (config write error, DB error, etc). Surface it
+                // at THIS step so the user sees the real cause — not 2 screens
+                // later as a cryptic "key not saved" test failure.
+                echo json_encode([
+                    'success' => false,
+                    'error'   => 'Could not save: ' . $e->getMessage(),
+                ]);
+                exit;
+            }
         }
         $next = $step_idx + 1;
         $is_final = $next > count($steps);
+
+        // Post-save invariant: on the FINAL step of a global-scope wizard, the
+        // wizard must report is_configured() = true. If not, save claimed to
+        // succeed but didn't actually persist — refuse to advance and tell the
+        // user at this step, where they typed the key.
+        if ($is_final && $wizard->scope() === 'global' && !$wizard->is_configured()) {
+            echo json_encode([
+                'success' => false,
+                'error'   => 'The key passed validation but didn\'t persist to config. Check that config/config.php is writable by the web user, then retry.',
+            ]);
+            exit;
+        }
+
         // Clear any stale last_test_result — credentials just changed, the old
         // result is no longer meaningful. Otherwise the wizard's final screen
         // would briefly show the previous failure before the new test runs.
@@ -182,6 +206,14 @@ try {
     }
 
     if ($action === 'reset') {
+        // Clear the wizard-owned config keys so a fresh attempt isn't fooled by
+        // a stale value from a previous run (e.g. wrong key persisted before
+        // test failed). Then wipe the progress row.
+        $keys = $wizard->config_keys();
+        if (!empty($keys)) {
+            require_once __DIR__ . '/../../includes/setup_wizards/config_writer.php';
+            config_unset($keys);
+        }
         $db->prepare('DELETE FROM integration_setup_progress WHERE id = ?')->execute([$progress['id']]);
         echo json_encode(['success' => true]);
         exit;

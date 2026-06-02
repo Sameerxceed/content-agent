@@ -90,4 +90,18 @@ abstract class SetupWizard
     {
         return $this->is_configured($site) ? '✓ Configured' : 'Not set up';
     }
+
+    /**
+     * Config keys this wizard writes — used by reset() to wipe them cleanly so
+     * a "Reset & start over" actually starts over (otherwise a stale bad key
+     * lingers in config.php and the next attempt can be confused by it).
+     * Override per-wizard if it persists to config. OAuth wizards that write
+     * elsewhere (e.g. site_integrations table) can override reset() instead.
+     *
+     * @return string[]
+     */
+    public function config_keys(): array
+    {
+        return [];
+    }
 }

@@ -16,6 +16,8 @@ class ResendWizard extends SetupWizard
         return config('mail_driver') === 'resend' && !empty(config('resend_api_key'));
     }
 
+    public function config_keys(): array { return ['resend_api_key', 'mail_driver', 'mail_from']; }
+
     public function status_line(?array $site = null): string
     {
         if (!$this->is_configured()) return 'Not set up';

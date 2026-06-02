@@ -15,6 +15,8 @@ class BraveSearchWizard extends SetupWizard
         return !empty(config('brave_search_api_key'));
     }
 
+    public function config_keys(): array { return ['brave_search_api_key']; }
+
     public function status_line(?array $site = null): string
     {
         return $this->is_configured()

@@ -15,6 +15,8 @@ class TwitterAppWizard extends SetupWizard
         return !empty(config('twitter_client_id')) && !empty(config('twitter_client_secret'));
     }
 
+    public function config_keys(): array { return ['twitter_client_id', 'twitter_client_secret']; }
+
     public function status_line(?array $site = null): string
     {
         return $this->is_configured() ? '✓ App keys configured · connect per site' : 'App keys not set';

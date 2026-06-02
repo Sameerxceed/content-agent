@@ -15,6 +15,8 @@ class PerplexityWizard extends SetupWizard
         return !empty(config('perplexity_api_key'));
     }
 
+    public function config_keys(): array { return ['perplexity_api_key']; }
+
     public function status_line(?array $site = null): string
     {
         return $this->is_configured() ? '✓ API key configured · AEO tracking active' : 'API key not set';

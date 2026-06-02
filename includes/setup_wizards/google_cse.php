@@ -27,6 +27,8 @@ class GoogleCseWizard extends SetupWizard
         return !empty(config('google_cse_api_key')) && !empty(config('google_cse_cx'));
     }
 
+    public function config_keys(): array { return ['google_cse_api_key', 'google_cse_cx']; }
+
     public function status_line(?array $site = null): string
     {
         if (!$this->is_configured()) return 'Not set up';

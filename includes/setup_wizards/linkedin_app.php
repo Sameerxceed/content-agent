@@ -15,6 +15,8 @@ class LinkedInAppWizard extends SetupWizard
         return !empty(config('linkedin_client_id')) && !empty(config('linkedin_client_secret'));
     }
 
+    public function config_keys(): array { return ['linkedin_client_id', 'linkedin_client_secret']; }
+
     public function status_line(?array $site = null): string
     {
         if (!$this->is_configured()) return 'App keys not set';

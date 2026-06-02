@@ -15,6 +15,8 @@ class GscAppWizard extends SetupWizard
         return !empty(config('google_client_id')) && !empty(config('google_client_secret'));
     }
 
+    public function config_keys(): array { return ['google_client_id', 'google_client_secret']; }
+
     public function status_line(?array $site = null): string
     {
         return $this->is_configured() ? '✓ OAuth credentials configured · connect per site' : 'OAuth credentials not set';

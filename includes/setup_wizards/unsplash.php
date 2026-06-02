@@ -15,6 +15,8 @@ class UnsplashWizard extends SetupWizard
         return !empty(config('unsplash_access_key'));
     }
 
+    public function config_keys(): array { return ['unsplash_access_key']; }
+
     public function status_line(?array $site = null): string
     {
         return $this->is_configured()

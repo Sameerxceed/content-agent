@@ -19,6 +19,8 @@ class RedditAppWizard extends SetupWizard
         return !empty(config('reddit_client_id')) && !empty(config('reddit_client_secret'));
     }
 
+    public function config_keys(): array { return ['reddit_client_id', 'reddit_client_secret']; }
+
     public function status_line(?array $site = null): string
     {
         if (!$this->is_configured()) return 'App keys not set';

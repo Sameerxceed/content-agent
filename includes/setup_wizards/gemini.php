@@ -15,6 +15,8 @@ class GeminiWizard extends SetupWizard
         return !empty(config('gemini_api_key'));
     }
 
+    public function config_keys(): array { return ['gemini_api_key']; }
+
     public function status_line(?array $site = null): string
     {
         return $this->is_configured()

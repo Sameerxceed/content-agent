@@ -15,6 +15,8 @@ class DataForSeoWizard extends SetupWizard
         return !empty(config('dataforseo_login')) && !empty(config('dataforseo_password'));
     }
 
+    public function config_keys(): array { return ['dataforseo_login', 'dataforseo_password']; }
+
     public function status_line(?array $site = null): string
     {
         return $this->is_configured()
