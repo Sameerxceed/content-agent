@@ -62,7 +62,18 @@ $siblings->execute([(int)$item['cluster_id'], $item_id]);
 $siblings = $siblings->fetchAll();
 
 // Channels + variant content (if drafted)
-$channels_for_item = json_decode($item['channels'] ?? '[]', true) ?: [];
+// Prefer live registry resolution (late-binding) so newly-connected channels
+// surface even on items planned before the connect. Fall back to the snapshot.
+require_once __DIR__ . '/../../includes/channels/registry.php';
+require_once __DIR__ . '/../../includes/content_artifacts.php';
+$site_row_for_ch = $db->prepare("SELECT * FROM sites WHERE id = ?");
+$site_row_for_ch->execute([$site_id]);
+$site_row_for_ch = $site_row_for_ch->fetch();
+$configured_channel_ids = $site_row_for_ch ? array_keys(channels_registry()->configured_for($site_row_for_ch)) : [];
+$channels_for_item = content_artifacts_resolve_channels($configured_channel_ids, (string)$item['content_type']);
+if (empty($channels_for_item)) {
+    $channels_for_item = json_decode($item['channels'] ?? '[]', true) ?: [];
+}
 $variants = [];
 if ($item['post_id_loaded']) {
     $ch = $db->prepare("SELECT channel, status, variant_content, variant_meta FROM post_channels WHERE post_id = ?");
@@ -398,19 +409,32 @@ if ($is_published) { $lock_label = 'Published'; $lock_fg = '#166534'; $lock_bg =
 
         <div class="card">
             <h4>Channels</h4>
-            <ul class="kw-list" style="padding:0;margin:0;">
-                <?php foreach ($channels_for_item as $ch):
-                    $v = $variants[$ch] ?? null;
-                    $st = $v ? $v['status'] : 'pending';
-                    $color = match ($st) { 'queued' => '#1e40af', 'published' => '#166534', 'failed' => '#dc2626', default => '#94a3b8' };
-                ?>
-                    <li>
-                        <span style="display:inline-block;width:7px;height:7px;border-radius:50%;background:<?= $color ?>;margin-right:6px;"></span>
-                        <strong><?= e(ucfirst($ch)) ?></strong>
-                        <span style="font-size:10px;color:#94a3b8;float:right;"><?= e($st) ?></span>
-                    </li>
-                <?php endforeach; ?>
-            </ul>
+            <?php if (empty($channels_for_item)): ?>
+                <div style="font-size:12px;color:#64748b;line-height:1.5;">
+                    No publishing channels connected yet.
+                    <br>
+                    <a href="<?= url('/dashboard/integrations.php?site=' . $site_id) ?>" style="color:#7c3aed;font-weight:500;text-decoration:none;">
+                        → Connect channels
+                    </a>
+                    <div style="font-size:11px;color:#94a3b8;margin-top:6px;">
+                        Once connected (CMS, LinkedIn, Twitter, Reddit, Newsletter), future drafts will produce variants for each.
+                    </div>
+                </div>
+            <?php else: ?>
+                <ul class="kw-list" style="padding:0;margin:0;">
+                    <?php foreach ($channels_for_item as $ch):
+                        $v = $variants[$ch] ?? null;
+                        $st = $v ? $v['status'] : 'pending';
+                        $color = match ($st) { 'queued' => '#1e40af', 'published' => '#166534', 'failed' => '#dc2626', default => '#94a3b8' };
+                    ?>
+                        <li>
+                            <span style="display:inline-block;width:7px;height:7px;border-radius:50%;background:<?= $color ?>;margin-right:6px;"></span>
+                            <strong><?= e(ucfirst($ch)) ?></strong>
+                            <span style="font-size:10px;color:#94a3b8;float:right;"><?= e($st) ?></span>
+                        </li>
+                    <?php endforeach; ?>
+                </ul>
+            <?php endif; ?>
         </div>
 
         <?php if ($siblings): ?>

@@ -22,6 +22,7 @@ require_once __DIR__ . '/../includes/helpers.php';
 require_once __DIR__ . '/../includes/content_plan.php';
 require_once __DIR__ . '/../includes/content_artifacts.php';
 require_once __DIR__ . '/../includes/image_gen.php';
+require_once __DIR__ . '/../includes/channels/registry.php';
 
 $db = require __DIR__ . '/../includes/db.php';
 
@@ -73,9 +74,24 @@ foreach ($items as $it) {
     }
 
     try {
+        // ── Resolve applicable channels at draft time (late-binding) ──
+        // We don't trust the snapshot on content_plan_items.channels — the
+        // user may have connected new channels since plan-generation, and
+        // we want every undrafted item to pick them up automatically.
+        $site_stmt = $db->prepare("SELECT * FROM sites WHERE id = ?");
+        $site_stmt->execute([$isite]);
+        $site_row = $site_stmt->fetch();
+        $configured = $site_row ? array_keys(channels_registry()->configured_for($site_row)) : [];
+        $channels = content_artifacts_resolve_channels($configured, (string)$it['content_type']);
+        if (empty($channels)) {
+            // Legacy fallback: use the planning-time snapshot, otherwise CMS-only
+            $channels = json_decode($it['channels'] ?? '[]', true) ?: ['cms'];
+        }
+        echo "    channels: " . implode(',', $channels) . "\n";
+
         // ── Generate the full multi-artifact package ─────────────
         echo "  → item={$iid}: generating package...\n";
-        $pkg = content_artifacts_generate_full_package($db, $iid);
+        $pkg = content_artifacts_generate_full_package($db, $iid, $channels);
 
         // ── Insert posts row ─────────────────────────────────────
         $blog = $pkg['blog'];
@@ -116,7 +132,8 @@ foreach ($items as $it) {
         }
 
         // ── Create post_channels rows for applicable channels ────
-        $channels = json_decode($it['channels'] ?? '[]', true) ?: [];
+        // Reuse the channels we resolved before the Claude call so the
+        // queued rows match exactly what we asked Claude to generate.
         _autopilot_queue_channels($db, $post_id, $channels, $it['target_publish_date'], $pkg);
 
         // ── Link item → post and lock to 'drafted' ──────────────

@@ -77,7 +77,15 @@ function content_artifacts_resolve_channels(array $configured_channel_ids, strin
  *
  * Returns the parsed JSON structure or throws RuntimeException on failure.
  */
-function content_artifacts_generate_full_package(PDO $db, int $item_id): array
+/**
+ * Generate the full multi-artifact package for a plan item.
+ *
+ * $channels: explicit channel-id list (preferred — late-binding). When NULL,
+ * we resolve the live set from the channel registry intersected with the fit
+ * matrix for this item's content_type. The stored item.channels JSON is only
+ * used as a last-resort fallback (legacy items pre-late-binding).
+ */
+function content_artifacts_generate_full_package(PDO $db, int $item_id, ?array $channels = null): array
 {
     // ── Load the plan item + denormalised context ──────────────
     $stmt = $db->prepare("SELECT i.*, p.site_id AS plan_site, c.name AS cluster_name, c.angle AS cluster_angle,
@@ -117,13 +125,26 @@ function content_artifacts_generate_full_package(PDO $db, int $item_id): array
         $pillar_url = $stmt->fetchColumn() ?: null;
     }
 
-    // Resolve channel variants needed (only the ones this item publishes to)
-    $channels_for_item = json_decode($item['channels'] ?? '[]', true) ?: ['cms'];
+    // Resolve channel variants needed at draft time (late-binding).
+    // Caller passes the freshly-resolved set; if not, we resolve here from
+    // the registry + fit matrix so newly-connected channels flow through.
+    if ($channels === null) {
+        require_once __DIR__ . '/channels/registry.php';
+        $site_stmt = $db->prepare("SELECT * FROM sites WHERE id = ?");
+        $site_stmt->execute([$site_id]);
+        $site_row = $site_stmt->fetch();
+        $configured = $site_row ? array_keys(channels_registry()->configured_for($site_row)) : [];
+        $channels = content_artifacts_resolve_channels($configured, (string)$item['content_type']);
+        // Last-resort fallback for legacy items: use the snapshot
+        if (empty($channels)) {
+            $channels = json_decode($item['channels'] ?? '[]', true) ?: ['cms'];
+        }
+    }
     $needs = [
-        'linkedin'   => in_array('linkedin',   $channels_for_item, true),
-        'twitter'    => in_array('twitter',    $channels_for_item, true),
-        'reddit'     => in_array('reddit',     $channels_for_item, true),
-        'newsletter' => in_array('newsletter', $channels_for_item, true),
+        'linkedin'   => in_array('linkedin',   $channels, true),
+        'twitter'    => in_array('twitter',    $channels, true),
+        'reddit'     => in_array('reddit',     $channels, true),
+        'newsletter' => in_array('newsletter', $channels, true),
     ];
 
     $serp_brief = $item['serp_brief'] ? json_decode($item['serp_brief'], true) : null;
