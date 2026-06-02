@@ -179,5 +179,11 @@ function channels_registry(): ChannelRegistry
     require_once __DIR__ . '/newsletter.php';
     $registry->register(new NewsletterChannel());
 
+    require_once __DIR__ . '/schema.php';
+    $registry->register(new SchemaChannel());
+
+    require_once __DIR__ . '/llms.php';
+    $registry->register(new LlmsChannel());
+
     return $registry;
 }

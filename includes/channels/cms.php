@@ -45,6 +45,33 @@ class CmsChannel extends ChannelAdapter
             return ['success' => false, 'error' => 'CMS not configured for this site (missing cms_url or cms_api_key)'];
         }
 
+        // Inject schema.org JSON-LD if a sibling 'schema' channel row has it.
+        // This is how schema reaches the live site — wrapped in <script> tags
+        // appended to the body before push. The schema adapter itself is a
+        // no-op marker (see channels/schema.php); CMS is where it actually
+        // travels to the website.
+        global $db; // cron-publish puts $db in global scope
+        if (isset($db) && $db instanceof PDO) {
+            $stmt = $db->prepare("SELECT variant_content FROM post_channels
+                WHERE post_id = ? AND channel = 'schema' LIMIT 1");
+            $stmt->execute([(int)$post['id']]);
+            $schema_json = (string)$stmt->fetchColumn();
+            $bundle = $schema_json !== '' ? json_decode($schema_json, true) : null;
+            if (is_array($bundle) && !empty($bundle)) {
+                $script_tags = '';
+                foreach ($bundle as $blob) {
+                    if (!is_array($blob)) continue;
+                    $script_tags .= "\n<script type=\"application/ld+json\">\n"
+                                 .  json_encode($blob, JSON_UNESCAPED_SLASHES | JSON_PRETTY_PRINT)
+                                 .  "\n</script>";
+                }
+                // Avoid double-injection if body already has JSON-LD
+                if ($script_tags !== '' && !str_contains((string)($post['body'] ?? ''), 'application/ld+json')) {
+                    $post['body'] = (string)($post['body'] ?? '') . $script_tags;
+                }
+            }
+        }
+
         $result = cms_push_post($post, $site['cms_url'], $site['cms_api_key']);
 
         if (!empty($result['success'])) {
