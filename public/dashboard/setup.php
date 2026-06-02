@@ -28,8 +28,10 @@ if (!$site_id) { redirect('/dashboard/index.php'); }
 $site = auth_get_accessible_site($db, $site_id);
 if (!$site) { http_response_code(403); exit('Access denied'); }
 
-$valid_tabs = ['business', 'brand', 'publishing', 'channels', 'server', 'danger'];
+$valid_tabs = ['business', 'publishing', 'channels', 'server', 'danger'];
 $tab = in_array($_GET['tab'] ?? '', $valid_tabs, true) ? $_GET['tab'] : 'business';
+// Legacy: old "Brand" tab merged into Business; quietly remap.
+if (($_GET['tab'] ?? '') === 'brand') $tab = 'business';
 
 // Per-site connected platforms (Channels tab) — fail-soft if integrations table missing.
 // Column set matches migration 006: account_name (not account_label), no status, no last_synced_at.
@@ -94,7 +96,7 @@ include __DIR__ . '/_site_stepper.php';
 .setup-tab .pill { font-size:10px; font-weight:600; padding:1px 7px; border-radius:10px; background:#dbeafe; color:#1e40af; }
 .setup-tab.warn .pill { background:#fef3c7; color:#92400e; }
 .setup-body { padding:20px 24px; }
-.setup-section { margin-bottom:22px; }
+.setup-section { margin-bottom:22px; max-width:720px; }
 .setup-section + .setup-section { padding-top:18px; border-top:1px solid #f1f5f9; }
 .setup-section h3 { font-size:13px; font-weight:600; color:var(--primary); margin:0 0 4px; text-transform:uppercase; letter-spacing:0.4px; }
 .setup-section .desc { font-size:12px; color:#64748b; margin:0 0 12px; line-height:1.55; max-width:680px; }
@@ -119,7 +121,6 @@ include __DIR__ . '/_site_stepper.php';
         <?php
         $tabs_def = [
             'business'   => ['label' => '🎯 Business',    'pill' => $profile_confirmed ? null : 'review', 'warn' => !$profile_confirmed],
-            'brand'      => ['label' => '🎨 Brand',       'pill' => null, 'warn' => false],
             'publishing' => ['label' => '📋 Publishing',  'pill' => null, 'warn' => false],
             'channels'   => ['label' => '🔌 Channels',    'pill' => count($connected) ?: null, 'warn' => false],
             'server'     => ['label' => '🖥️ Server & feeds', 'pill' => null, 'warn' => false],
@@ -143,9 +144,8 @@ include __DIR__ . '/_site_stepper.php';
             <?= csrf_field() ?>
             <input type="hidden" name="action" value="update">
             <input type="hidden" name="id" value="<?= $site_id ?>">
-            <?php /* Preserve fields owned by other tabs so this Save doesn't blank them */ ?>
+            <?php /* Preserve fields owned by other tabs so this Save doesn't blank them. Brand colors/fonts + blog_path are rendered below as real fields. */ ?>
             <input type="hidden" name="agent_mode" value="<?= e($site['agent_mode'] ?? 'manual') ?>">
-            <input type="hidden" name="blog_path" value="<?= e($site['blog_path'] ?? '/blog') ?>">
             <input type="hidden" name="autonomy_mode" value="<?= e($site['autonomy_mode'] ?? 'review') ?>">
             <input type="hidden" name="posts_per_week" value="<?= (int)($site['posts_per_week'] ?? 2) ?>">
             <input type="hidden" name="cms_url" value="<?= e($site['cms_url'] ?? '') ?>">
@@ -159,10 +159,6 @@ include __DIR__ . '/_site_stepper.php';
             <input type="hidden" name="hosting_panel" value="<?= e($site['hosting_panel'] ?? '') ?>">
             <input type="hidden" name="rss_feeds" value="<?= e(implode("\n", $feeds)) ?>">
             <input type="hidden" name="digest_email" value="<?= e($site['digest_email'] ?? '') ?>">
-            <input type="hidden" name="brand_fonts" value="<?= e(implode(', ', json_decode($site['brand_fonts'] ?? '[]', true) ?: [])) ?>">
-            <?php for ($_ci = 0; $_ci < 3; $_ci++): $_cval = $brand_colors[$_ci] ?? ''; ?>
-                <input type="hidden" name="brand_color_hex_<?= $_ci ?>" value="<?= e($_cval) ?>">
-            <?php endfor; ?>
             <?php if (!empty($site['is_active'])): ?><input type="hidden" name="is_active" value="1"><?php endif; ?>
 
             <div class="setup-section">
@@ -259,8 +255,32 @@ include __DIR__ . '/_site_stepper.php';
                 </div>
             </div>
 
+            <div class="setup-section">
+                <h3>Brand colors</h3>
+                <p class="desc">Used by social carousels, blog theme, hero images. Pick up to 3 — primary, accent, secondary.</p>
+                <div class="flex gap-2 items-center" style="flex-wrap:wrap;">
+                <?php for ($ci = 0; $ci < 3; $ci++): $cval = $brand_colors[$ci] ?? ''; ?>
+                    <div style="display:flex;align-items:center;gap:4px;">
+                        <input type="color" name="brand_color_<?= $ci ?>" value="<?= e($cval ?: '#1B3A6B') ?>" style="width:36px;height:36px;border:1px solid #ddd;border-radius:4px;cursor:pointer;padding:0;">
+                        <input type="text" name="brand_color_hex_<?= $ci ?>" value="<?= e($cval) ?>" class="form-control" style="width:100px;font-size:12px;font-family:monospace;" placeholder="#hex" oninput="this.previousElementSibling.value=this.value">
+                    </div>
+                <?php endfor; ?>
+                </div>
+            </div>
+
+            <div class="setup-section">
+                <h3>Brand fonts &amp; blog path</h3>
+                <p class="desc">Fonts are used in generated images and embeds. Blog path is the URL prefix where posts live (used to construct canonical URLs).</p>
+                <div class="setup-grid-2">
+                    <div class="form-group"><label for="brand_fonts">Brand fonts (comma-separated)</label>
+                        <input type="text" id="brand_fonts" name="brand_fonts" class="form-control" value="<?= e(implode(', ', json_decode($site['brand_fonts'] ?? '[]', true) ?: [])) ?>" placeholder="e.g. Space Grotesk, Inter"></div>
+                    <div class="form-group"><label for="blog_path">Blog path</label>
+                        <input type="text" id="blog_path" name="blog_path" class="form-control" value="<?= e($site['blog_path'] ?? '/blog') ?>" placeholder="/blog"></div>
+                </div>
+            </div>
+
             <div class="setup-actions">
-                <button type="submit" class="btn btn-primary">Save business settings</button>
+                <button type="submit" class="btn btn-primary">Save</button>
                 <a href="<?= url('/dashboard/site.php?id=' . $site_id) ?>" class="btn btn-outline">Cancel</a>
             </div>
         </form>
@@ -280,82 +300,6 @@ include __DIR__ . '/_site_stepper.php';
             } catch(e) { alert('Error: ' + e.message); btn.disabled = false; btn.textContent = orig; }
         }
         </script>
-
-    <?php elseif ($tab === 'brand'): ?>
-        <form method="POST" action="<?= url('/dashboard/sites.php') ?>">
-            <?= csrf_field() ?>
-            <input type="hidden" name="action" value="update">
-            <input type="hidden" name="id" value="<?= $site_id ?>">
-            <?php /* Preserve fields owned by other tabs */ ?>
-            <input type="hidden" name="name" value="<?= e($site['name']) ?>">
-            <input type="hidden" name="agent_mode" value="<?= e($site['agent_mode'] ?? 'manual') ?>">
-            <input type="hidden" name="autonomy_mode" value="<?= e($site['autonomy_mode'] ?? 'review') ?>">
-            <input type="hidden" name="posts_per_week" value="<?= (int)($site['posts_per_week'] ?? 2) ?>">
-            <input type="hidden" name="cms_url" value="<?= e($site['cms_url'] ?? '') ?>">
-            <input type="hidden" name="cms_api_key" value="<?= e($site['cms_api_key'] ?? '') ?>">
-            <input type="hidden" name="server_type" value="<?= e($site['server_type'] ?? 'api_only') ?>">
-            <input type="hidden" name="server_host" value="<?= e($site['server_host'] ?? '') ?>">
-            <input type="hidden" name="server_user" value="<?= e($site['server_user'] ?? '') ?>">
-            <input type="hidden" name="server_pass" value="<?= e($site['server_pass'] ?? '') ?>">
-            <input type="hidden" name="server_path" value="<?= e($site['server_path'] ?? '') ?>">
-            <input type="hidden" name="git_repo" value="<?= e($site['git_repo'] ?? '') ?>">
-            <input type="hidden" name="hosting_panel" value="<?= e($site['hosting_panel'] ?? '') ?>">
-            <input type="hidden" name="rss_feeds" value="<?= e(implode("\n", $feeds)) ?>">
-            <input type="hidden" name="digest_email" value="<?= e($site['digest_email'] ?? '') ?>">
-            <input type="hidden" name="business_description" value="<?= e($site['business_description'] ?? '') ?>">
-            <input type="hidden" name="topics" value="<?= e(implode(', ', json_decode($site['topics'] ?? '[]', true) ?: [])) ?>">
-            <input type="hidden" name="persona" value="<?= e($site['persona'] ?? '') ?>">
-            <input type="hidden" name="usp" value="<?= e($site['usp'] ?? '') ?>">
-            <?php if (!empty($site['topics_confirmed'])): ?><input type="hidden" name="topics_confirmed" value="1"><?php endif; ?>
-            <?php if ($profile_confirmed): ?><input type="hidden" name="profile_confirmed" value="1"><?php endif; ?>
-            <input type="hidden" name="founding_year" value="<?= e((string)($site['founding_year'] ?? '')) ?>">
-            <input type="hidden" name="employee_estimate" value="<?= e((string)($site['employee_estimate'] ?? '')) ?>">
-            <input type="hidden" name="hq_city" value="<?= e($site['hq_city'] ?? '') ?>">
-            <input type="hidden" name="hq_country" value="<?= e($site['hq_country'] ?? '') ?>">
-            <input type="hidden" name="size_tier" value="<?= e($site['size_tier'] ?? '') ?>">
-            <input type="hidden" name="business_model" value="<?= e($site['business_model'] ?? '') ?>">
-            <input type="hidden" name="offering_type" value="<?= e($site['offering_type'] ?? '') ?>">
-            <input type="hidden" name="customer_segment" value="<?= e($site['customer_segment'] ?? '') ?>">
-            <input type="hidden" name="industry_category" value="<?= e($site['industry_category'] ?? '') ?>">
-            <input type="hidden" name="industry_sub" value="<?= e($site['industry_sub'] ?? '') ?>">
-            <input type="hidden" name="market_scope" value="<?= e($site['market_scope'] ?? '') ?>">
-            <input type="hidden" name="maturity_tier" value="<?= e($site['maturity_tier'] ?? '') ?>">
-            <?php if (!empty($site['is_active'])): ?><input type="hidden" name="is_active" value="1"><?php endif; ?>
-
-            <div class="setup-section">
-                <h3>Brand colors</h3>
-                <p class="desc">Used by social carousels, blog theme, hero images. Pick up to 3 — primary, accent, secondary.</p>
-                <div class="flex gap-2 items-center" style="flex-wrap:wrap;">
-                <?php for ($ci = 0; $ci < 3; $ci++): $cval = $brand_colors[$ci] ?? ''; ?>
-                    <div style="display:flex;align-items:center;gap:4px;">
-                        <input type="color" name="brand_color_<?= $ci ?>" value="<?= e($cval ?: '#1B3A6B') ?>" style="width:36px;height:36px;border:1px solid #ddd;border-radius:4px;cursor:pointer;padding:0;">
-                        <input type="text" name="brand_color_hex_<?= $ci ?>" value="<?= e($cval) ?>" class="form-control" style="width:100px;font-size:12px;font-family:monospace;" placeholder="#hex" oninput="this.previousElementSibling.value=this.value">
-                    </div>
-                <?php endfor; ?>
-                </div>
-            </div>
-
-            <div class="setup-section">
-                <h3>Brand fonts</h3>
-                <p class="desc">Used in image generation and embeds. Comma-separated, in order of preference.</p>
-                <div class="form-group">
-                    <input type="text" id="brand_fonts" name="brand_fonts" class="form-control" value="<?= e(implode(', ', json_decode($site['brand_fonts'] ?? '[]', true) ?: [])) ?>" placeholder="e.g. Space Grotesk, Inter">
-                </div>
-            </div>
-
-            <div class="setup-section">
-                <h3>Blog path</h3>
-                <p class="desc">The URL prefix where your blog posts live, used to construct canonical URLs.</p>
-                <div class="form-group">
-                    <input type="text" id="blog_path" name="blog_path" class="form-control" value="<?= e($site['blog_path'] ?? '/blog') ?>" placeholder="/blog">
-                </div>
-            </div>
-
-            <div class="setup-actions">
-                <button type="submit" class="btn btn-primary">Save brand settings</button>
-                <a href="<?= url('/dashboard/site.php?id=' . $site_id) ?>" class="btn btn-outline">Cancel</a>
-            </div>
-        </form>
 
     <?php elseif ($tab === 'publishing'): ?>
         <form method="POST" action="<?= url('/dashboard/sites.php') ?>">
