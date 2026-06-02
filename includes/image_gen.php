@@ -59,16 +59,13 @@ function image_gen_for_post(PDO $db, int $post_id, string $prompt, string $alt =
         }
     }
 
-    // Fall back to DALL-E 3
+    // Fall back to OpenAI gpt-image-1 (dall-e-3 deprecated end of 2025)
     $oai_key = config('openai_api_key');
     if (!empty($oai_key)) {
-        $url = _image_gen_dalle3($prompt, $oai_key);
-        if ($url) {
-            $local = _image_gen_download_to_local($url, $site_id, $post_id, 'dalle3');
-            if ($local) {
-                _image_gen_save_to_post($db, $post_id, $local, $prompt, 'dalle3', $alt);
-                return ['provider' => 'dalle3', 'url' => $local, 'alt' => $alt];
-            }
+        $local = _image_gen_dalle3($prompt, $oai_key, $site_id, $post_id);
+        if ($local) {
+            _image_gen_save_to_post($db, $post_id, $local, $prompt, 'dalle3', $alt);
+            return ['provider' => 'dalle3', 'url' => $local, 'alt' => $alt];
         }
     }
 
@@ -183,14 +180,20 @@ function _image_gen_gemini(string $prompt, string $api_key, int $site_id, int $p
     return $rel;
 }
 
-function _image_gen_dalle3(string $prompt, string $api_key): ?string
+/**
+ * OpenAI image generation. Uses gpt-image-1 — dall-e-3 was deprecated late
+ * 2025 and returns "model does not exist". gpt-image-1 returns base64 in
+ * b64_json (no URL option), so we decode + save like Gemini does. Function
+ * name kept as _image_gen_dalle3 for backwards compatibility with the
+ * "dalle3" provider label used everywhere else.
+ */
+function _image_gen_dalle3(string $prompt, string $api_key, int $site_id, int $post_id): ?string
 {
     $payload = json_encode([
-        'model'   => 'dall-e-3',
-        'prompt'  => mb_substr($prompt, 0, 4000),
-        'size'    => '1792x1024',
-        'quality' => 'standard',
-        'n'       => 1,
+        'model'  => 'gpt-image-1',
+        'prompt' => mb_substr($prompt, 0, 4000),
+        'size'   => '1536x1024',  // landscape — closest gpt-image-1 supports to 16:9
+        'n'      => 1,
     ]);
     $ch = curl_init('https://api.openai.com/v1/images/generations');
     curl_setopt_array($ch, [
@@ -201,7 +204,7 @@ function _image_gen_dalle3(string $prompt, string $api_key): ?string
             'Content-Type: application/json',
             'Authorization: Bearer ' . $api_key,
         ],
-        CURLOPT_TIMEOUT        => 60,
+        CURLOPT_TIMEOUT        => 90,
     ]);
     $body = curl_exec($ch);
     $http = curl_getinfo($ch, CURLINFO_HTTP_CODE);
@@ -211,7 +214,19 @@ function _image_gen_dalle3(string $prompt, string $api_key): ?string
         return null;
     }
     $data = json_decode($body, true);
-    return $data['data'][0]['url'] ?? null;
+    $b64  = $data['data'][0]['b64_json'] ?? null;
+    if (!$b64) {
+        error_log('[image_gen dalle3] no image in response: ' . substr((string)$body, 0, 250));
+        return null;
+    }
+    $bin = base64_decode($b64);
+    if ($bin === false || strlen($bin) < 100) return null;
+
+    $rel = _image_gen_local_path_for($site_id, $post_id, 'dalle3', 'png');
+    $abs = _image_gen_abs($rel);
+    if (!is_dir(dirname($abs))) @mkdir(dirname($abs), 0755, true);
+    if (@file_put_contents($abs, $bin) === false) return null;
+    return $rel;
 }
 
 function _image_gen_unsplash_search(string $prompt, string $access_key): ?string

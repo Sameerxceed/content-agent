@@ -171,9 +171,7 @@ function _pia_force_image_provider(PDO $db, int $post_id, string $prompt, string
     if ($provider === 'dalle3') {
         $key = config('openai_api_key');
         if (empty($key)) return null;
-        $url = _image_gen_dalle3($prompt, $key);
-        if (!$url) return null;
-        $local = _image_gen_download_to_local($url, $site_id, $post_id, 'dalle3');
+        $local = _image_gen_dalle3($prompt, $key, $site_id, $post_id);
         if (!$local) return null;
         _image_gen_save_to_post($db, $post_id, $local, $prompt, 'dalle3', $alt);
         return ['provider' => 'dalle3', 'url' => $local];
