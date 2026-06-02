@@ -163,6 +163,45 @@ foreach ($docs as $d) {
 </div>
 <?php endif; ?>
 
+<?php
+// Cookie consent banner snippet — only show once we have a Cookie Policy
+// the banner can point to (drafted, approved, or published).
+$cookies = $docs['cookies'] ?? null;
+$has_cookie_doc = $cookies && in_array($cookies['status'] ?? '', ['drafted', 'approved', 'published'], true);
+$app_url = rtrim((string)config('app_url', ''), '/');
+$embed_src = $app_url . '/embed/cookie-banner.php?site=' . $site_id;
+$embed_snippet = '<script src="' . $embed_src . '" async></script>';
+?>
+<?php if ($has_cookie_doc): ?>
+<div style="margin-top:22px;background:#fff;border:1px solid var(--border);border-radius:8px;padding:18px 20px;">
+    <div style="display:flex;align-items:center;gap:10px;margin-bottom:6px;">
+        <span style="font-size:18px;">🍪</span>
+        <h3 style="margin:0;font-size:14px;font-weight:600;color:var(--primary);">Cookie consent banner</h3>
+    </div>
+    <p style="font-size:12px;color:var(--text-light);line-height:1.55;margin:0 0 12px;max-width:760px;">
+        Paste this one-line tag into your website's <code>&lt;head&gt;</code> (or footer just before <code>&lt;/body&gt;</code>). It shows a bottom banner with Accept / Reject on the visitor's first load, links to your Cookie Policy, and remembers their choice. Required under EU + UK + EEA cookie laws.
+    </p>
+    <div style="display:flex;gap:8px;align-items:flex-start;">
+        <textarea id="cb-snippet" readonly rows="2" style="flex:1;font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-size:11px;padding:10px 12px;border:1px solid var(--border);border-radius:6px;background:#f8fafb;color:#0f172a;resize:none;"><?= e($embed_snippet) ?></textarea>
+        <button class="ld-btn primary" type="button" onclick="copyEmbed(this)" style="white-space:nowrap;">📋 Copy</button>
+    </div>
+    <div style="margin-top:10px;font-size:11px;color:#94a3b8;">
+        Banner fires <code>cookies-accepted</code> / <code>cookies-rejected</code> events on <code>window</code> — your analytics/ads scripts can listen and only initialise after consent. Visitor can re-open the banner via <code>ContentAgentCookieBanner.reset()</code>.
+    </div>
+</div>
+<script>
+function copyEmbed(btn) {
+    const ta = document.getElementById('cb-snippet');
+    ta.select();
+    navigator.clipboard.writeText(ta.value).then(function(){
+        const orig = btn.textContent;
+        btn.textContent = '✓ Copied';
+        setTimeout(function(){ btn.textContent = orig; }, 1600);
+    }).catch(function(){ document.execCommand('copy'); });
+}
+</script>
+<?php endif; ?>
+
 <div style="margin-top:18px;font-size:11px;color:#94a3b8;line-height:1.6;">
     <strong>About the generated documents:</strong> ContentAgent uses your business profile + the data your site actually collects (cookies, forms, third-party tools) to draft accurate policies. They cover DPDP (India), GDPR (EU/UK), and CCPA (California) by default. <em>Important: these are AI-generated baseline documents. For material legal exposure — fundraising, M&amp;A, regulated industries — review with a qualified lawyer.</em>
 </div>
