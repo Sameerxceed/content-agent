@@ -18,6 +18,7 @@ function setup_wizards_all(): array
         'perplexity.php'   => 'PerplexityWizard',
         'dataforseo.php'   => 'DataForSeoWizard',
         'openai.php'       => 'OpenAiWizard',
+        'gemini.php'       => 'GeminiWizard',
         'unsplash.php'     => 'UnsplashWizard',
     ];
     foreach ($files as $file => $class) {

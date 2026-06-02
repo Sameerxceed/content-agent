@@ -155,15 +155,24 @@ function _pia_force_image_provider(PDO $db, int $post_id, string $prompt, string
     require_once __DIR__ . '/../../includes/image_gen.php';
     // image_gen_for_post tries dalle3 then unsplash. For an explicit provider, we
     // directly invoke the internal callers — slightly hacky but avoids refactoring.
+    // Resolve site_id once (all providers need it)
+    $stmt = $db->prepare("SELECT site_id FROM posts WHERE id = ?");
+    $stmt->execute([$post_id]);
+    $site_id = (int)$stmt->fetchColumn();
+
+    if ($provider === 'gemini') {
+        $key = config('gemini_api_key');
+        if (empty($key)) return null;
+        $local = _image_gen_gemini($prompt, $key, $site_id, $post_id);
+        if (!$local) return null;
+        _image_gen_save_to_post($db, $post_id, $local, $prompt, 'gemini', $alt);
+        return ['provider' => 'gemini', 'url' => $local];
+    }
     if ($provider === 'dalle3') {
         $key = config('openai_api_key');
         if (empty($key)) return null;
         $url = _image_gen_dalle3($prompt, $key);
         if (!$url) return null;
-        // resolve site_id
-        $stmt = $db->prepare("SELECT site_id FROM posts WHERE id = ?");
-        $stmt->execute([$post_id]);
-        $site_id = (int)$stmt->fetchColumn();
         $local = _image_gen_download_to_local($url, $site_id, $post_id, 'dalle3');
         if (!$local) return null;
         _image_gen_save_to_post($db, $post_id, $local, $prompt, 'dalle3', $alt);
@@ -174,9 +183,6 @@ function _pia_force_image_provider(PDO $db, int $post_id, string $prompt, string
         if (empty($key)) return null;
         $url = _image_gen_unsplash_search($prompt, $key);
         if (!$url) return null;
-        $stmt = $db->prepare("SELECT site_id FROM posts WHERE id = ?");
-        $stmt->execute([$post_id]);
-        $site_id = (int)$stmt->fetchColumn();
         $local = _image_gen_download_to_local($url, $site_id, $post_id, 'unsplash');
         if (!$local) return null;
         _image_gen_save_to_post($db, $post_id, $local, $prompt, 'unsplash', $alt);

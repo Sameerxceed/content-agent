@@ -2,19 +2,20 @@
 /**
  * Image generation + sourcing for blog hero images.
  *
- * Three sources, in priority order during autopilot drafting:
- *   1. AI generation  — OpenAI DALL-E 3 (premium quality)
- *   2. Stock photo    — Unsplash search (free, brand-safe)
- *   3. Manual upload  — user replaces via Plan Item Studio
+ * Providers tried in this order during autopilot drafting:
+ *   1. Gemini Imagen 4    — Google AI Studio (free tier covers normal use)
+ *   2. OpenAI DALL-E 3    — premium quality, paid
+ *   3. Unsplash stock     — free fallback when no AI provider is configured
+ *   4. Manual upload      — user replaces via Plan Item Studio
  *
  * Generated/sourced images get downloaded and stored locally under
  *   public/uploads/posts/{site_id}/{post_id}/hero-{ts}.{ext}
- * so we don't depend on remote URLs that expire (DALL-E URLs die in 60min).
+ * so we don't depend on remote URLs that expire (DALL-E URLs die in 60min;
+ * Gemini returns base64 inline so we never have a remote URL anyway).
  *
  * Public API:
  *   image_gen_for_post(PDO $db, int $post_id, string $prompt, string $alt): array
- *     - Tries DALL-E first if openai_api_key configured, falls back to Unsplash
- *       if unsplash_access_key configured, returns null on total failure.
+ *     - Tries Gemini → DALL-E → Unsplash in order, skipping providers without keys.
  *     - On success: { url, provider, prompt, alt }
  *
  *   image_save_upload(PDO $db, int $post_id, array $upload_file): array
@@ -48,7 +49,17 @@ function image_gen_for_post(PDO $db, int $post_id, string $prompt, string $alt =
 
     if ($alt === '') $alt = mb_substr($post['title'] ?? '', 0, 250);
 
-    // Try DALL-E 3 first
+    // Try Gemini Imagen first (cheaper + Google account often already exists)
+    $gemini_key = config('gemini_api_key');
+    if (!empty($gemini_key)) {
+        $local = _image_gen_gemini($prompt, $gemini_key, $site_id, $post_id);
+        if ($local) {
+            _image_gen_save_to_post($db, $post_id, $local, $prompt, 'gemini', $alt);
+            return ['provider' => 'gemini', 'url' => $local, 'alt' => $alt];
+        }
+    }
+
+    // Fall back to DALL-E 3
     $oai_key = config('openai_api_key');
     if (!empty($oai_key)) {
         $url = _image_gen_dalle3($prompt, $oai_key);
@@ -61,7 +72,7 @@ function image_gen_for_post(PDO $db, int $post_id, string $prompt, string $alt =
         }
     }
 
-    // Fall back to Unsplash
+    // Last resort: Unsplash stock photo
     $unsplash_key = config('unsplash_access_key');
     if (!empty($unsplash_key)) {
         $url = _image_gen_unsplash_search($prompt, $unsplash_key);
@@ -118,6 +129,59 @@ function image_save_upload(PDO $db, int $post_id, array $upload_file, string $al
 // ─────────────────────────────────────────────────────────────────
 // Providers
 // ─────────────────────────────────────────────────────────────────
+
+/**
+ * Gemini Imagen 4 Fast — returns base64 image bytes inline (no remote URL).
+ * We decode + save directly, then return the local path.
+ */
+function _image_gen_gemini(string $prompt, string $api_key, int $site_id, int $post_id): ?string
+{
+    $payload = json_encode([
+        'instances'  => [['prompt' => mb_substr($prompt, 0, 4000)]],
+        'parameters' => [
+            'sampleCount'      => 1,
+            'aspectRatio'      => '16:9',
+            'personGeneration' => 'allow_adult',
+        ],
+    ]);
+    // Imagen 4 Fast — cheapest tier, fine for hero images
+    $url = 'https://generativelanguage.googleapis.com/v1beta/models/imagen-4.0-fast-generate-001:predict';
+    $ch = curl_init($url);
+    curl_setopt_array($ch, [
+        CURLOPT_RETURNTRANSFER => true,
+        CURLOPT_POST           => true,
+        CURLOPT_POSTFIELDS     => $payload,
+        CURLOPT_HTTPHEADER     => [
+            'Content-Type: application/json',
+            'x-goog-api-key: ' . $api_key,
+        ],
+        CURLOPT_TIMEOUT        => 60,
+    ]);
+    $body = curl_exec($ch);
+    $http = curl_getinfo($ch, CURLINFO_HTTP_CODE);
+    curl_close($ch);
+    if ($http !== 200 || !$body) {
+        error_log('[image_gen gemini] HTTP ' . $http . ' body=' . substr((string)$body, 0, 250));
+        return null;
+    }
+    $data = json_decode($body, true);
+    $b64  = $data['predictions'][0]['bytesBase64Encoded'] ?? null;
+    $mime = $data['predictions'][0]['mimeType'] ?? 'image/png';
+    if (!$b64) {
+        error_log('[image_gen gemini] no image in response: ' . substr((string)$body, 0, 250));
+        return null;
+    }
+    $bin = base64_decode($b64);
+    if ($bin === false || strlen($bin) < 100) return null;
+
+    $ext = str_contains($mime, 'jpeg') ? 'jpg'
+         : (str_contains($mime, 'webp') ? 'webp' : 'png');
+    $rel = _image_gen_local_path_for($site_id, $post_id, 'gemini', $ext);
+    $abs = _image_gen_abs($rel);
+    if (!is_dir(dirname($abs))) @mkdir(dirname($abs), 0755, true);
+    if (@file_put_contents($abs, $bin) === false) return null;
+    return $rel;
+}
 
 function _image_gen_dalle3(string $prompt, string $api_key): ?string
 {

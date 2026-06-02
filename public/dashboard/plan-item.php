@@ -141,6 +141,7 @@ if ($is_published) { $lock_label = 'Published'; $lock_fg = '#166534'; $lock_bg =
 .pi-hero .prompt { background:#f8fafb; border:1px dashed var(--border); padding:8px 10px; font-size:11px; color:#475569; border-radius:4px; margin-top:8px; font-family:ui-monospace, monospace; line-height:1.5; max-height:70px; overflow:auto; }
 .pi-hero .chooser { display:flex; gap:6px; margin-top:10px; flex-wrap:wrap; }
 .pi-hero .provider { font-size:10px; padding:2px 8px; border-radius:10px; background:#f1f5f9; color:#475569; }
+.pi-hero .provider.gemini { background:#ede9fe; color:#5b21b6; }
 .pi-hero .provider.dalle3 { background:#fce7f3; color:#9d174d; }
 .pi-hero .provider.unsplash { background:#dbeafe; color:#1e40af; }
 .pi-hero .provider.manual { background:#dcfce7; color:#166534; }
@@ -276,7 +277,8 @@ if ($is_published) { $lock_label = 'Published'; $lock_fg = '#166534'; $lock_bg =
                 <div class="chooser">
                     <button class="pi-btn-outline" onclick="document.getElementById('hero-upload').click()">📤 Upload your own</button>
                     <input type="file" id="hero-upload" accept="image/*" style="display:none;" onchange="uploadHeroImage(this, <?= (int)$item['post_id_loaded'] ?>)">
-                    <button class="pi-btn-outline" onclick="regenerateImage(<?= (int)$item['post_id_loaded'] ?>, 'dalle3')">🎨 Generate with AI</button>
+                    <button class="pi-btn-outline" onclick="regenerateImage(<?= (int)$item['post_id_loaded'] ?>, 'gemini')">✨ Generate (Gemini)</button>
+                    <button class="pi-btn-outline" onclick="regenerateImage(<?= (int)$item['post_id_loaded'] ?>, 'dalle3')">🎨 Generate (DALL-E)</button>
                     <button class="pi-btn-outline" onclick="regenerateImage(<?= (int)$item['post_id_loaded'] ?>, 'unsplash')">📷 Stock photo</button>
                 </div>
                 <div id="hero-status" style="font-size:11px;margin-top:6px;"></div>
