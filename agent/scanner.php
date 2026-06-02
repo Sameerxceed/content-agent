@@ -253,6 +253,26 @@ log_agent_action($db, $site_id, 'scan', json_encode([
 
 echo "Done! Site #{$site_id} scanned in {$duration}ms\n";
 
+// ── Legal docs detection (cheap — 5 HEAD requests, runs after main scan) ──
+try {
+    require_once __DIR__ . '/../includes/legal_docs.php';
+    $legal = legal_docs_detect_missing($db, (int)$site_id);
+    if (isset($legal['error'])) {
+        echo "         Legal docs: skipped ({$legal['error']})\n";
+    } else {
+        echo "         Legal docs: {$legal['found']} present · {$legal['missing']} missing\n";
+        if ($legal['missing'] > 0) {
+            foreach ($legal['types'] as $type => $info) {
+                if ($info['status'] === 'missing') {
+                    echo "           ⚠ {$type} ({$info['relevance']})\n";
+                }
+            }
+        }
+    }
+} catch (Throwable $e) {
+    echo "         Legal docs: error — " . $e->getMessage() . "\n";
+}
+
 // ── Helper ──────────────────────────────────────────────
 function log_agent_action(PDO $db, int $site_id, string $action, string $details, string $status, float $start_time): void
 {
