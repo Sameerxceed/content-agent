@@ -96,15 +96,21 @@ include __DIR__ . '/_site_stepper.php';
 .setup-tab .pill { font-size:10px; font-weight:600; padding:1px 7px; border-radius:10px; background:#dbeafe; color:#1e40af; }
 .setup-tab.warn .pill { background:#fef3c7; color:#92400e; }
 .setup-body { padding:14px 18px; }
-.setup-section { margin-bottom:14px; max-width:560px; }
+.setup-section { margin-bottom:14px; max-width:980px; }
 .setup-section + .setup-section { padding-top:12px; border-top:1px solid #f1f5f9; }
 .setup-section h3 { font-size:11px; font-weight:600; color:var(--primary); margin:0 0 3px; text-transform:uppercase; letter-spacing:0.4px; }
-.setup-section .desc { font-size:11px; color:#64748b; margin:0 0 8px; line-height:1.45; max-width:520px; }
+.setup-section .desc { font-size:11px; color:#64748b; margin:0 0 8px; line-height:1.45; max-width:720px; }
 .setup-section .form-group { margin-bottom:8px; }
 .setup-section .form-group label { font-size:12px; }
-.setup-section .form-control { padding:6px 10px; font-size:13px; }
+.setup-section .form-control { padding:6px 10px; font-size:13px; max-width:420px; }
+.setup-section .setup-grid-2 .form-control,
+.setup-section .setup-grid-3 .form-control,
+.setup-section textarea.form-control { max-width:100%; }
 .setup-section textarea.form-control { font-size:12px; }
-.setup-grid-2 { display:grid; grid-template-columns:1fr 1fr; gap:8px 10px; }
+.setup-grid-2 { display:grid; grid-template-columns:1fr 1fr; gap:8px 12px; }
+.setup-grid-3 { display:grid; grid-template-columns:repeat(3, 1fr); gap:8px 12px; }
+@media (max-width:780px) { .setup-grid-3 { grid-template-columns:1fr 1fr; } }
+@media (max-width:520px) { .setup-grid-2, .setup-grid-3 { grid-template-columns:1fr; } }
 .setup-actions { margin-top:12px; padding-top:12px; border-top:1px solid #f1f5f9; display:flex; gap:8px; }
 .setup-actions .btn { padding:7px 14px; font-size:12px; }
 .setup-channel-grid { display:grid; grid-template-columns:repeat(auto-fill, minmax(240px, 1fr)); gap:10px; }
@@ -187,7 +193,7 @@ include __DIR__ . '/_site_stepper.php';
                     <button type="button" onclick="reanalyseProfile(<?= $site_id ?>, this)" class="btn btn-outline btn-sm" style="font-size:11px;margin-bottom:10px;">🔄 Re-analyse with AI</button>
                 <?php endif; ?>
 
-                <div class="setup-grid-2">
+                <div class="setup-grid-3">
                     <div class="form-group"><label for="founding_year">Founded (year)<?= $ai_tag('founding_year') ?></label>
                         <input type="number" id="founding_year" name="founding_year" class="form-control" min="1900" max="2030" value="<?= e((string)($site['founding_year'] ?? '')) ?>" placeholder="e.g. 2014"></div>
                     <div class="form-group"><label for="employee_estimate">Approx. team size<?= $ai_tag('employee_estimate') ?></label>
