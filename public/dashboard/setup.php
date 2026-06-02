@@ -32,9 +32,10 @@ $valid_tabs = ['business', 'brand', 'publishing', 'channels', 'server', 'danger'
 $tab = in_array($_GET['tab'] ?? '', $valid_tabs, true) ? $_GET['tab'] : 'business';
 
 // Per-site connected platforms (Channels tab) — fail-soft if integrations table missing.
+// Column set matches migration 006: account_name (not account_label), no status, no last_synced_at.
 $connected = [];
 try {
-    $stmt = $db->prepare('SELECT platform, is_active, status, account_label, connected_at, last_synced_at
+    $stmt = $db->prepare('SELECT platform, is_active, account_name, connected_at
                           FROM integrations WHERE site_id = ?');
     $stmt->execute([$site_id]);
     foreach ($stmt->fetchAll() as $row) {
@@ -42,6 +43,22 @@ try {
     }
 } catch (PDOException $e) {
     // integrations table not present — leave $connected empty
+}
+
+// Global integrations (Resend / OpenAI / DataForSEO etc.) are configured ONCE
+// across the account, not per-site. Check integration_setup_progress for the
+// resend wizard's completed status as a proxy for "newsletter is available".
+$resend_ready = false;
+try {
+    $stmt = $db->prepare("SELECT 1 FROM integration_setup_progress WHERE user_id = ? AND integration = 'resend' AND status = 'completed' LIMIT 1");
+    $stmt->execute([$user_id]);
+    $resend_ready = (bool)$stmt->fetchColumn();
+} catch (PDOException $e) {
+    // progress table absent — leave false
+}
+if (!$resend_ready) {
+    // Fall back to config: if RESEND_API_KEY is set, treat it as ready.
+    $resend_ready = !empty(config('resend_api_key', '')) || !empty(getenv('RESEND_API_KEY'));
 }
 
 // Profile-confidence helpers (copied verbatim from sites.php so the AI-tag UX matches)
@@ -451,8 +468,17 @@ include __DIR__ . '/_site_stepper.php';
             foreach ($channel_meta as $key => $meta):
                 $row = $connected[$key] ?? null;
                 $is_on = $row && !empty($row['is_active']);
-                $cms_ok = $key === 'cms' && !empty($site['cms_url']) && !empty($site['cms_api_key']);
-                $effective_on = $is_on || $cms_ok;
+                // Per-channel "effectively connected" checks: each channel has its
+                // own way of being configured. CMS is per-site columns on `sites`;
+                // newsletter is a global Resend wizard; everything else is OAuth in
+                // the per-site `integrations` table.
+                if ($key === 'cms') {
+                    $effective_on = !empty($site['cms_url']) && !empty($site['cms_api_key']);
+                } elseif ($key === 'newsletter') {
+                    $effective_on = $resend_ready;
+                } else {
+                    $effective_on = $is_on;
+                }
             ?>
                 <div class="setup-channel">
                     <div class="head">
@@ -461,13 +487,15 @@ include __DIR__ . '/_site_stepper.php';
                     </div>
                     <div class="meta">
                         <?= e($meta['desc']) ?>
-                        <?php if ($row && !empty($row['account_label'])): ?>
-                            <br><strong style="color:#0f172a;">Account:</strong> <?= e($row['account_label']) ?>
-                        <?php elseif ($cms_ok): ?>
+                        <?php if ($row && !empty($row['account_name'])): ?>
+                            <br><strong style="color:#0f172a;">Account:</strong> <?= e($row['account_name']) ?>
+                        <?php elseif ($key === 'cms' && $effective_on): ?>
                             <br><strong style="color:#0f172a;">URL:</strong> <?= e($site['cms_url']) ?>
+                        <?php elseif ($key === 'newsletter' && $effective_on): ?>
+                            <br><strong style="color:#0f172a;">Provider:</strong> Resend (account-wide)
                         <?php endif; ?>
                     </div>
-                    <a class="cta" href="<?= url($meta['configure']) ?>"><?= $effective_on ? 'Reconfigure →' : $meta['cta'] . ' →' ?></a>
+                    <a class="cta" href="<?= url($meta['configure']) ?>"><?= $effective_on ? 'Manage →' : $meta['cta'] . ' →' ?></a>
                 </div>
             <?php endforeach; ?>
         </div>
