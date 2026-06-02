@@ -58,7 +58,7 @@ if ($action && strpos($action, 'generate-') === 0 && $filter_site) {
             echo '</div>';
         } else {
             echo '<div class="flex justify-between items-center">';
-            echo '<div><strong>CMS not configured</strong><br><span class="text-sm text-muted">Add CMS URL and API Key in <a href="' . url('/dashboard/sites.php?action=edit&id=' . $gen_site['id']) . '">Site Settings</a> to enable auto-deploy.</span></div>';
+            echo '<div><strong>CMS not configured</strong><br><span class="text-sm text-muted">Add CMS URL and API Key in <a href="' . url('/dashboard/setup.php?site=' . $gen_site['id'] . '&tab=publishing') . '">Setup → Publishing</a> to enable auto-deploy.</span></div>';
             echo '<span class="badge badge-warning">Manual copy needed</span>';
             echo '</div>';
         }

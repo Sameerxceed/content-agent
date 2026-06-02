@@ -174,7 +174,7 @@ include __DIR__ . '/_health_tabs.php';
             <div style="background:#1a1a2e;color:#10b981;padding:10px 14px;border-radius:6px;font-family:monospace;font-size:11px;cursor:pointer;word-break:break-all;" onclick="navigator.clipboard.writeText(this.innerText.trim());alert('Copied!')">
                 &lt;script src="<?= e(config('app_url')) ?>/snippet/contentagent.js" data-site="<?= e($site['domain']) ?>"&gt;&lt;/script&gt;
             </div>
-            <div class="text-sm text-muted mt-2">Click to copy. Or add FTP credentials in <a href="<?= url('/dashboard/sites.php?action=edit&id=' . $site_id) ?>">Edit Settings</a> for direct deployment.</div>
+            <div class="text-sm text-muted mt-2">Click to copy. Or add FTP credentials in <a href="<?= url('/dashboard/setup.php?site=' . $site_id . '&tab=server') ?>">Setup → Server</a> for direct deployment.</div>
         <?php endif; ?>
     </div>
 </div>
@@ -236,7 +236,7 @@ include __DIR__ . '/_health_tabs.php';
             </tbody>
         </table>
         <?php if (!$has_ftp): ?>
-            <div class="text-sm text-muted mt-2">Add FTP/SFTP credentials in <a href="<?= url('/dashboard/sites.php?action=edit&id=' . $site_id) ?>">Edit Settings</a> to enable one-click deploy.</div>
+            <div class="text-sm text-muted mt-2">Add FTP/SFTP credentials in <a href="<?= url('/dashboard/setup.php?site=' . $site_id . '&tab=server') ?>">Setup → Server</a> to enable one-click deploy.</div>
         <?php endif; ?>
         <div id="deploy-result" style="display:none;margin-top:8px;padding:8px 12px;border-radius:6px;font-size:13px;"></div>
     </div>

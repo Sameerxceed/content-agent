@@ -106,7 +106,7 @@ $next_action_href  = $_stp_current_key ? $_stp_steps[$_stp_current_key]['href'] 
 <?php if (!$topics_confirmed): ?>
     <div class="focus-warn">
         <div class="title">⚠ Tell ContentAgent what your business sells</div>
-        <div class="desc">AI keyword research and content writing depend on this. <a href="<?= url('/dashboard/sites.php?action=edit&id=' . $site_id . '#focus') ?>" style="color:#92400e;font-weight:600;">Set business focus →</a></div>
+        <div class="desc">AI keyword research and content writing depend on this. <a href="<?= url('/dashboard/setup.php?site=' . $site_id . '&tab=business') ?>" style="color:#92400e;font-weight:600;">Set business focus →</a></div>
     </div>
 <?php endif; ?>
 

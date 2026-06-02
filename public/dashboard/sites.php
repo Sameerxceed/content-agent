@@ -159,7 +159,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $expected = $stmt->fetchColumn();
         if ($expected !== false && strcasecmp($typed, $expected) !== 0) {
             $_SESSION['flash_error'] = 'You must type the site name exactly to confirm deletion.';
-            redirect('/dashboard/sites.php?action=edit&id=' . $id);
+            redirect('/dashboard/setup.php?site=' . $id . '&tab=danger');
         }
 
         $result = site_delete_cascade($db, $id);
@@ -170,7 +170,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             redirect('/dashboard/index.php');
         } else {
             $_SESSION['flash_error'] = 'Delete failed: ' . ($result['error'] ?? 'unknown');
-            redirect('/dashboard/sites.php?action=edit&id=' . $id);
+            redirect('/dashboard/setup.php?site=' . $id . '&tab=danger');
         }
     }
 }
@@ -211,6 +211,14 @@ if ($action === 'add'):
 ?>
 
 <?php elseif ($action === 'edit' && isset($_GET['id'])):
+    // The long single-form edit page has been replaced by /dashboard/setup.php
+    // which organises the same fields into tabs. Backwards-compat redirect so any
+    // bookmarks, dashboard links, or emails pointing at the old URL still work.
+    redirect('/dashboard/setup.php?site=' . (int)$_GET['id']);
+    exit;
+?>
+
+<?php elseif (false): /* dead branch — preserved below for git-history reference; never executes */
     $site = auth_get_accessible_site($db, (int)$_GET['id']);
 
     if (!$site):
@@ -747,7 +755,7 @@ if ($action === 'add'):
                     </div>
                     <div class="flex gap-2">
                         <a href="<?= url('/api/export.php?site_id=' . $s['id'] . '&type=full') ?>" class="btn btn-outline btn-sm" title="Download full Excel report">Export CSV</a>
-                        <a href="<?= url('/dashboard/sites.php?action=edit&id=' . $s['id']) ?>" class="btn btn-outline btn-sm">Edit</a>
+                        <a href="<?= url('/dashboard/setup.php?site=' . $s['id']) ?>" class="btn btn-outline btn-sm">Setup</a>
                         <a href="<?= url('/dashboard/seo-audit.php?site=' . $s['id']) ?>" class="btn btn-outline btn-sm">Full Audit</a>
                     </div>
                 </div>

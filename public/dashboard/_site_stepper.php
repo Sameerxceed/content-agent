@@ -92,10 +92,10 @@ if ($_stp_plan_has_active) {
 
 $_stp_steps = [
     'scan' => [
-        'label'  => 'Scan',
+        'label'  => 'Setup',
         'metric' => $_stp_has_scan ? ($site['platform'] ?: 'custom') : 'pending',
         'done'   => $_stp_has_scan,
-        'href'   => url('/dashboard/sites.php?action=edit&id=' . $site_id),
+        'href'   => url('/dashboard/setup.php?site=' . $site_id),
     ],
     'seo' => [
         'label'  => 'SEO/AEO',
@@ -185,7 +185,7 @@ $_stp_topbar = !empty($stepper_topbar);
             </div>
         </div>
         <div class="actions">
-            <a href="<?= url('/dashboard/sites.php?action=edit&id=' . $site_id) ?>" class="stp-btn primary">⚙ Edit</a>
+            <a href="<?= url('/dashboard/setup.php?site=' . $site_id) ?>" class="stp-btn primary">⚙ Setup</a>
             <details style="position:relative;">
                 <summary class="stp-btn" style="list-style:none;cursor:pointer;">⋯ Reports</summary>
                 <div style="position:absolute;right:0;top:calc(100% + 4px);background:#fff;border:1px solid var(--border);border-radius:6px;box-shadow:0 4px 12px rgba(0,0,0,0.08);padding:4px;z-index:50;min-width:180px;">
