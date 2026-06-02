@@ -95,13 +95,18 @@ include __DIR__ . '/_site_stepper.php';
 .setup-tab.active { color:var(--accent); border-bottom-color:var(--accent); background:#fff; }
 .setup-tab .pill { font-size:10px; font-weight:600; padding:1px 7px; border-radius:10px; background:#dbeafe; color:#1e40af; }
 .setup-tab.warn .pill { background:#fef3c7; color:#92400e; }
-.setup-body { padding:20px 24px; }
-.setup-section { margin-bottom:22px; max-width:720px; }
-.setup-section + .setup-section { padding-top:18px; border-top:1px solid #f1f5f9; }
-.setup-section h3 { font-size:13px; font-weight:600; color:var(--primary); margin:0 0 4px; text-transform:uppercase; letter-spacing:0.4px; }
-.setup-section .desc { font-size:12px; color:#64748b; margin:0 0 12px; line-height:1.55; max-width:680px; }
-.setup-grid-2 { display:grid; grid-template-columns:1fr 1fr; gap:12px; }
-.setup-actions { margin-top:18px; padding-top:18px; border-top:1px solid #f1f5f9; display:flex; gap:8px; }
+.setup-body { padding:14px 18px; }
+.setup-section { margin-bottom:14px; max-width:560px; }
+.setup-section + .setup-section { padding-top:12px; border-top:1px solid #f1f5f9; }
+.setup-section h3 { font-size:11px; font-weight:600; color:var(--primary); margin:0 0 3px; text-transform:uppercase; letter-spacing:0.4px; }
+.setup-section .desc { font-size:11px; color:#64748b; margin:0 0 8px; line-height:1.45; max-width:520px; }
+.setup-section .form-group { margin-bottom:8px; }
+.setup-section .form-group label { font-size:12px; }
+.setup-section .form-control { padding:6px 10px; font-size:13px; }
+.setup-section textarea.form-control { font-size:12px; }
+.setup-grid-2 { display:grid; grid-template-columns:1fr 1fr; gap:8px 10px; }
+.setup-actions { margin-top:12px; padding-top:12px; border-top:1px solid #f1f5f9; display:flex; gap:8px; }
+.setup-actions .btn { padding:7px 14px; font-size:12px; }
 .setup-channel-grid { display:grid; grid-template-columns:repeat(auto-fill, minmax(240px, 1fr)); gap:10px; }
 .setup-channel { padding:14px 16px; border:1px solid var(--border); border-radius:8px; background:#fff; display:flex; flex-direction:column; gap:6px; }
 .setup-channel .head { display:flex; justify-content:space-between; align-items:center; }
