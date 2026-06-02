@@ -212,9 +212,9 @@ include __DIR__ . '/_site_stepper.php';
                             <option value="<?= $v ?>" <?= ($site['customer_segment'] ?? '') === $v ? 'selected' : '' ?>><?= $lbl ?></option>
                         <?php endforeach; ?></select></div>
                     <div class="form-group"><label for="industry_category">Industry<?= $ai_tag('industry_category') ?></label>
-                        <input type="text" id="industry_category" name="industry_category" class="form-control" value="<?= e($site['industry_category'] ?? '') ?>" placeholder="e.g. Tech consulting"></div>
+                        <input type="text" id="industry_category" name="industry_category" class="form-control" value="<?= e($site['industry_category'] ?? '') ?>" placeholder="e.g. Healthcare, Retail, Legal"></div>
                     <div class="form-group"><label for="industry_sub">Sub-category<?= $ai_tag('industry_sub') ?></label>
-                        <input type="text" id="industry_sub" name="industry_sub" class="form-control" value="<?= e($site['industry_sub'] ?? '') ?>" placeholder="e.g. AI/ML services"></div>
+                        <input type="text" id="industry_sub" name="industry_sub" class="form-control" value="<?= e($site['industry_sub'] ?? '') ?>" placeholder="e.g. Dental, Bakery, Family law"></div>
                     <div class="form-group"><label for="market_scope">Market scope<?= $ai_tag('market_scope') ?></label>
                         <select id="market_scope" name="market_scope" class="form-control"><option value="">—</option>
                         <?php foreach (['local'=>'Local (city)','regional'=>'Regional (state/region)','national'=>'National (one country)','global'=>'Global'] as $v=>$lbl): ?>
@@ -239,14 +239,14 @@ include __DIR__ . '/_site_stepper.php';
                 <h3>Business focus</h3>
                 <p class="desc">Drives every AI decision — keyword research, content writing, SEO suggestions. <strong>If this is wrong, everything downstream will be wrong.</strong></p>
                 <div class="form-group"><label for="business_description">What does your business sell or offer?</label>
-                    <textarea id="business_description" name="business_description" class="form-control" rows="2" placeholder="Describe what your business actually sells or offers, in your own words."><?= e($site['business_description'] ?? '') ?></textarea></div>
+                    <textarea id="business_description" name="business_description" class="form-control" rows="3" placeholder="In your own words — what does your business actually sell or do, and who do you do it for?"><?= e($site['business_description'] ?? '') ?></textarea></div>
                 <div class="form-group"><label for="topics">Main topics / products (comma-separated)</label>
-                    <input type="text" id="topics" name="topics" class="form-control" value="<?= e(implode(', ', json_decode($site['topics'] ?? '[]', true) ?: [])) ?>" placeholder="e.g. software development, AI, web design">
+                    <input type="text" id="topics" name="topics" class="form-control" value="<?= e(implode(', ', json_decode($site['topics'] ?? '[]', true) ?: [])) ?>" placeholder="3–6 topics that describe what you sell or do">
                     <div class="text-sm text-muted" style="margin-top:4px;">3–6 short phrases work best.</div></div>
                 <div class="form-group"><label for="persona">Who is your ideal customer? <span class="text-muted" style="font-weight:400;">(optional)</span></label>
-                    <textarea id="persona" name="persona" class="form-control" rows="2" placeholder="e.g. UK-based marketing managers at 50-200 person SaaS companies"><?= e($site['persona'] ?? '') ?></textarea></div>
+                    <textarea id="persona" name="persona" class="form-control" rows="2" placeholder="Describe who you're trying to reach"><?= e($site['persona'] ?? '') ?></textarea></div>
                 <div class="form-group"><label for="usp">What makes you different from competitors? <span class="text-muted" style="font-weight:400;">(your USP)</span></label>
-                    <textarea id="usp" name="usp" class="form-control" rows="2" placeholder="e.g. Only platform that integrates GSC with AI-driven content briefs"><?= e($site['usp'] ?? '') ?></textarea></div>
+                    <textarea id="usp" name="usp" class="form-control" rows="2" placeholder="What you do that others don't"><?= e($site['usp'] ?? '') ?></textarea></div>
                 <div class="form-group">
                     <label style="display:flex;align-items:center;gap:8px;cursor:pointer;font-weight:normal;font-size:12px;">
                         <input type="checkbox" name="topics_confirmed" value="1" <?= !empty($site['topics_confirmed']) ? 'checked' : '' ?>>
@@ -257,12 +257,12 @@ include __DIR__ . '/_site_stepper.php';
 
             <div class="setup-section">
                 <h3>Brand colors</h3>
-                <p class="desc">Used by social carousels, blog theme, hero images. Pick up to 3 — primary, accent, secondary.</p>
+                <p class="desc">Used by social carousels, blog theme, hero images. Leave blank if you're not sure — we'll use neutral defaults.</p>
                 <div class="flex gap-2 items-center" style="flex-wrap:wrap;">
                 <?php for ($ci = 0; $ci < 3; $ci++): $cval = $brand_colors[$ci] ?? ''; ?>
                     <div style="display:flex;align-items:center;gap:4px;">
-                        <input type="color" name="brand_color_<?= $ci ?>" value="<?= e($cval ?: '#1B3A6B') ?>" style="width:36px;height:36px;border:1px solid #ddd;border-radius:4px;cursor:pointer;padding:0;">
-                        <input type="text" name="brand_color_hex_<?= $ci ?>" value="<?= e($cval) ?>" class="form-control" style="width:100px;font-size:12px;font-family:monospace;" placeholder="#hex" oninput="this.previousElementSibling.value=this.value">
+                        <input type="color" name="brand_color_<?= $ci ?>" value="<?= e($cval ?: '#cccccc') ?>" style="width:36px;height:36px;border:1px solid #ddd;border-radius:4px;cursor:pointer;padding:0;<?= $cval ? '' : 'opacity:0.5;' ?>">
+                        <input type="text" name="brand_color_hex_<?= $ci ?>" value="<?= e($cval) ?>" class="form-control" style="width:100px;font-size:12px;font-family:monospace;" placeholder="#hex (optional)" oninput="this.previousElementSibling.value=this.value;this.previousElementSibling.style.opacity=this.value?'1':'0.5';">
                     </div>
                 <?php endfor; ?>
                 </div>
@@ -355,16 +355,12 @@ include __DIR__ . '/_site_stepper.php';
                     <div class="form-group"><label for="autonomy_mode">Autopilot autonomy</label>
                         <select id="autonomy_mode" name="autonomy_mode" class="form-control">
                             <?php $_am = (string)($site['autonomy_mode'] ?? 'review'); ?>
-                            <option value="review"    <?= $_am === 'review'    ? 'selected' : '' ?>>Review-each (default)</option>
-                            <option value="hands_off" <?= $_am === 'hands_off' ? 'selected' : '' ?> disabled>Hands-off (v2)</option>
-                            <option value="manual"    <?= $_am === 'manual'    ? 'selected' : '' ?>>Manual (no autopilot)</option>
+                            <option value="review" <?= $_am === 'review' ? 'selected' : '' ?>>Review each draft (default)</option>
+                            <option value="manual" <?= $_am === 'manual' ? 'selected' : '' ?>>Manual (no autopilot drafting)</option>
                         </select></div>
                 </div>
-                <div class="form-group" style="margin-top:8px;"><label for="agent_mode">Auto-publish mode (legacy news flow)</label>
-                    <select id="agent_mode" name="agent_mode" class="form-control">
-                        <option value="manual" <?= ($site['agent_mode'] ?? '') === 'manual' ? 'selected' : '' ?>>Manual (approve before publishing)</option>
-                        <option value="auto" <?= ($site['agent_mode'] ?? '') === 'auto' ? 'selected' : '' ?>>Auto (publish immediately)</option>
-                    </select></div>
+                <?php /* agent_mode kept as hidden input — legacy news-flow column, no UI */ ?>
+                <input type="hidden" name="agent_mode" value="<?= e($site['agent_mode'] ?? 'manual') ?>">
             </div>
 
             <div class="setup-section">
@@ -501,43 +497,10 @@ include __DIR__ . '/_site_stepper.php';
             <?php endfor; ?>
 
             <div class="setup-section">
-                <h3>Server access (for direct code pushes)</h3>
-                <p class="desc">Used by ContentAgent to push SEO fixes, redirects, schema, llms.txt directly to your server. Leave blank if you're happy with the CMS-API + JS-snippet route.</p>
-                <div class="form-group"><label for="server_type">Access type</label>
-                    <select id="server_type" name="server_type" class="form-control">
-                        <option value="api_only" <?= ($site['server_type'] ?? '') === 'api_only' ? 'selected' : '' ?>>API Only (CMS API + JS Snippet)</option>
-                        <option value="ftp"    <?= ($site['server_type'] ?? '') === 'ftp' ? 'selected' : '' ?>>FTP</option>
-                        <option value="sftp"   <?= ($site['server_type'] ?? '') === 'sftp' ? 'selected' : '' ?>>SFTP</option>
-                        <option value="ssh"    <?= ($site['server_type'] ?? '') === 'ssh' ? 'selected' : '' ?>>SSH</option>
-                        <option value="cpanel" <?= ($site['server_type'] ?? '') === 'cpanel' ? 'selected' : '' ?>>cPanel</option>
-                        <option value="git"    <?= ($site['server_type'] ?? '') === 'git' ? 'selected' : '' ?>>Git (push to repo)</option>
-                    </select></div>
-                <div class="setup-grid-2">
-                    <div class="form-group"><label for="server_host">Host / IP</label>
-                        <input type="text" id="server_host" name="server_host" class="form-control" value="<?= e($site['server_host'] ?? '') ?>" placeholder="ftp.yourdomain.com or IP"></div>
-                    <div class="form-group"><label for="server_path">Web root path</label>
-                        <input type="text" id="server_path" name="server_path" class="form-control" value="<?= e($site['server_path'] ?? '') ?>" placeholder="/public_html"></div>
-                    <div class="form-group"><label for="server_user">Username</label>
-                        <input type="text" id="server_user" name="server_user" class="form-control" value="<?= e($site['server_user'] ?? '') ?>"></div>
-                    <div class="form-group"><label for="server_pass">Password</label>
-                        <input type="password" id="server_pass" name="server_pass" class="form-control" value="<?= e($site['server_pass'] ?? '') ?>"></div>
-                    <div class="form-group"><label for="git_repo">Git repo URL</label>
-                        <input type="text" id="git_repo" name="git_repo" class="form-control" value="<?= e($site['git_repo'] ?? '') ?>" placeholder="https://github.com/user/repo.git"></div>
-                    <div class="form-group"><label for="hosting_panel">Hosting panel</label>
-                        <select id="hosting_panel" name="hosting_panel" class="form-control">
-                            <option value="">None</option>
-                            <?php foreach (['cpanel','plesk','vercel','netlify','aws','digitalocean','linode'] as $hp): ?>
-                                <option value="<?= $hp ?>" <?= ($site['hosting_panel'] ?? '') === $hp ? 'selected' : '' ?>><?= e(ucfirst($hp)) ?></option>
-                            <?php endforeach; ?>
-                        </select></div>
-                </div>
-            </div>
-
-            <div class="setup-section">
-                <h3>RSS news feeds</h3>
-                <p class="desc">News from these feeds gets filtered by your topics and surfaces in the News Scraper agent.</p>
+                <h3>News feeds <span style="font-weight:400;color:#94a3b8;font-size:11px;">(optional)</span></h3>
+                <p class="desc">Paste any RSS feeds you want ContentAgent to monitor for news relevant to your business. Feed items get filtered by your topics and surface in the News Scraper. Leave blank to disable.</p>
                 <div class="form-group">
-                    <textarea id="rss_feeds" name="rss_feeds" class="form-control" rows="5" placeholder="https://techcrunch.com/feed/&#10;https://www.wired.com/feed/rss"><?= e(implode("\n", $feeds)) ?></textarea>
+                    <textarea id="rss_feeds" name="rss_feeds" class="form-control" rows="5" placeholder="One feed URL per line"><?= e(implode("\n", $feeds)) ?></textarea>
                 </div>
             </div>
 
@@ -552,8 +515,35 @@ include __DIR__ . '/_site_stepper.php';
                 </div>
             </div>
 
+            <div class="setup-section">
+                <details style="background:#f8fafb;border:1px solid var(--border);border-radius:6px;padding:10px 14px;">
+                    <summary style="cursor:pointer;font-size:13px;font-weight:600;color:#475569;">Advanced: direct server access</summary>
+                    <p style="font-size:12px;color:#64748b;margin:10px 0 12px;line-height:1.55;">
+                        Only needed if you want ContentAgent to write files (robots.txt, sitemap.xml) straight to your server instead of using a snippet. <strong>Most customers don't need this.</strong>
+                    </p>
+                    <div class="form-group"><label for="server_type">Access type</label>
+                        <select id="server_type" name="server_type" class="form-control">
+                            <option value="api_only" <?= ($site['server_type'] ?? '') === 'api_only' ? 'selected' : '' ?>>API Only (default — uses CMS API + JS snippet)</option>
+                            <option value="ftp"    <?= ($site['server_type'] ?? '') === 'ftp' ? 'selected' : '' ?>>FTP</option>
+                            <option value="sftp"   <?= ($site['server_type'] ?? '') === 'sftp' ? 'selected' : '' ?>>SFTP</option>
+                            <option value="ssh"    <?= ($site['server_type'] ?? '') === 'ssh' ? 'selected' : '' ?>>SSH</option>
+                            <option value="cpanel" <?= ($site['server_type'] ?? '') === 'cpanel' ? 'selected' : '' ?>>cPanel</option>
+                        </select></div>
+                    <div class="setup-grid-2">
+                        <div class="form-group"><label for="server_host">Host / IP</label>
+                            <input type="text" id="server_host" name="server_host" class="form-control" value="<?= e($site['server_host'] ?? '') ?>" placeholder="ftp.yourdomain.com or IP"></div>
+                        <div class="form-group"><label for="server_path">Web root path</label>
+                            <input type="text" id="server_path" name="server_path" class="form-control" value="<?= e($site['server_path'] ?? '') ?>" placeholder="/public_html"></div>
+                        <div class="form-group"><label for="server_user">Username</label>
+                            <input type="text" id="server_user" name="server_user" class="form-control" value="<?= e($site['server_user'] ?? '') ?>"></div>
+                        <div class="form-group"><label for="server_pass">Password</label>
+                            <input type="password" id="server_pass" name="server_pass" class="form-control" value="<?= e($site['server_pass'] ?? '') ?>"></div>
+                    </div>
+                </details>
+            </div>
+
             <div class="setup-actions">
-                <button type="submit" class="btn btn-primary">Save server &amp; feed settings</button>
+                <button type="submit" class="btn btn-primary">Save</button>
                 <a href="<?= url('/dashboard/site.php?id=' . $site_id) ?>" class="btn btn-outline">Cancel</a>
             </div>
         </form>

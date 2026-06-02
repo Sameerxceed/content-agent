@@ -101,14 +101,15 @@ include __DIR__ . '/_site_stepper.php';
         </div>
     </a>
 
-    <a href="<?= url('/dashboard/ai-presence.php?site=' . $site_id) ?>" class="grow-card">
-        <div class="head">
-            <span class="icon">🏢</span>
-            <span class="title">Brand Presence</span>
-        </div>
+    <?php /*
+    Brand Presence card hidden — no live writer behind the data. Restore once
+    cron-brand-monitor.php is wired up and surfacing real conversation hits.
+    <a href="<?= url('/dashboard/mentions.php?site=' . $site_id . '&tab=presence') ?>" class="grow-card">
+        <div class="head"><span class="icon">🏢</span><span class="title">Brand Presence</span></div>
         <div class="desc">Find live conversations about your topics on Reddit, Quora, LinkedIn — join with AI-drafted replies grounded in your content.</div>
         <div class="meta">Reddit · Quora · LinkedIn</div>
     </a>
+    */ ?>
 
     <a href="<?= url('/dashboard/aeo.php?site=' . $site_id) ?>" class="grow-card">
         <div class="head">
