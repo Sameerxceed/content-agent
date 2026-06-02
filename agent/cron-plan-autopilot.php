@@ -262,7 +262,20 @@ function _autopilot_variant_for_channel(string $channel, array $pkg): array
             if (empty($pkg['reddit'])) return [null, null];
             return [(string)($pkg['reddit']['body'] ?? ''), json_encode(['title' => $pkg['reddit']['title'] ?? ''])];
         case 'newsletter':
-            return [isset($pkg['newsletter']) ? (string)$pkg['newsletter'] : null, null];
+            // Newsletter is now a structured object: {subject, preheader, body_html}.
+            // body_html -> variant_content (what gets sent); subject + preheader
+            // -> variant_meta (Resend adapter reads it as the email subject line).
+            $nl = $pkg['newsletter'] ?? null;
+            if (is_array($nl)) {
+                $body  = (string)($nl['body_html'] ?? '');
+                $meta  = json_encode(array_filter([
+                    'subject'   => (string)($nl['subject']   ?? ''),
+                    'preheader' => (string)($nl['preheader'] ?? ''),
+                ]));
+                return [$body !== '' ? $body : null, $meta];
+            }
+            // Backwards compat: tolerate old-shape string payloads still in DB.
+            return [$nl !== null ? (string)$nl : null, null];
         case 'schema':
             // schema JSON-LD lives in variant_content as the JSON blob
             return [isset($pkg['schema_ldjson']) ? json_encode($pkg['schema_ldjson']) : '[]', null];

@@ -346,7 +346,35 @@ if ($is_published) { $lock_label = 'Published'; $lock_fg = '#166534'; $lock_bg =
                         <h3>Body</h3>
                         <textarea class="field large" readonly><?= e($content) ?></textarea>
                     <?php elseif ($ch === 'schema'): ?>
-                        <textarea class="field large" readonly style="font-family:ui-monospace,monospace;font-size:11px;"><?= e($content) ?></textarea>
+                        <?php
+                            // Pretty-print the JSON-LD bundle. variant_content stores
+                            // a JSON-encoded array of schema dicts; re-encode for display.
+                            $decoded = json_decode($content ?: '[]', true);
+                            $pretty  = is_array($decoded)
+                                ? json_encode($decoded, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES)
+                                : $content;
+                            $blocks  = is_array($decoded) ? count($decoded) : 0;
+                        ?>
+                        <div style="font-size:11px;color:#94a3b8;margin-bottom:8px;">
+                            <?= $blocks ?> JSON-LD block<?= $blocks === 1 ? '' : 's' ?> · embedded as <code>&lt;script type="application/ld+json"&gt;</code> in the published post
+                        </div>
+                        <textarea class="field large" readonly style="font-family:ui-monospace,monospace;font-size:11px;"><?= e($pretty) ?></textarea>
+                    <?php elseif ($ch === 'newsletter'): ?>
+                        <?php if (!empty($meta['subject'])): ?>
+                            <h3>Subject line</h3>
+                            <input class="field" value="<?= e($meta['subject']) ?>" readonly>
+                        <?php endif; ?>
+                        <?php if (!empty($meta['preheader'])): ?>
+                            <h3>Preheader (inbox preview)</h3>
+                            <input class="field" value="<?= e($meta['preheader']) ?>" readonly>
+                        <?php endif; ?>
+                        <h3>Email body preview</h3>
+                        <div class="pi-blog-preview"><?= $content ?></div>
+                        <div style="display:flex;justify-content:space-between;align-items:center;font-size:11px;color:#94a3b8;margin-top:8px;">
+                            <a href="#" onclick="event.preventDefault();var el=document.getElementById('pi-nl-html');el.style.display=el.style.display==='none'?'block':'none';" style="color:#6366f1;text-decoration:none;">View raw HTML ⇅</a>
+                            <span>Approximate word count: <?= number_format(str_word_count(strip_tags($content))) ?></span>
+                        </div>
+                        <textarea id="pi-nl-html" class="field large" readonly style="display:none;margin-top:8px;font-family:ui-monospace,monospace;font-size:12px;"><?= e($content) ?></textarea>
                     <?php else: ?>
                         <textarea class="field large" readonly><?= e($content) ?></textarea>
                     <?php endif; ?>
