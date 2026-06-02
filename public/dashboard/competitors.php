@@ -56,8 +56,11 @@ $stmt = $db->prepare('SELECT MAX(last_analysed_at) FROM competitors WHERE site_i
 $stmt->execute([$site_id]);
 $last_discovery = $stmt->fetchColumn();
 
-// Settings status — show prompt to setup CSE if not configured
-$cse_configured = !empty(config('google_cse_api_key')) && !empty(config('google_cse_cx'));
+// Google CSE was retired and replaced by the serp_abstraction layer
+// (Brave + DataForSEO). Discovery now always works; the "configure CSE"
+// warning was lying. Keep the variable here so existing template guards
+// stay green during the transition.
+$cse_configured = true;
 
 $page_title = 'Competitors — ' . $site['name'];
 ob_start();

@@ -66,13 +66,13 @@ include __DIR__ . '/_site_stepper.php';
 ?>
 
 <style>
-.ld-grid { display:flex; flex-direction:column; gap:10px; margin-top:14px; }
-.ld-row { background:#fff; border:1px solid var(--border); border-radius:8px; padding:16px 18px; display:grid; grid-template-columns: 1fr auto; gap:14px; align-items:center; }
-.ld-row .head { display:flex; align-items:center; gap:14px; margin-bottom:6px; }
-.ld-row .head .icon { font-size:22px; }
-.ld-row .head .name { font-size:15px; font-weight:600; color:var(--primary); }
-.ld-row .head .badge { font-size:11px; font-weight:600; padding:3px 10px; border-radius:10px; }
-.ld-row .desc { font-size:12px; color:var(--text-light); line-height:1.5; max-width:780px; }
+.ld-grid { display:flex; flex-direction:column; gap:8px; margin-top:10px; }
+.ld-row { background:#fff; border:1px solid var(--border); border-radius:8px; padding:12px 14px; display:grid; grid-template-columns: 1fr auto; gap:12px; align-items:center; }
+.ld-row .head { display:flex; align-items:center; gap:10px; margin-bottom:4px; }
+.ld-row .head .icon { font-size:18px; }
+.ld-row .head .name { font-size:13px; font-weight:600; color:var(--primary); }
+.ld-row .head .badge { font-size:10px; font-weight:600; padding:2px 8px; border-radius:10px; }
+.ld-row .desc { font-size:11px; color:var(--text-light); line-height:1.45; max-width:520px; }
 .ld-row .status-line { font-size:11px; color:#64748b; margin-top:4px; }
 .ld-row .status-line code { background:#f1f5f9; padding:1px 6px; border-radius:3px; font-size:11px; }
 .ld-actions { display:flex; flex-direction:column; gap:6px; align-items:flex-end; }

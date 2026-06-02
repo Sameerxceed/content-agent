@@ -69,11 +69,11 @@ ob_start();
     <?php
     // Customer-friendly list of shared services. Don't expose keys or internal IDs.
     $included = [
-        ['🤖', 'Claude AI (Anthropic)',     'Writes blog posts, repurposes for channels, parses pasted alerts.'],
-        ['📊', 'DataForSEO',                'Real keyword volume, difficulty, and SERP positions.'],
-        ['🔭', 'Perplexity (optional)',     'Tracks who AI search engines cite for your queries.'],
-        ['🔍', 'Google Custom Search',      'Powers competitor discovery and AI Presence scans.'],
-        ['✉',  'Resend Email',              'Delivers your weekly digests and newsletter sends.'],
+        ['🤖', 'AI writer',                 'Drafts blog posts and adapts them for each channel.'],
+        ['📊', 'Keyword data',              'Real search volume, difficulty, and SERP positions.'],
+        ['🔭', 'AI-citation tracker',       'Tracks when AI search engines cite your business.'],
+        ['🔍', 'Competitive search',        'Discovers competitors and finds your AI presence.'],
+        ['✉',  'Email delivery',            'Sends your weekly digests and newsletters.'],
     ];
     foreach ($included as [$icon, $name, $desc]):
     ?>

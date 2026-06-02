@@ -305,11 +305,10 @@ if ($is_published) { $lock_label = 'Published'; $lock_fg = '#166534'; $lock_bg =
                     <div class="prompt"><?= e($item['hero_image_prompt']) ?></div>
                 <?php endif; ?>
                 <div class="chooser">
-                    <button class="pi-btn-outline" onclick="document.getElementById('hero-upload').click()">📤 Upload your own</button>
+                    <button class="pi-btn-outline" onclick="document.getElementById('hero-upload').click()">Upload your own</button>
                     <input type="file" id="hero-upload" accept="image/*" style="display:none;" onchange="uploadHeroImage(this, <?= (int)$item['post_id_loaded'] ?>)">
-                    <button class="pi-btn-outline" onclick="regenerateImage(<?= (int)$item['post_id_loaded'] ?>, 'gemini')">✨ Generate (Gemini)</button>
-                    <button class="pi-btn-outline" onclick="regenerateImage(<?= (int)$item['post_id_loaded'] ?>, 'dalle3')">🎨 Generate (DALL-E)</button>
-                    <button class="pi-btn-outline" onclick="regenerateImage(<?= (int)$item['post_id_loaded'] ?>, 'unsplash')">📷 Stock photo</button>
+                    <button class="pi-btn-outline" onclick="regenerateImage(<?= (int)$item['post_id_loaded'] ?>, 'gemini')">Generate with AI</button>
+                    <button class="pi-btn-outline" onclick="regenerateImage(<?= (int)$item['post_id_loaded'] ?>, 'unsplash')">Use a stock photo</button>
                 </div>
                 <div id="hero-status" style="font-size:11px;margin-top:6px;"></div>
             </div>
@@ -317,24 +316,24 @@ if ($is_published) { $lock_label = 'Published'; $lock_fg = '#166534'; $lock_bg =
             <!-- Content tabs -->
             <div class="pi-tabs">
                 <div class="pi-tabs-strip">
-                    <a class="pi-tab active" data-tab="blog">📝 Blog</a>
+                    <a class="pi-tab active" data-tab="blog">Blog</a>
                     <?php if (!empty($variants['linkedin'])): ?>
-                        <a class="pi-tab" data-tab="linkedin">💼 LinkedIn</a>
+                        <a class="pi-tab" data-tab="linkedin">LinkedIn</a>
                     <?php endif; ?>
                     <?php if (!empty($variants['twitter'])): ?>
-                        <a class="pi-tab" data-tab="twitter">🐦 Twitter</a>
+                        <a class="pi-tab" data-tab="twitter">Twitter</a>
                     <?php endif; ?>
                     <?php if (!empty($variants['reddit'])): ?>
-                        <a class="pi-tab" data-tab="reddit">👽 Reddit</a>
+                        <a class="pi-tab" data-tab="reddit">Reddit</a>
                     <?php endif; ?>
                     <?php if (!empty($variants['newsletter'])): ?>
-                        <a class="pi-tab" data-tab="newsletter">📧 Newsletter</a>
+                        <a class="pi-tab" data-tab="newsletter">Newsletter</a>
                     <?php endif; ?>
                     <?php if (!empty($faqs)): ?>
-                        <a class="pi-tab" data-tab="faqs">❓ FAQs <span style="font-size:9px;background:#e2e8f0;color:#475569;padding:1px 6px;border-radius:8px;margin-left:2px;"><?= count($faqs) ?></span></a>
+                        <a class="pi-tab" data-tab="faqs">FAQs <span style="font-size:9px;background:#e2e8f0;color:#475569;padding:1px 6px;border-radius:8px;margin-left:2px;"><?= count($faqs) ?></span></a>
                     <?php endif; ?>
                     <?php if (!empty($variants['schema'])): ?>
-                        <a class="pi-tab" data-tab="schema">🏷️ Schema</a>
+                        <a class="pi-tab" data-tab="schema" title="Structured data for search engines">Structured data</a>
                     <?php endif; ?>
                 </div>
 

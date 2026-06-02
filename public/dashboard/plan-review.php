@@ -55,14 +55,14 @@ include __DIR__ . '/_site_stepper.php';
 .rv-st-expired    { background:#f1f5f9; color:#64748b; }
 .rv-st-partial    { background:#dbeafe; color:#1e40af; }
 
-.rv-stats { display:grid; grid-template-columns:repeat(auto-fit, minmax(160px, 1fr)); gap:10px; margin-bottom:12px; }
-.rv-stat { background:#fff; border:1px solid var(--border); border-radius:8px; padding:12px 14px; }
-.rv-stat .label { font-size:11px; color:#64748b; text-transform:uppercase; letter-spacing:0.5px; font-weight:600; }
-.rv-stat .value { font-size:22px; font-weight:700; color:var(--primary); margin-top:2px; }
-.rv-stat .sub { font-size:11px; color:#94a3b8; margin-top:2px; }
+.rv-stats { display:grid; grid-template-columns:repeat(auto-fit, minmax(150px, 1fr)); gap:8px; margin-bottom:10px; }
+.rv-stat { background:#fff; border:1px solid var(--border); border-radius:8px; padding:10px 12px; }
+.rv-stat .label { font-size:10px; color:#64748b; text-transform:uppercase; letter-spacing:0.5px; font-weight:600; }
+.rv-stat .value { font-size:18px; font-weight:700; color:var(--primary); margin-top:2px; }
+.rv-stat .sub { font-size:10px; color:#94a3b8; margin-top:2px; }
 
-.rv-card { background:#fff; border:1px solid var(--border); border-radius:8px; padding:14px 18px; margin-bottom:12px; }
-.rv-card h3 { margin:0 0 10px; font-size:13px; font-weight:600; color:#64748b; text-transform:uppercase; letter-spacing:0.5px; }
+.rv-card { background:#fff; border:1px solid var(--border); border-radius:8px; padding:12px 14px; margin-bottom:10px; }
+.rv-card h3 { margin:0 0 8px; font-size:11px; font-weight:600; color:#64748b; text-transform:uppercase; letter-spacing:0.5px; }
 .rv-learning { padding:8px 12px; background:#f5f3ff; border-left:3px solid #8b5cf6; font-size:13px; color:#5b21b6; margin-bottom:6px; border-radius:0 4px 4px 0; line-height:1.5; }
 
 .rv-changes h3 { font-size:13px; }

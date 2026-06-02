@@ -50,7 +50,7 @@ ob_start();
 .cron-banner .desc { font-size:11px; color:<?= $master_alive ? '#166534' : '#92400e' ?>; margin-top:6px; line-height:1.5; }
 .cron-banner button.copy { background:#0f172a; color:#fff; border:0; padding:4px 10px; font-size:11px; border-radius:4px; cursor:pointer; margin-left:6px; vertical-align:middle; }
 
-.cron-grid { display:grid; grid-template-columns:repeat(auto-fill, minmax(380px, 1fr)); gap:10px; margin-bottom:18px; }
+.cron-grid { display:grid; grid-template-columns:repeat(auto-fill, minmax(300px, 1fr)); gap:10px; margin-bottom:12px; }
 .cron-card { padding:12px 14px; background:#fff; border:1px solid var(--border); border-radius:8px; display:flex; flex-direction:column; gap:6px; }
 .cron-card.disabled { opacity:0.6; }
 .cron-card .head { display:flex; justify-content:space-between; gap:8px; align-items:flex-start; }

@@ -144,9 +144,9 @@ ob_start();
 </style>
 
 <div class="wizard">
-    <div style="text-align:center;margin-bottom:20px;">
-        <div style="font-size:28px;font-weight:700;color:var(--primary);">🤖 Let's supercharge your website</div>
-        <div style="font-size:14px;color:#94a3b8;margin-top:4px;">Our AI agent will scan, audit, fix, and plan content — watch it work in real-time.</div>
+    <div style="text-align:center;margin-bottom:14px;">
+        <div style="font-size:20px;font-weight:700;color:var(--primary);">Let's get your website ready</div>
+        <div style="font-size:13px;color:#64748b;margin-top:4px;">We'll scan, audit, fix what's broken, and plan your first content — watch it happen in real time.</div>
     </div>
 
     <!-- Step 1: Enter URL -->
@@ -174,7 +174,7 @@ ob_start();
         <div class="step-header">
             <div class="step-number">2</div>
             <div>
-                <div class="step-title">🔍 AI is scanning your website</div>
+                <div class="step-title">Scanning your website</div>
                 <div class="step-subtitle">Detecting platform, brand, content structure</div>
             </div>
         </div>
@@ -201,7 +201,7 @@ ob_start();
                 <div class="big-score" id="score-value">0</div>
                 <div style="font-size:14px;color:#666;margin-top:4px;" id="score-detail"></div>
             </div>
-            <button class="next-btn" id="audit-next" style="display:none;" onclick="startFix()">🤖 Auto-Fix All Issues →</button>
+            <button class="next-btn" id="audit-next" style="display:none;" onclick="startFix()">Fix all issues automatically →</button>
         </div>
     </div>
 
@@ -210,7 +210,7 @@ ob_start();
         <div class="step-header">
             <div class="step-number">4</div>
             <div>
-                <div class="step-title">🤖 AI is fixing SEO issues</div>
+                <div class="step-title">Fixing SEO issues</div>
                 <div class="step-subtitle">Generating fixes and deploying to your site</div>
             </div>
         </div>
@@ -432,7 +432,7 @@ async function startAudit() {
 
         if (data.issues > 0) {
             document.getElementById('audit-next').style.display = 'inline-block';
-            document.getElementById('audit-next').textContent = '🤖 Auto-Fix ' + data.issues + ' Issues →';
+            document.getElementById('audit-next').textContent = 'Fix ' + data.issues + ' issues automatically →';
         } else {
             document.getElementById('audit-next').style.display = 'inline-block';
             document.getElementById('audit-next').textContent = '🔑 Find Keywords →';

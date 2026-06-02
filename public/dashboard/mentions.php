@@ -165,14 +165,7 @@ ob_start();
 .spinner { display:inline-block; width:12px; height:12px; border:2px solid #94a3b8; border-top-color:transparent; border-radius:50%; animation:spin 0.6s linear infinite; }
 </style>
 
-<div class="flex items-center justify-between mb-4">
-    <div>
-        <div style="font-size:11px; color:var(--text-light); text-transform:uppercase; letter-spacing:0.5px;">Mentions</div>
-        <h2 style="font-size:18px; font-weight:600; margin:2px 0 0; color:var(--primary);"><?= e($site['name']) ?></h2>
-    </div>
-</div>
-
-<div class="m-tabs">
+<div class="m-tabs" style="margin-top:6px;">
     <a href="<?= url('/dashboard/mentions.php?site=' . $site_id . '&tab=brand') ?>" class="<?= $tab === 'brand' ? 'active' : '' ?>">
         Brand mentions <?php if ($total_brand_new > 0): ?><span class="badge"><?= $total_brand_new ?></span><?php endif; ?>
     </a>

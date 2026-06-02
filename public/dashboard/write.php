@@ -30,7 +30,7 @@ if ($site_id) {
     }
 }
 
-$page_title = '🧠 AI Content Writer';
+$page_title = 'AI Content Writer';
 
 // Get user's sites (super-admin sees all)
 if (auth_is_super_admin()) {
@@ -278,7 +278,7 @@ Output ONLY valid JSON array:
     <?php if (!empty($proposals)): ?>
     <div class="card" style="border-left:3px solid #7c3aed;">
         <div class="card-header">
-            🧠 AI Proposed Topics <?= tt('Claude generated these from your active keywords, competitor gaps, and posts that are already getting traction. Click "Write this" to have AI draft the full post for your review.') ?>
+            AI Proposed Topics <?= tt('Generated from your active keywords, competitor gaps, and posts that are already getting traction. Click "Write this" to draft the full post for your review.') ?>
             <span style="font-size:11px;color:var(--text-light);font-weight:normal;display:block;margin-top:2px;">
                 Pick one — AI writes the full draft for you to edit and publish.
                 <?php if ($winner_titles || $dead_titles): ?>

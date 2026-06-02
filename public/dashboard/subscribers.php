@@ -78,7 +78,12 @@ $stmt = $db->prepare('SELECT * FROM subscribers WHERE site_id = ? ORDER BY statu
 $stmt->execute([$site_id]);
 $subscribers = $stmt->fetchAll();
 
-$signup_url = (config('app_url') ?: 'https://contentagent.xceedtech.in') . '/blog/subscribe.php?site=' . $site_id;
+$_base = config('app_url');
+if (!$_base) {
+    $_scheme = (!empty($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off') ? 'https' : 'http';
+    $_base   = $_scheme . '://' . ($_SERVER['HTTP_HOST'] ?? 'localhost');
+}
+$signup_url = rtrim($_base, '/') . '/blog/subscribe.php?site=' . $site_id;
 $resend_ok  = !empty(config('resend_api_key'));
 
 $page_title = 'Subscribers — ' . $site['name'];

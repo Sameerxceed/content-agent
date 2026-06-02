@@ -43,11 +43,11 @@ $stepper_active = 'track';
 include __DIR__ . '/_site_stepper.php';
 ?>
 <style>
-.pf-summary { display:grid; grid-template-columns:repeat(auto-fit, minmax(160px, 1fr)); gap:12px; margin-bottom:18px; }
-.pf-bucket  { margin-bottom:18px; }
-.pf-bucket-head { display:flex; justify-content:space-between; align-items:baseline; margin-bottom:8px; }
-.pf-bucket-title { font-size:15px; font-weight:600; color:var(--primary); }
-.pf-bucket-count { font-size:12px; color:var(--text-light); }
+.pf-summary { display:grid; grid-template-columns:repeat(auto-fit, minmax(150px, 1fr)); gap:10px; margin-bottom:12px; }
+.pf-bucket  { margin-bottom:12px; }
+.pf-bucket-head { display:flex; justify-content:space-between; align-items:baseline; margin-bottom:6px; }
+.pf-bucket-title { font-size:13px; font-weight:600; color:var(--primary); }
+.pf-bucket-count { font-size:11px; color:var(--text-light); }
 .pf-row {
     background:#fff; border:1px solid var(--border); border-radius:6px; padding:12px 14px;
     margin-bottom:6px; display:grid; grid-template-columns: 1fr auto auto auto; gap:14px; align-items:center;

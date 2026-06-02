@@ -46,7 +46,7 @@ $page_title = 'AEO Tracker — ' . $site['name'];
 ob_start();
 ?>
 <style>
-.aeo-grid { display:grid; grid-template-columns:repeat(auto-fit, minmax(160px, 1fr)); gap:12px; margin-bottom:18px; }
+.aeo-grid { display:grid; grid-template-columns:repeat(auto-fit, minmax(150px, 1fr)); gap:10px; margin-bottom:12px; }
 .aeo-q {
     background:#fff; border:1px solid var(--border); border-radius:6px; padding:12px 14px;
     margin-bottom:8px;
@@ -72,18 +72,15 @@ ob_start();
 .aeo-empty { color:var(--text-light); font-size:13px; padding:14px; background:#f8fafc; border-radius:6px; border:1px dashed var(--border); }
 </style>
 
-<div class="flex items-center justify-between mb-4">
-    <div>
-        <div style="font-size:11px; color:var(--text-light); text-transform:uppercase; letter-spacing:0.5px;">AEO Tracker</div>
-        <h2 style="font-size:18px; font-weight:600; margin:2px 0 0; color:var(--primary);"><?= e($site['name']) ?></h2>
+<div class="flex items-center justify-between" style="margin-bottom:10px;">
+    <div style="font-size:11px; color:var(--text-light);">
+        AI search engine: <strong style="color:#0f172a;"><?= e($engine_label) ?></strong>
     </div>
     <div class="flex gap-2">
-        <button class="btn btn-outline btn-sm" onclick="suggestQueries(this)" <?= $engine_ok ? '' : 'disabled' ?>>💡 Suggest queries</button>
-        <button class="btn btn-accent btn-sm" onclick="checkAll(this)" <?= $engine_ok ? '' : 'disabled' ?>>🔭 Check all now</button>
+        <button class="btn btn-outline btn-sm" onclick="suggestQueries(this)" <?= $engine_ok ? '' : 'disabled' ?>>Suggest queries</button>
+        <button class="btn btn-accent btn-sm" onclick="checkAll(this)" <?= $engine_ok ? '' : 'disabled' ?>>Check all now</button>
     </div>
 </div>
-
-<div style="font-size:11px; color:var(--text-light); margin-bottom:10px;">Engine: <strong><?= e($engine_label) ?></strong></div>
 
 <?php if (!$engine_ok): ?>
 <div class="alert alert-warning">

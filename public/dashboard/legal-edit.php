@@ -48,10 +48,10 @@ include __DIR__ . '/_site_stepper.php';
 ?>
 
 <style>
-.le-head { background:#fff; border:1px solid var(--border); border-radius:8px; padding:16px 18px; margin-bottom:12px; display:flex; justify-content:space-between; align-items:center; gap:14px; flex-wrap:wrap; }
-.le-head .left { display:flex; align-items:center; gap:14px; }
-.le-head .icon { font-size:26px; }
-.le-head h1 { margin:0; font-size:18px; color:var(--primary); font-weight:600; }
+.le-head { background:#fff; border:1px solid var(--border); border-radius:8px; padding:12px 14px; margin-bottom:10px; display:flex; justify-content:space-between; align-items:center; gap:12px; flex-wrap:wrap; }
+.le-head .left { display:flex; align-items:center; gap:10px; }
+.le-head .icon { font-size:20px; }
+.le-head h1 { margin:0; font-size:15px; color:var(--primary); font-weight:600; }
 .le-head .sub { font-size:11px; color:var(--text-light); margin-top:2px; }
 .le-actions { display:flex; gap:6px; flex-wrap:wrap; }
 .le-btn { font-size:12px; font-weight:600; padding:8px 14px; border-radius:6px; border:0; cursor:pointer; text-decoration:none; }
@@ -60,9 +60,9 @@ include __DIR__ . '/_site_stepper.php';
 .le-btn.danger   { background:#fff; color:#dc2626; border:1px solid #fecaca; }
 .le-meta { background:#f8fafb; border:1px solid var(--border); border-radius:8px; padding:12px 16px; margin-bottom:12px; font-size:12px; color:#475569; display:flex; gap:18px; flex-wrap:wrap; }
 .le-meta strong { color:#0f172a; }
-.le-body { background:#fff; border:1px solid var(--border); border-radius:8px; padding:32px 38px; font-size:15px; line-height:1.7; color:#1e293b; max-height:700px; overflow-y:auto; }
-.le-body h1, .le-body h2, .le-body h3 { font-weight:600; color:#0f172a; margin:1.5em 0 0.5em; line-height:1.3; }
-.le-body h1 { font-size:24px; } .le-body h2 { font-size:20px; } .le-body h3 { font-size:17px; }
+.le-body { background:#fff; border:1px solid var(--border); border-radius:8px; padding:18px 22px; font-size:14px; line-height:1.6; color:#1e293b; max-height:680px; overflow-y:auto; }
+.le-body h1, .le-body h2, .le-body h3 { font-weight:600; color:#0f172a; margin:1.3em 0 0.4em; line-height:1.3; }
+.le-body h1 { font-size:18px; } .le-body h2 { font-size:15px; } .le-body h3 { font-size:13px; }
 .le-body h1:first-child, .le-body h2:first-child, .le-body h3:first-child { margin-top:0; }
 .le-body p, .le-body li { margin:0.6em 0; }
 .le-body ul, .le-body ol { padding-left:1.6em; }

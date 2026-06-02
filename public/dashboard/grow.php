@@ -65,25 +65,16 @@ include __DIR__ . '/_site_stepper.php';
 ?>
 
 <style>
-.grow-intro { padding:12px 16px; background:#f5f0ff; border:1px solid #d8b4fe; border-radius:8px; margin-bottom:14px; }
-.grow-intro .title { font-weight:600; font-size:13px; color:#6b21a8; }
-.grow-intro .desc  { font-size:12px; color:#6b21a8; margin-top:3px; line-height:1.5; }
-
-.grow-grid { display:grid; grid-template-columns:repeat(auto-fill, minmax(280px, 1fr)); gap:12px; }
-.grow-card { display:flex; flex-direction:column; gap:8px; padding:16px; background:#fff; border:1px solid var(--border); border-radius:8px; text-decoration:none; color:inherit; transition:background 0.1s, border-color 0.1s; }
+.grow-grid { display:grid; grid-template-columns:repeat(auto-fill, minmax(260px, 1fr)); gap:10px; }
+.grow-card { display:flex; flex-direction:column; gap:6px; padding:14px; background:#fff; border:1px solid var(--border); border-radius:8px; text-decoration:none; color:inherit; transition:background 0.1s, border-color 0.1s; }
 .grow-card:hover { background:#f8fafb; border-color:#cbd5e1; }
-.grow-card .head { display:flex; align-items:center; gap:10px; }
-.grow-card .icon { width:36px; height:36px; border-radius:8px; background:#f1f5f9; display:flex; align-items:center; justify-content:center; font-size:18px; flex-shrink:0; }
-.grow-card .title { font-size:14px; font-weight:600; color:var(--primary); }
-.grow-card .desc { font-size:12px; color:#64748b; line-height:1.5; }
-.grow-card .meta { font-size:11px; color:#475569; margin-top:auto; padding-top:8px; border-top:1px solid #f1f5f9; }
+.grow-card .head { display:flex; align-items:center; gap:8px; }
+.grow-card .icon { width:24px; height:24px; border-radius:6px; background:#f1f5f9; display:flex; align-items:center; justify-content:center; font-size:14px; flex-shrink:0; }
+.grow-card .title { font-size:13px; font-weight:600; color:var(--primary); }
+.grow-card .desc { font-size:11px; color:#64748b; line-height:1.45; }
+.grow-card .meta { font-size:10px; color:#475569; margin-top:auto; padding-top:6px; border-top:1px solid #f1f5f9; }
 .grow-card .meta strong { color:var(--primary); }
 </style>
-
-<div class="grow-intro">
-    <div class="title">🌱 Grow beyond the basics</div>
-    <div class="desc">Your content pipeline is running. These are the next-level features — competitive intel, off-site engagement, AI-engine tracking — that compound your results over months.</div>
-</div>
 
 <div class="grow-grid">
     <a href="<?= url('/dashboard/competitors.php?site=' . $site_id) ?>" class="grow-card">
