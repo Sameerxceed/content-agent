@@ -131,6 +131,18 @@ foreach ($items as $it) {
             }
         }
 
+        // ── Compose schema.org JSON-LD from the now-persisted post + FAQs ──
+        // Generated PHP-side using the post row (deterministic) instead of
+        // asked of Claude (hallucination-prone). Article + FAQPage +
+        // BreadcrumbList go into $pkg['schema_ldjson'] so the schema
+        // channel's variant_content gets the full bundle.
+        $pkg['schema_ldjson'] = content_artifacts_compose_schema(
+            $db,
+            $post_id,
+            (array)($pkg['faq'] ?? [])
+        );
+        echo "    schema: " . count($pkg['schema_ldjson']) . " JSON-LD blocks composed\n";
+
         // ── Create post_channels rows for applicable channels ────
         // Reuse the channels we resolved before the Claude call so the
         // queued rows match exactly what we asked Claude to generate.

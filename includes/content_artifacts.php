@@ -21,6 +21,83 @@
 require_once __DIR__ . '/helpers.php';
 require_once __DIR__ . '/business_profile.php';
 require_once __DIR__ . '/haiku.php';
+require_once __DIR__ . '/schema-generator.php';
+
+/**
+ * Build the JSON-LD bundle for a freshly-drafted post: Article + FAQPage +
+ * BreadcrumbList. Generated PHP-side (deterministic) instead of asked of
+ * Claude (hallucination-prone). Returns an array of decoded schema dicts
+ * ready to JSON-encode into post_channels.variant_content for the 'schema'
+ * channel — what AI engines and Google read for rich snippets.
+ *
+ * Caller passes the FAQs from the Claude package ([{q, a}, ...]) and we
+ * normalise + dedupe. If $faqs is empty we skip FAQPage.
+ */
+function content_artifacts_compose_schema(PDO $db, int $post_id, array $faqs, ?array $site_override = null): array
+{
+    $stmt = $db->prepare("SELECT p.*, s.name AS site_name, s.domain, s.blog_path
+        FROM posts p JOIN sites s ON s.id = p.site_id WHERE p.id = ?");
+    $stmt->execute([$post_id]);
+    $row = $stmt->fetch();
+    if (!$row) return [];
+
+    $site = $site_override ?: [
+        'name'      => (string)$row['site_name'],
+        'domain'    => (string)$row['domain'],
+        'blog_path' => $row['blog_path'] ?: '/blog',
+    ];
+    $base_url  = 'https://' . ltrim((string)$site['domain'], 'https://');
+    $blog_path = $site['blog_path'] ?: '/blog';
+
+    $bundle = [];
+
+    // 1. Article (BlogPosting or NewsArticle) — always emit
+    $article_json = schema_blog_post([
+        'title'           => (string)($row['title'] ?? ''),
+        'slug'            => (string)($row['slug'] ?? ''),
+        'body'            => (string)($row['body'] ?? ''),
+        'seo_description' => (string)($row['seo_description'] ?? ''),
+        'type'            => (string)($row['type'] ?? 'blog'),
+        'tags'            => (string)($row['seo_keywords'] ?? '[]'),
+        'created_at'      => (string)($row['created_at'] ?? date('c')),
+        'updated_at'      => (string)($row['updated_at'] ?? date('c')),
+        'published_at'    => $row['published_at'] ?? null,
+    ], [
+        'name'      => $site['name'],
+        'domain'    => $site['domain'],
+        'blog_path' => $blog_path,
+    ]);
+    $article = json_decode($article_json, true);
+    if (is_array($article)) $bundle[] = $article;
+
+    // 2. FAQPage — only if Claude returned FAQs
+    if (!empty($faqs)) {
+        $normalised = [];
+        foreach ($faqs as $f) {
+            $q = trim((string)($f['q'] ?? $f['question'] ?? ''));
+            $a = trim((string)($f['a'] ?? $f['answer'] ?? ''));
+            if ($q !== '' && $a !== '') {
+                $normalised[] = ['question' => $q, 'answer' => $a];
+            }
+        }
+        if (!empty($normalised)) {
+            $faq_json = schema_faq($normalised);
+            $faq = json_decode($faq_json, true);
+            if (is_array($faq)) $bundle[] = $faq;
+        }
+    }
+
+    // 3. BreadcrumbList — Home > Blog > Post Title
+    $crumbs_json = schema_breadcrumbs([
+        ['name' => 'Home',         'url' => $base_url . '/'],
+        ['name' => 'Blog',         'url' => $base_url . rtrim($blog_path, '/') . '/'],
+        ['name' => (string)$row['title'], 'url' => $base_url . rtrim($blog_path, '/') . '/' . (string)$row['slug']],
+    ], $base_url);
+    $crumbs = json_decode($crumbs_json, true);
+    if (is_array($crumbs)) $bundle[] = $crumbs;
+
+    return $bundle;
+}
 
 /**
  * Channel-content fit matrix. Channels that don't appear in the matrix
