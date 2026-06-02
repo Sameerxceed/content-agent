@@ -214,22 +214,7 @@ if ($is_published) { $lock_label = 'Published'; $lock_fg = '#166534'; $lock_bg =
             </div>
         </div>
 
-        <?php if ($lock === 'pipeline' || !$item['post_id_loaded']): ?>
-
-            <div class="empty-pipeline">
-                <div class="icon">📝</div>
-                <div class="title">Not drafted yet</div>
-                <div class="desc">
-                    This item is scheduled for <strong><?= e(date('D, d M Y', strtotime($item['target_publish_date']))) ?></strong>.
-                    The autopilot will draft it automatically 5-7 days before that date.
-                    Click <strong>Draft now</strong> above if you want to start earlier.
-                </div>
-                <div style="font-size:11px;color:#94a3b8;">
-                    Primary keyword: <strong><?= e($item['primary_keyword']) ?></strong> · Proposed angle: <em><?= e($item['proposed_angle'] ?? '—') ?></em>
-                </div>
-            </div>
-
-        <?php elseif ($lock === 'committed'): ?>
+        <?php if ($lock === 'committed'): ?>
 
             <div class="empty-pipeline">
                 <div class="icon" style="animation:pi-spin 1.2s linear infinite;display:inline-block;">⟳</div>
@@ -252,6 +237,21 @@ if ($is_published) { $lock_label = 'Published'; $lock_fg = '#166534'; $lock_bg =
                 }, 1000);
             })();
             </script>
+
+        <?php elseif ($lock === 'pipeline' || !$item['post_id_loaded']): ?>
+
+            <div class="empty-pipeline">
+                <div class="icon">📝</div>
+                <div class="title">Not drafted yet</div>
+                <div class="desc">
+                    This item is scheduled for <strong><?= e(date('D, d M Y', strtotime($item['target_publish_date']))) ?></strong>.
+                    The autopilot will draft it automatically 5-7 days before that date.
+                    Click <strong>Draft now</strong> above if you want to start earlier.
+                </div>
+                <div style="font-size:11px;color:#94a3b8;">
+                    Primary keyword: <strong><?= e($item['primary_keyword']) ?></strong> · Proposed angle: <em><?= e($item['proposed_angle'] ?? '—') ?></em>
+                </div>
+            </div>
 
         <?php else: ?>
 
