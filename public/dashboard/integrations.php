@@ -372,6 +372,8 @@ function renderStep() {
 
 function renderFinal() {
     let html = '';
+    const passed = wizState.is_configured && wizState.last_test && wizState.last_test.success && !wizState.last_test.parsed;
+
     if (wizState.is_configured) {
         html += '<div class="wiz-success">✓ <strong>' + escapeHtml(wizState.name) + ' is configured.</strong> ' + escapeHtml(wizState.status_line) + '</div>';
     }
@@ -385,15 +387,26 @@ function renderFinal() {
         }
     }
 
-    html += '<div style="text-align:center; padding:14px 0;">'
-          + '<button class="btn btn-primary" onclick="runTest()" id="wizTestBtn">Run test now</button> '
-          + '<button class="btn btn-outline btn-sm" onclick="resetWizard()" style="margin-left:8px;">Reset & start over</button>'
-          + '</div>';
-
-    html += '<div class="wiz-actions">'
-          + '<button class="btn btn-outline btn-sm" onclick="prevStep()">&larr; Back</button>'
-          + '<button class="btn btn-primary btn-sm" onclick="closeWizard()">Done</button>'
-          + '</div>';
+    if (passed) {
+        // Happy path: everything works. Make Done the obvious next action;
+        // hide retest behind a small link so users aren't tempted to mess with it.
+        html += '<div style="text-align:center; padding:18px 0;">'
+              + '<button class="btn btn-primary" style="font-size:14px; padding:10px 28px;" onclick="closeWizard()">✓ All set — Done</button>'
+              + '<div style="margin-top:10px; font-size:11px; color:#94a3b8;">'
+              +   '<a href="#" onclick="event.preventDefault();runTest();" style="color:#94a3b8;">re-test</a> · '
+              +   '<a href="#" onclick="event.preventDefault();resetWizard();" style="color:#94a3b8;">reset & start over</a>'
+              + '</div>'
+              + '</div>';
+    } else {
+        html += '<div style="text-align:center; padding:14px 0;">'
+              + '<button class="btn btn-primary" onclick="runTest()" id="wizTestBtn">Run test now</button> '
+              + '<button class="btn btn-outline btn-sm" onclick="resetWizard()" style="margin-left:8px;">Reset & start over</button>'
+              + '</div>'
+              + '<div class="wiz-actions">'
+              + '<button class="btn btn-outline btn-sm" onclick="prevStep()">&larr; Back</button>'
+              + '<button class="btn btn-primary btn-sm" onclick="closeWizard()">Done</button>'
+              + '</div>';
+    }
     return html;
 }
 
