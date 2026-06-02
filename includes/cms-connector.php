@@ -25,10 +25,13 @@ function cms_push_post(array $post, string $cms_url, string $cms_api_key): array
         ? date('Y-m-d', strtotime($post['published_at']))
         : date('Y-m-d');
 
-    $type = ($post['type'] ?? 'blog') === 'news' ? 'news' : 'blog';
+    // Pass type through. Xceed CMS recognises blog | news | page.
+    // 'page' = static legal/info page rendered at root /:slug (privacy, terms, cookies, etc.)
+    $allowed_types = ['blog', 'news', 'page'];
+    $type = in_array($post['type'] ?? 'blog', $allowed_types, true) ? ($post['type'] ?? 'blog') : 'blog';
 
     $payload = [
-        'type'            => $type, // blog | news — Xceed CMS routes accordingly
+        'type'            => $type, // blog | news | page — Xceed CMS routes accordingly
         'title'           => $post['title'],
         'slug'            => $post['slug'],
         'excerpt'         => $post['excerpt'] ?? '',
@@ -125,7 +128,8 @@ function cms_update_post(array $post, string $cms_url, string $cms_api_key): arr
         ? date('Y-m-d', strtotime($post['published_at']))
         : null;
 
-    $type = ($post['type'] ?? 'blog') === 'news' ? 'news' : 'blog';
+    $allowed_types = ['blog', 'news', 'page'];
+    $type = in_array($post['type'] ?? 'blog', $allowed_types, true) ? ($post['type'] ?? 'blog') : 'blog';
 
     $payload = [
         'type'            => $type, // MUST be in update too — Xceed CMS routes by (type, slug)
