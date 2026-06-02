@@ -8,13 +8,26 @@
  *   - action='generate_and_publish': both, in sequence
  *   - action='discard'            : wipe the draft, return row to 'missing'
  */
+// Buffer ALL output that happens during requires/auth so a stray PHP notice
+// or whitespace can't corrupt the session-cookie header and bounce the
+// caller to 401. Same defensive pattern as content-plan-start.php.
+ini_set('display_errors', '0');
+ob_start();
+
 require_once __DIR__ . '/../../includes/helpers.php';
 require_once __DIR__ . '/../../includes/auth.php';
 require_once __DIR__ . '/../../includes/legal_docs.php';
 
 auth_start();
-if (!auth_check()) { http_response_code(401); echo json_encode(['error' => 'Unauthorized']); exit; }
+if (!auth_check()) {
+    http_response_code(401);
+    if (ob_get_length()) ob_end_clean();
+    header('Content-Type: application/json');
+    echo json_encode(['error' => 'Unauthorized']);
+    exit;
+}
 
+if (ob_get_length()) ob_end_clean();
 header('Content-Type: application/json');
 
 $db = require __DIR__ . '/../../includes/db.php';
