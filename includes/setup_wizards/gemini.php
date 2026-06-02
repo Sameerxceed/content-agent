@@ -56,16 +56,21 @@ class GeminiWizard extends SetupWizard
                     'Paste below.',
                 ],
                 'fields' => [
-                    ['key' => 'api_key', 'label' => 'Gemini API key', 'placeholder' => 'AIza...', 'type' => 'password'],
+                    ['key' => 'api_key', 'label' => 'Gemini API key', 'placeholder' => 'AIza... or AQ....', 'type' => 'password'],
                 ],
                 'verify' => function (array $input): array {
                     $key = trim($input['api_key'] ?? '');
                     if (empty($key)) return ['valid' => false, 'error' => 'API key required'];
-                    if (!str_starts_with($key, 'AIza')) {
-                        return ['valid' => false, 'error' => 'Gemini keys start with "AIza". Did you paste the right thing?'];
-                    }
-                    if (strlen($key) < 35) {
+                    // Google AI Studio emits two formats:
+                    //   - legacy: "AIza..." (~39 chars)
+                    //   - new:    "AQ.Ab..." (~52 chars)
+                    // Accept anything that looks plausibly key-shaped; the live test
+                    // call against /v1beta/models will catch a wrong paste.
+                    if (strlen($key) < 30) {
                         return ['valid' => false, 'error' => 'That key looks too short. Copy the full key from AI Studio.'];
+                    }
+                    if (preg_match('/\s/', $key)) {
+                        return ['valid' => false, 'error' => 'Key contains whitespace — copy only the key value, no quotes or spaces.'];
                     }
                     return ['valid' => true];
                 },
