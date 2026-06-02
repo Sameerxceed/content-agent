@@ -171,8 +171,10 @@ function channels_registry(): ChannelRegistry
     require_once __DIR__ . '/twitter.php';
     $registry->register(new TwitterChannel());
 
-    require_once __DIR__ . '/reddit.php';
-    $registry->register(new RedditChannel());
+    // Reddit channel disabled 2026-06-02 — see content_artifacts_fit_matrix()
+    // for rationale. Adapter code in reddit.php preserved on disk.
+    // require_once __DIR__ . '/reddit.php';
+    // $registry->register(new RedditChannel());
 
     require_once __DIR__ . '/newsletter.php';
     $registry->register(new NewsletterChannel());

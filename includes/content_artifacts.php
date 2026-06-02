@@ -31,11 +31,16 @@ require_once __DIR__ . '/haiku.php';
  */
 function content_artifacts_fit_matrix(): array
 {
+    // Reddit removed 2026-06-02: Reddit's post-2023 API policy (Devvit-only
+    // for new apps, weeks-long manual review for the legacy Data API, low
+    // approval rate for marketing use cases) makes it unworkable as a
+    // publishing channel. To re-enable: add 'reddit' back here AND uncomment
+    // the wizard registration in includes/setup_wizards/registry.php.
     return [
-        'pillar'       => ['cms', 'linkedin', 'twitter', 'reddit', 'newsletter'],
-        'blog'         => ['cms', 'linkedin', 'twitter', 'reddit', 'newsletter'],
-        'comparison'   => ['cms', 'linkedin', 'twitter', 'reddit', 'newsletter'],
-        'guide'        => ['cms', 'linkedin', 'twitter', 'reddit', 'newsletter'],
+        'pillar'       => ['cms', 'linkedin', 'twitter', 'newsletter'],
+        'blog'         => ['cms', 'linkedin', 'twitter', 'newsletter'],
+        'comparison'   => ['cms', 'linkedin', 'twitter', 'newsletter'],
+        'guide'        => ['cms', 'linkedin', 'twitter', 'newsletter'],
         'service_page' => ['cms', 'linkedin', 'newsletter'],
         'glossary'     => ['cms'],
         'news'         => ['cms', 'linkedin', 'twitter', 'newsletter'],

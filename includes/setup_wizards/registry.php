@@ -11,7 +11,11 @@ function setup_wizards_all(): array
         'brave_search.php' => 'BraveSearchWizard',
         'google_cse.php'   => 'GoogleCseWizard',
         'resend.php'       => 'ResendWizard',
-        'reddit_app.php'   => 'RedditAppWizard',
+        // Reddit's API is effectively closed to new publishing apps post-2023
+        // (Devvit-only for new builds, Data API form has weeks-long manual
+        // review with low approval rate for non-moderation use cases). Wizard
+        // file kept on disk for the day Reddit reopens; uncomment to re-enable.
+        // 'reddit_app.php'   => 'RedditAppWizard',
         'linkedin_app.php' => 'LinkedInAppWizard',
         'twitter_app.php'  => 'TwitterAppWizard',
         'gsc_app.php'      => 'GscAppWizard',
