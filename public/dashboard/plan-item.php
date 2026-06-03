@@ -602,6 +602,13 @@ document.querySelectorAll('.pi-editable').forEach(input => {
                 if (h1) h1.textContent = input.value;
                 document.title = input.value + ' — <?= e($site['name']) ?>';
             }
+            // The API rebuilds the schema bundle when title/desc changes — refresh
+            // the visible JSON-LD textarea so the user sees the new structured data
+            // (URL, headline, breadcrumbs, etc.) live.
+            if (r.schema) {
+                const schemaTextarea = document.querySelector('[data-tab-content="schema"] textarea');
+                if (schemaTextarea) schemaTextarea.value = JSON.stringify(r.schema, null, 2);
+            }
             setTimeout(() => piHintFor(field, ''), 1500);
         } else {
             piHintFor(field, '<span style="color:#dc2626;">' + (r.error || 'save failed') + '</span>');

@@ -151,6 +151,50 @@ switch ($action) {
         $sql = "UPDATE posts SET " . implode(', ', $set) . ", updated_at = NOW() WHERE id = ?";
         $db->prepare($sql)->execute($vals);
 
+        $extras = [];
+
+        // Title change → regenerate the slug (unless already published, where the
+        // URL is locked) and recompose the schema bundle so it uses the new title.
+        if (array_key_exists('title', $input)) {
+            $stmt = $db->prepare("SELECT status FROM posts WHERE id = ?");
+            $stmt->execute([$post_id]);
+            $status = (string)$stmt->fetchColumn();
+            if ($status !== 'published') {
+                $new_slug = slugify((string)$input['title']);
+                if ($new_slug !== '') {
+                    $db->prepare("UPDATE posts SET slug = ? WHERE id = ?")
+                       ->execute([$new_slug, $post_id]);
+                    $extras['slug'] = $new_slug;
+                }
+            }
+        }
+
+        // Title or description change → rebuild the schema bundle stored on the
+        // schema channel row so the dashboard preview AND the published <script>
+        // tag reflect the latest fields.
+        if (array_key_exists('title', $input) || array_key_exists('seo_description', $input)) {
+            require_once __DIR__ . '/../../includes/content_artifacts.php';
+            // FAQs are stored ON the schema channel row already — extract them
+            // so the rebuild keeps them in the FAQPage block.
+            $stmt = $db->prepare("SELECT variant_content FROM post_channels WHERE post_id = ? AND channel = 'schema' LIMIT 1");
+            $stmt->execute([$post_id]);
+            $old_schema = json_decode((string)$stmt->fetchColumn(), true) ?: [];
+            $faqs = [];
+            foreach ($old_schema as $block) {
+                if (($block['@type'] ?? '') === 'FAQPage' && !empty($block['mainEntity'])) {
+                    foreach ($block['mainEntity'] as $qa) {
+                        $q = trim((string)($qa['name'] ?? ''));
+                        $a = trim((string)($qa['acceptedAnswer']['text'] ?? ''));
+                        if ($q !== '' && $a !== '') $faqs[] = ['q' => $q, 'a' => $a];
+                    }
+                }
+            }
+            $bundle = content_artifacts_compose_schema($db, $post_id, $faqs);
+            $db->prepare("UPDATE post_channels SET variant_content = ?, updated_at = NOW() WHERE post_id = ? AND channel = 'schema'")
+               ->execute([json_encode($bundle, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE | JSON_PRETTY_PRINT), $post_id]);
+            $extras['schema'] = $bundle;
+        }
+
         // If the caller supplies item_id and is updating the title, keep the
         // plan item's proposed_title in sync so the page H1 + plan listings
         // reflect the user's edit on next load.
@@ -159,7 +203,7 @@ switch ($action) {
                ->execute([(string)$input['title'], (int)$item['id']]);
         }
 
-        pia_respond(['success' => true, 'updated' => array_keys(array_intersect_key($input, array_flip($allowed)))]);
+        pia_respond(['success' => true, 'updated' => array_keys(array_intersect_key($input, array_flip($allowed)))] + $extras);
 
     default:
         pia_respond(['error' => 'Unknown action: ' . $action], 400);
