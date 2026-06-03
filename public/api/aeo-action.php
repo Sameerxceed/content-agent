@@ -73,8 +73,11 @@ try {
         $stmt = $db->prepare('SELECT id FROM aeo_queries WHERE id = ? AND site_id = ?');
         $stmt->execute([$id, $site_id]);
         if (!$stmt->fetch()) { http_response_code(404); echo json_encode(['error' => 'Query not found']); exit; }
-        $result = aeo_check_query($db, $id);
-        echo json_encode($result);
+        // Multi-engine by default — runs every configured engine
+        $results = aeo_check_query_all_engines($db, $id);
+        $any_ok = false;
+        foreach ($results as $r) { if (!empty($r['success'])) { $any_ok = true; break; } }
+        echo json_encode(['success' => $any_ok, 'per_engine' => $results]);
         exit;
     }
 
@@ -87,6 +90,13 @@ try {
     if ($action === 'suggest') {
         $suggestions = aeo_suggest_queries($db, $site);
         echo json_encode(['success' => true, 'queries' => $suggestions]);
+        exit;
+    }
+
+    if ($action === 'check_recall') {
+        require_once __DIR__ . '/../../includes/ai-visibility.php';
+        $r = check_ai_visibility_all_engines($site, $db);
+        echo json_encode(['success' => true] + $r);
         exit;
     }
 
