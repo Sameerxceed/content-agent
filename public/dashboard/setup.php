@@ -15,6 +15,7 @@
  */
 require_once __DIR__ . '/../../includes/helpers.php';
 require_once __DIR__ . '/../../includes/auth.php';
+require_once __DIR__ . '/../../includes/integrations/linkedin.php';
 
 auth_start();
 auth_require();
@@ -413,7 +414,7 @@ include __DIR__ . '/_site_stepper.php';
             $channel_meta = [
                 'cms'                    => ['name' => 'CMS (your website)', 'desc' => 'Push posts + legal pages to your CMS.', 'configure' => '/dashboard/setup.php?site=' . $site_id . '&tab=publishing', 'cta' => 'Configure'],
                 'google_search_console'  => ['name' => 'Google Search Console', 'desc' => 'Track impressions, clicks, position from Google.', 'configure' => '/dashboard/integrations.php#gsc', 'cta' => 'Connect via OAuth'],
-                'linkedin'               => ['name' => 'LinkedIn',  'desc' => 'Post to your LinkedIn page or personal profile.', 'configure' => '/dashboard/linkedin-author.php?site=' . $site_id, 'cta' => 'Connect LinkedIn'],
+                'linkedin'               => ['name' => 'LinkedIn',  'desc' => 'Post to your LinkedIn page or personal profile.', 'configure' => '/dashboard/linkedin-author.php?site=' . $site_id, 'connect_url' => linkedin_get_auth_url($site_id), 'cta' => 'Connect LinkedIn'],
                 'twitter'                => ['name' => 'Twitter / X', 'desc' => 'Auto-post threads to your X account.', 'configure' => '/dashboard/integrations.php#twitter', 'cta' => 'Connect Twitter'],
                 'newsletter'             => ['name' => 'Newsletter (Resend)', 'desc' => 'Send blog drops to your subscriber list.', 'configure' => '/dashboard/integrations.php#resend', 'cta' => 'Configure'],
             ];
@@ -447,7 +448,14 @@ include __DIR__ . '/_site_stepper.php';
                             <br><strong style="color:#0f172a;">Provider:</strong> Resend (account-wide)
                         <?php endif; ?>
                     </div>
-                    <a class="cta" href="<?= url($meta['configure']) ?>"><?= $effective_on ? 'Manage →' : $meta['cta'] . ' →' ?></a>
+                    <?php
+                        // For channels with an OAuth start URL (LinkedIn), use it when
+                        // not yet connected — `configure` is the post-connect manage page.
+                        $cta_href = (!$effective_on && !empty($meta['connect_url']))
+                            ? $meta['connect_url']
+                            : url($meta['configure']);
+                    ?>
+                    <a class="cta" href="<?= e($cta_href) ?>"><?= $effective_on ? 'Manage →' : $meta['cta'] . ' →' ?></a>
                 </div>
             <?php endforeach; ?>
         </div>
