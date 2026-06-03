@@ -349,7 +349,15 @@ if ($is_published) { $lock_label = 'Published'; $lock_fg = '#166534'; $lock_bg =
                     <input class="field pi-editable" data-field="seo_description" value="<?= e($item['post_seo_desc'] ?? '') ?>" placeholder="160 chars max">
                     <h3>Body preview</h3>
                     <div class="pi-blog-preview">
-                        <?= $item['post_body'] ?? '' ?>
+                        <?php
+                            // Strip the inline FAQ section from the preview — it has its own
+                            // always-visible section below. Published post keeps both: body's
+                            // <section class="faq"> for in-body citation + FAQPage schema for
+                            // rich snippets. This only affects the dashboard preview.
+                            $body_preview = (string)($item['post_body'] ?? '');
+                            $body_preview = preg_replace('#<section[^>]*class\s*=\s*["\']?[^"\'>]*\bfaq\b[^>]*>[\s\S]*?</section>#i', '', $body_preview);
+                            echo $body_preview;
+                        ?>
                     </div>
                     <div style="display:flex;justify-content:space-between;align-items:center;font-size:11px;color:#94a3b8;margin-top:8px;">
                         <a href="#" onclick="event.preventDefault();document.getElementById('pi-blog-html').style.display=document.getElementById('pi-blog-html').style.display==='none'?'block':'none';" style="color:#6366f1;text-decoration:none;">View raw HTML ⇅</a>
