@@ -126,6 +126,37 @@ switch ($action) {
         if (!$img) pia_respond(['error' => 'Image generation failed — check ' . $provider . ' credentials in Settings.'], 500);
         pia_respond(['success' => true, 'url' => $img['url'], 'provider' => $img['provider']]);
 
+    case 'regenerate_schema':
+        // Force a fresh schema rebuild from current post fields. Useful when the
+        // user changes title/desc elsewhere or just wants to be sure the visible
+        // JSON-LD reflects the latest state.
+        $post_id = (int)($input['post_id'] ?? 0);
+        if (!$post_id) pia_respond(['error' => 'post_id required'], 400);
+        $stmt = $db->prepare("SELECT site_id FROM posts WHERE id = ?");
+        $stmt->execute([$post_id]);
+        $row = $stmt->fetch();
+        if (!$row) pia_respond(['error' => 'Post not found'], 404);
+        if (!auth_can_access_site($db, (int)$row['site_id'])) pia_respond(['error' => 'Access denied'], 403);
+
+        require_once __DIR__ . '/../../includes/content_artifacts.php';
+        $stmt = $db->prepare("SELECT variant_content FROM post_channels WHERE post_id = ? AND channel = 'schema' LIMIT 1");
+        $stmt->execute([$post_id]);
+        $old_schema = json_decode((string)$stmt->fetchColumn(), true) ?: [];
+        $faqs = [];
+        foreach ($old_schema as $block) {
+            if (($block['@type'] ?? '') === 'FAQPage' && !empty($block['mainEntity'])) {
+                foreach ($block['mainEntity'] as $qa) {
+                    $q = trim((string)($qa['name'] ?? ''));
+                    $a = trim((string)($qa['acceptedAnswer']['text'] ?? ''));
+                    if ($q !== '' && $a !== '') $faqs[] = ['q' => $q, 'a' => $a];
+                }
+            }
+        }
+        $bundle = content_artifacts_compose_schema($db, $post_id, $faqs);
+        $db->prepare("UPDATE post_channels SET variant_content = ?, updated_at = NOW() WHERE post_id = ? AND channel = 'schema'")
+           ->execute([json_encode($bundle, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE | JSON_PRETTY_PRINT), $post_id]);
+        pia_respond(['success' => true, 'schema' => $bundle, 'blocks' => count($bundle)]);
+
     case 'update_post_fields':
         // Inline-edit save for title, seo_title, seo_description, body. Only the
         // fields present in the request are updated. Used by the readonly-flip

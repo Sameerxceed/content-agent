@@ -398,10 +398,13 @@ if ($is_published) { $lock_label = 'Published'; $lock_fg = '#166534'; $lock_bg =
                                 : $content;
                             $blocks  = is_array($decoded) ? count($decoded) : 0;
                         ?>
-                        <div style="font-size:11px;color:#94a3b8;margin-bottom:8px;">
-                            <?= $blocks ?> JSON-LD block<?= $blocks === 1 ? '' : 's' ?> · embedded as <code>&lt;script type="application/ld+json"&gt;</code> in the published post
+                        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;gap:8px;">
+                            <div style="font-size:11px;color:#94a3b8;">
+                                <span data-schema-blocks><?= $blocks ?></span> JSON-LD block<?= $blocks === 1 ? '' : 's' ?> · embedded as <code>&lt;script type="application/ld+json"&gt;</code> in the published post
+                            </div>
+                            <button class="pi-btn-outline" onclick="regenerateSchema(this)" style="font-size:11px;padding:4px 10px;">↻ Refresh from current post</button>
                         </div>
-                        <textarea class="field large" readonly style="font-family:ui-monospace,monospace;font-size:11px;"><?= e($pretty) ?></textarea>
+                        <textarea class="field large pi-schema-textarea" readonly style="font-family:ui-monospace,monospace;font-size:11px;"><?= e($pretty) ?></textarea>
                     <?php elseif ($ch === 'newsletter'): ?>
                         <?php if (!empty($meta['subject'])): ?>
                             <h3>Subject line</h3>
@@ -606,7 +609,7 @@ document.querySelectorAll('.pi-editable').forEach(input => {
             // the visible JSON-LD textarea so the user sees the new structured data
             // (URL, headline, breadcrumbs, etc.) live.
             if (r.schema) {
-                const schemaTextarea = document.querySelector('[data-tab-content="schema"] textarea');
+                const schemaTextarea = document.querySelector('.pi-schema-textarea');
                 if (schemaTextarea) schemaTextarea.value = JSON.stringify(r.schema, null, 2);
             }
             setTimeout(() => piHintFor(field, ''), 1500);
@@ -615,6 +618,24 @@ document.querySelectorAll('.pi-editable').forEach(input => {
         }
     });
 });
+
+async function regenerateSchema(btn) {
+    if (!POST_ID) { alert('No post yet.'); return; }
+    const orig = btn.innerHTML;
+    btn.disabled = true; btn.innerHTML = 'Refreshing…';
+    const r = await callAction('regenerate_schema', {post_id: POST_ID});
+    if (r.success && r.schema) {
+        const ta = document.querySelector('.pi-schema-textarea');
+        if (ta) ta.value = JSON.stringify(r.schema, null, 2);
+        const cnt = document.querySelector('[data-schema-blocks]');
+        if (cnt) cnt.textContent = r.blocks;
+        btn.innerHTML = '<span style="color:#059669;">✓ refreshed</span>';
+        setTimeout(() => { btn.innerHTML = orig; btn.disabled = false; }, 1500);
+    } else {
+        btn.innerHTML = '<span style="color:#dc2626;">' + (r.error || 'failed') + '</span>';
+        setTimeout(() => { btn.innerHTML = orig; btn.disabled = false; }, 2500);
+    }
+}
 
 async function approveItem(itemId) {
     if (!confirm('Approve this item and schedule it for publication?')) return;
