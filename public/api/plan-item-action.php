@@ -150,6 +150,15 @@ switch ($action) {
         $vals[] = $post_id;
         $sql = "UPDATE posts SET " . implode(', ', $set) . ", updated_at = NOW() WHERE id = ?";
         $db->prepare($sql)->execute($vals);
+
+        // If the caller supplies item_id and is updating the title, keep the
+        // plan item's proposed_title in sync so the page H1 + plan listings
+        // reflect the user's edit on next load.
+        if (!empty($input['item_id']) && array_key_exists('title', $input) && $item) {
+            $db->prepare("UPDATE content_plan_items SET proposed_title = ? WHERE id = ?")
+               ->execute([(string)$input['title'], (int)$item['id']]);
+        }
+
         pia_respond(['success' => true, 'updated' => array_keys(array_intersect_key($input, array_flip($allowed)))]);
 
     default:

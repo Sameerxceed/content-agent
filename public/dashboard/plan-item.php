@@ -217,7 +217,7 @@ if ($is_published) { $lock_label = 'Published'; $lock_fg = '#166534'; $lock_bg =
         <div class="pi-header">
             <div class="top">
                 <div style="flex:1;min-width:280px;">
-                    <h1><?= e($item['proposed_title'] ?? '(untitled)') ?></h1>
+                    <h1 id="pi-page-title"><?= e($item['post_title'] ?: ($item['proposed_title'] ?? '(untitled)')) ?></h1>
                     <div class="meta">
                         <span class="pi-badge" style="background:<?= $lock_bg ?>;color:<?= $lock_fg ?>;"><?= $lock_label ?></span>
                         <span>📅 <strong><?= e(date('D, d M Y', strtotime($item['target_publish_date']))) ?></strong></span>
@@ -577,6 +577,7 @@ async function callAction(action, body) {
 // field's original value and only fire an UPDATE when it actually changed —
 // keeps the network quiet and won't bump updated_at on accidental focus shifts.
 const POST_ID = <?= (int)$item['post_id_loaded'] ?>;
+const ITEM_ID = <?= (int)$item_id ?>;
 function piHintFor(field, html) {
     const el = document.querySelector('.pi-save-hint[data-for="' + field + '"]');
     if (el) el.innerHTML = html;
@@ -588,10 +589,19 @@ document.querySelectorAll('.pi-editable').forEach(input => {
         if (input.value === input.dataset.original) return;
         if (!POST_ID) { piHintFor(field, '<span style="color:#dc2626;">no post yet</span>'); return; }
         piHintFor(field, 'saving…');
-        const r = await callAction('update_post_fields', {post_id: POST_ID, [field]: input.value});
+        const body = {post_id: POST_ID, [field]: input.value};
+        // When the user edits the post title, also push it back to the plan
+        // item's proposed_title so the page H1 + plan listings stay in sync.
+        if (field === 'title') body.item_id = ITEM_ID;
+        const r = await callAction('update_post_fields', body);
         if (r.success) {
             input.dataset.original = input.value;
             piHintFor(field, '<span style="color:#059669;">✓ saved</span>');
+            if (field === 'title') {
+                const h1 = document.getElementById('pi-page-title');
+                if (h1) h1.textContent = input.value;
+                document.title = input.value + ' — <?= e($site['name']) ?>';
+            }
             setTimeout(() => piHintFor(field, ''), 1500);
         } else {
             piHintFor(field, '<span style="color:#dc2626;">' + (r.error || 'save failed') + '</span>');
