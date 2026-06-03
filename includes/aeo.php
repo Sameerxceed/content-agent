@@ -836,7 +836,9 @@ function aeo_generate_winning_brief(PDO $db, int $query_id): array
         ? "\n### Currently cited domains (in citation count order):\n- " . implode("\n- ", $top_competitors) . "\n"
         : '';
 
+    $today = date('j F Y');
     $system = "You are a content strategist whose ONE job is to design a blog post that would win a specific AI-search query for {$q['site_name']} ({$q['site_domain']}).\n\n"
+        . "Today's date is {$today}. When the title or hook mentions a year, use the CURRENT year — stale years instantly tank credibility for AI engines and buyers.\n\n"
         . "AI search engines (Claude, ChatGPT, Gemini, Perplexity) cite pages that are:\n"
         . "- Direct and specific to the question (lead with the answer, no preamble)\n"
         . "- Rich in concrete data (numbers, ranges, year-stamped, named providers)\n"

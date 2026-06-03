@@ -248,6 +248,7 @@ function content_artifacts_generate_full_package(PDO $db, int $item_id, ?array $
     $variants_block = empty($variants_needed) ? '' : ",\n" . implode(",\n", $variants_needed);
 
     $sys = "You are the content writer for " . ($profile['name'] ?? 'this business') . ".\n"
+         . "Today's date is " . date('j F Y') . ". When you mention a year (e.g. for 'best X in 2025' style titles, recency cues, or examples), use the CURRENT year or the relevant fiscal year — never an old year. Stale year references are an instant credibility hit.\n"
          . "Produce a complete multi-artifact content package for ONE blog post in a topic cluster.\n\n"
          . "OUTPUT — strict JSON with these top-level keys:\n"
          . "{\n"

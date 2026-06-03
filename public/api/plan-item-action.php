@@ -126,6 +126,32 @@ switch ($action) {
         if (!$img) pia_respond(['error' => 'Image generation failed — check ' . $provider . ' credentials in Settings.'], 500);
         pia_respond(['success' => true, 'url' => $img['url'], 'provider' => $img['provider']]);
 
+    case 'update_post_fields':
+        // Inline-edit save for title, seo_title, seo_description, body. Only the
+        // fields present in the request are updated. Used by the readonly-flip
+        // editable fields on plan-item.php.
+        $post_id = (int)($input['post_id'] ?? 0);
+        if (!$post_id) pia_respond(['error' => 'post_id required'], 400);
+        $stmt = $db->prepare("SELECT site_id FROM posts WHERE id = ?");
+        $stmt->execute([$post_id]);
+        $row = $stmt->fetch();
+        if (!$row) pia_respond(['error' => 'Post not found'], 404);
+        if (!auth_can_access_site($db, (int)$row['site_id'])) pia_respond(['error' => 'Access denied'], 403);
+
+        $allowed = ['title', 'seo_title', 'seo_description', 'body'];
+        $set = []; $vals = [];
+        foreach ($allowed as $f) {
+            if (array_key_exists($f, $input)) {
+                $set[] = "`{$f}` = ?";
+                $vals[] = (string)$input[$f];
+            }
+        }
+        if (empty($set)) pia_respond(['error' => 'No editable fields supplied'], 400);
+        $vals[] = $post_id;
+        $sql = "UPDATE posts SET " . implode(', ', $set) . ", updated_at = NOW() WHERE id = ?";
+        $db->prepare($sql)->execute($vals);
+        pia_respond(['success' => true, 'updated' => array_keys(array_intersect_key($input, array_flip($allowed)))]);
+
     default:
         pia_respond(['error' => 'Unknown action: ' . $action], 400);
 }

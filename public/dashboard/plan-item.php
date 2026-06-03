@@ -337,16 +337,16 @@ if ($is_published) { $lock_label = 'Published'; $lock_fg = '#166534'; $lock_bg =
                 <div class="pi-tab-content tab-blog" data-tab-content="blog">
                     <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px 12px;align-items:start;">
                         <div>
-                            <h3>Title</h3>
-                            <input class="field" value="<?= e($item['post_title'] ?? '') ?>" readonly>
+                            <h3>Title <span class="pi-save-hint" data-for="title" style="font-size:10px;font-weight:400;color:#94a3b8;margin-left:6px;"></span></h3>
+                            <input class="field pi-editable" data-field="title" value="<?= e($item['post_title'] ?? '') ?>" placeholder="Post title">
                         </div>
                         <div>
-                            <h3>SEO title</h3>
-                            <input class="field" value="<?= e($item['post_seo_title'] ?? '') ?>" readonly>
+                            <h3>SEO title <span class="pi-save-hint" data-for="seo_title" style="font-size:10px;font-weight:400;color:#94a3b8;margin-left:6px;"></span></h3>
+                            <input class="field pi-editable" data-field="seo_title" value="<?= e($item['post_seo_title'] ?? '') ?>" placeholder="60 chars max">
                         </div>
                     </div>
-                    <h3>SEO description</h3>
-                    <input class="field" value="<?= e($item['post_seo_desc'] ?? '') ?>" readonly>
+                    <h3>SEO description <span class="pi-save-hint" data-for="seo_description" style="font-size:10px;font-weight:400;color:#94a3b8;margin-left:6px;"></span></h3>
+                    <input class="field pi-editable" data-field="seo_description" value="<?= e($item['post_seo_desc'] ?? '') ?>" placeholder="160 chars max">
                     <h3>Body preview</h3>
                     <div class="pi-blog-preview">
                         <?= $item['post_body'] ?? '' ?>
@@ -564,6 +564,32 @@ async function callAction(action, body) {
     });
     return await res.json();
 }
+
+// Inline save: save-on-blur for the readonly-flip text fields. We track each
+// field's original value and only fire an UPDATE when it actually changed —
+// keeps the network quiet and won't bump updated_at on accidental focus shifts.
+const POST_ID = <?= (int)$item['post_id_loaded'] ?>;
+function piHintFor(field, html) {
+    const el = document.querySelector('.pi-save-hint[data-for="' + field + '"]');
+    if (el) el.innerHTML = html;
+}
+document.querySelectorAll('.pi-editable').forEach(input => {
+    input.dataset.original = input.value;
+    input.addEventListener('blur', async () => {
+        const field = input.dataset.field;
+        if (input.value === input.dataset.original) return;
+        if (!POST_ID) { piHintFor(field, '<span style="color:#dc2626;">no post yet</span>'); return; }
+        piHintFor(field, 'saving…');
+        const r = await callAction('update_post_fields', {post_id: POST_ID, [field]: input.value});
+        if (r.success) {
+            input.dataset.original = input.value;
+            piHintFor(field, '<span style="color:#059669;">✓ saved</span>');
+            setTimeout(() => piHintFor(field, ''), 1500);
+        } else {
+            piHintFor(field, '<span style="color:#dc2626;">' + (r.error || 'save failed') + '</span>');
+        }
+    });
+});
 
 async function approveItem(itemId) {
     if (!confirm('Approve this item and schedule it for publication?')) return;
