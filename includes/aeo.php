@@ -908,7 +908,7 @@ function aeo_add_brief_to_plan(PDO $db, int $query_id, array $brief): array
     $site_id = (int)$q['site_id'];
 
     // Active plan
-    $stmt = $db->prepare('SELECT id FROM content_plans WHERE site_id = ? AND status = "active" ORDER BY created_at DESC LIMIT 1');
+    $stmt = $db->prepare('SELECT id FROM content_plans WHERE site_id = ? AND status = "active" ORDER BY generated_at DESC LIMIT 1');
     $stmt->execute([$site_id]);
     $plan_id = (int)($stmt->fetchColumn() ?: 0);
     if (!$plan_id) {
