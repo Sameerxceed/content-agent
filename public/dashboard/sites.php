@@ -140,6 +140,24 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $id,
         ]);
 
+        // Per-channel publish offsets (set from Setup → Publishing).
+        // Only persist when at least one channel_offset_* field is in the POST,
+        // so unrelated form submits don't clobber stored offsets.
+        $offset_keys = ['cms', 'linkedin', 'twitter', 'newsletter', 'schema', 'llms'];
+        $has_offsets = false;
+        $offsets = [];
+        foreach ($offset_keys as $k) {
+            $field = 'channel_offset_' . $k;
+            if (isset($_POST[$field]) && $_POST[$field] !== '') {
+                $has_offsets = true;
+                $offsets[$k] = max(-7, min(14, (int)$_POST[$field]));
+            }
+        }
+        if ($has_offsets) {
+            $db->prepare('UPDATE sites SET channel_offsets = ? WHERE id = ?')
+               ->execute([json_encode($offsets), $id]);
+        }
+
         $_SESSION['flash_success'] = 'Site settings updated.';
         redirect('/dashboard/site.php?id=' . $id);
     }

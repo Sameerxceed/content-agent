@@ -388,6 +388,36 @@ include __DIR__ . '/_site_stepper.php';
             </div>
 
             <div class="setup-section">
+                <h3>Channel publish schedule</h3>
+                <p class="desc">Stagger each channel by days from the post's target date. Default plays the standard B2B playbook: blog leads, LinkedIn the next day, newsletter mid-week. Set to 0 to fire all together.</p>
+                <?php
+                    require_once __DIR__ . '/../../includes/channel_schedule.php';
+                    $current_offsets = channel_schedule_get($site);
+                    $offset_channels = [
+                        'cms'        => 'CMS (blog article)',
+                        'linkedin'   => 'LinkedIn',
+                        'newsletter' => 'Newsletter',
+                        'twitter'    => 'Twitter / X',
+                        'schema'     => 'Schema (structured data)',
+                        'llms'       => 'llms.txt',
+                    ];
+                ?>
+                <div class="setup-grid-3">
+                    <?php foreach ($offset_channels as $ch => $label): ?>
+                    <div class="form-group">
+                        <label style="font-size:12px;"><?= e($label) ?></label>
+                        <div style="display:flex;align-items:center;gap:6px;">
+                            <input type="number" name="channel_offset_<?= e($ch) ?>" class="form-control"
+                                   value="<?= (int)($current_offsets[$ch] ?? 0) ?>" min="-7" max="14" step="1"
+                                   style="width:80px;">
+                            <span style="font-size:11px;color:#64748b;">days after publish</span>
+                        </div>
+                    </div>
+                    <?php endforeach; ?>
+                </div>
+            </div>
+
+            <div class="setup-section">
                 <h3>Weekly digest recipient</h3>
                 <p class="desc">Optional. When set, weekly digest emails go here instead of the account login email.</p>
                 <div class="form-group">

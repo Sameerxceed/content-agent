@@ -146,7 +146,7 @@ foreach ($items as $it) {
         // ── Create post_channels rows for applicable channels ────
         // Reuse the channels we resolved before the Claude call so the
         // queued rows match exactly what we asked Claude to generate.
-        _autopilot_queue_channels($db, $post_id, $channels, $it['target_publish_date'], $pkg);
+        _autopilot_queue_channels($db, $post_id, $channels, (string)$it['target_publish_date'], $pkg, (int)$it['site_id']);
 
         // ── Link item → post and lock to 'drafted' ──────────────
         $db->prepare("UPDATE content_plan_items SET post_id=?, lock_state='drafted', drafted_at=NOW() WHERE id=?")
@@ -221,11 +221,19 @@ function _autopilot_post_type_from_item_type(string $content_type): string
     return in_array($content_type, $allowed, true) ? $content_type : 'blog';
 }
 
-function _autopilot_queue_channels(PDO $db, int $post_id, array $channels, string $scheduled_for, array $pkg): void
+function _autopilot_queue_channels(PDO $db, int $post_id, array $channels, string $base_publish_date, array $pkg, int $site_id): void
 {
     // For each channel in the item's applicable list, create a post_channels
-    // row with variant_content pre-populated. Existing cron-publish.php will
-    // pick these up on scheduled_for and distribute.
+    // row with variant_content pre-populated. Each channel gets its own
+    // scheduled_for = base_publish_date + per-channel offset (so blog can lead
+    // and LinkedIn/newsletter follow over the next few days). cron-publish.php
+    // already fires by scheduled_for per channel.
+    require_once __DIR__ . '/../includes/channel_schedule.php';
+    $stmt = $db->prepare("SELECT channel_offsets FROM sites WHERE id = ?");
+    $stmt->execute([$site_id]);
+    $site_row = $stmt->fetch() ?: [];
+    $offsets = channel_schedule_get($site_row);
+
     $insert = $db->prepare("INSERT INTO post_channels
         (post_id, channel, status, scheduled_for, variant_content, variant_meta, created_at)
         VALUES (?, ?, 'draft', ?, ?, ?, NOW())
@@ -238,6 +246,7 @@ function _autopilot_queue_channels(PDO $db, int $post_id, array $channels, strin
     foreach ($channels as $ch) {
         [$content, $meta] = _autopilot_variant_for_channel($ch, $pkg);
         if ($content === null) continue;
+        $scheduled_for = channel_schedule_for($base_publish_date, $ch, $offsets);
         try {
             $insert->execute([$post_id, $ch, $scheduled_for, $content, $meta]);
         } catch (Throwable $e) {

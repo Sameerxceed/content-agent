@@ -76,10 +76,16 @@ if (empty($channels_for_item)) {
 }
 $variants = [];
 if ($item['post_id_loaded']) {
-    $ch = $db->prepare("SELECT channel, status, variant_content, variant_meta FROM post_channels WHERE post_id = ?");
+    $ch = $db->prepare("SELECT channel, status, variant_content, variant_meta, scheduled_for FROM post_channels WHERE post_id = ?");
     $ch->execute([(int)$item['post_id_loaded']]);
     foreach ($ch->fetchAll() as $row) $variants[$row['channel']] = $row;
 }
+
+// Resolve the schedule each channel SHOULD use given the site's offsets — used
+// both to display a forecast for not-yet-drafted channels AND to highlight
+// drift if the actual stored scheduled_for diverges.
+require_once __DIR__ . '/../../includes/channel_schedule.php';
+$site_offsets = channel_schedule_get($site);
 
 // FAQs aren't stored as their own channel — they live inside the schema JSON-LD
 // bundle (as FAQPage.mainEntity) AND inside the blog body_html (Claude embeds
@@ -523,14 +529,24 @@ if ($is_published) { $lock_label = 'Published'; $lock_fg = '#166534'; $lock_bg =
                         $v = $variants[$ch] ?? null;
                         $st = $v ? $v['status'] : 'pending';
                         $color = match ($st) { 'queued' => '#1e40af', 'published' => '#166534', 'failed' => '#dc2626', default => '#94a3b8' };
+                        // Actual scheduled date if drafted; otherwise the forecast
+                        // based on site offsets + item target date.
+                        if (!empty($v['scheduled_for'])) {
+                            $sched_str = date('d M', strtotime((string)$v['scheduled_for']));
+                        } else {
+                            $sched_str = date('d M', strtotime(channel_schedule_for((string)$item['target_publish_date'], $ch, $site_offsets)));
+                        }
                     ?>
                         <li>
                             <span style="display:inline-block;width:7px;height:7px;border-radius:50%;background:<?= $color ?>;margin-right:6px;"></span>
                             <strong><?= e(ucfirst($ch)) ?></strong>
-                            <span style="font-size:10px;color:#94a3b8;float:right;"><?= e($st) ?></span>
+                            <span style="font-size:10px;color:#94a3b8;float:right;"><?= e($sched_str) ?> · <?= e($st) ?></span>
                         </li>
                     <?php endforeach; ?>
                 </ul>
+                <div style="font-size:10px;color:#94a3b8;margin-top:8px;padding-top:8px;border-top:1px solid var(--border);">
+                    Stagger configured in <a href="<?= url('/dashboard/setup.php?site=' . $site_id . '&tab=publishing') ?>" style="color:var(--accent);">Setup → Publishing</a>
+                </div>
             <?php endif; ?>
         </div>
 
