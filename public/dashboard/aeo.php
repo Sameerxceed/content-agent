@@ -162,6 +162,11 @@ ob_start();
         <?php else: ?>
             <?php foreach ($queries as $q):
                 $per_eng = aeo_latest_per_engine($db, (int)$q['id']);
+                $win = aeo_winning_post_state($db, (int)$q['id']);
+                // "Uncited" = checked, and NO engine reported our_cited=1
+                $any_cited = false;
+                foreach ($per_eng as $r) { if (!empty($r['cited'])) { $any_cited = true; break; } }
+                $is_uncited = !empty($per_eng) && !$any_cited;
             ?>
             <div class="aeo-q" data-id="<?= (int)$q['id'] ?>">
                 <div class="aeo-q-head">
@@ -174,9 +179,15 @@ ob_start();
                             <?php else: ?>
                                 · <span style="color:var(--warning);">not checked yet</span>
                             <?php endif; ?>
+                            <?php if ($win): ?>
+                                · <a href="<?= url('/dashboard/plan-item.php?id=' . $win['item_id']) ?>" style="color:var(--accent); font-weight:600;">winning post queued <?= e($win['item_status']) ?> →</a>
+                            <?php endif; ?>
                         </div>
                     </div>
                     <div class="aeo-q-actions">
+                        <?php if ($is_uncited && !$win): ?>
+                        <button class="btn" style="background:#fbbf24; color:#1e293b; font-weight:600;" onclick="winQuery(<?= (int)$q['id'] ?>, this)">Win this query →</button>
+                        <?php endif; ?>
                         <?php if ($per_eng): ?><button class="btn btn-outline" onclick="toggleDetails(this)">Details</button><?php endif; ?>
                         <button class="btn btn-outline" onclick="checkQuery(<?= (int)$q['id'] ?>, this)" <?= empty($aeo_engines) ? 'disabled' : '' ?>>Check now</button>
                         <button class="btn btn-outline" style="color:var(--danger);" onclick="deleteQuery(<?= (int)$q['id'] ?>, this)">×</button>
@@ -317,6 +328,21 @@ ob_start();
     </div>
 </div>
 
+<!-- Winning brief modal -->
+<div id="winModal" style="display:none; position:fixed; inset:0; background:rgba(15,23,42,0.55); z-index:200; align-items:flex-start; justify-content:center; padding:30px 16px; overflow-y:auto;">
+    <div style="background:#fff; border-radius:8px; max-width:720px; width:100%; padding:18px 22px;">
+        <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:14px;">
+            <div style="font-size:16px; font-weight:600; color:var(--primary);">Win this query — content brief</div>
+            <button class="btn btn-outline btn-sm" onclick="closeWin()">×</button>
+        </div>
+        <div id="winBody" style="font-size:13px; color:var(--text);">Designing a post that beats the current AI citations…</div>
+        <div id="winFooter" style="display:none; justify-content:flex-end; margin-top:14px; gap:8px;">
+            <button class="btn btn-outline btn-sm" onclick="closeWin()">Cancel</button>
+            <button class="btn btn-primary btn-sm" onclick="addBriefToPlan(this)">Add to Content Plan</button>
+        </div>
+    </div>
+</div>
+
 <script>
 const SITE_ID = <?= $site_id ?>;
 const AEO_API = '<?= url('/api/aeo-action.php') ?>';
@@ -415,6 +441,79 @@ async function addSelected(btn) {
 }
 
 function closeSuggest() { document.getElementById('suggestModal').style.display = 'none'; }
+
+let _winBrief = null;
+let _winQueryId = null;
+async function winQuery(qid, btn) {
+    btn.disabled = true; const orig = btn.textContent; btn.textContent = 'Designing…';
+    _winQueryId = qid; _winBrief = null;
+    document.getElementById('winModal').style.display = 'flex';
+    document.getElementById('winBody').innerHTML = 'Designing a post that beats the current AI citations… (10-30s)';
+    document.getElementById('winFooter').style.display = 'none';
+    try {
+        const r = await api({action:'generate_winning_brief', query_id: qid});
+        if (!r.success || !r.brief) {
+            document.getElementById('winBody').innerHTML = '<div style="color:#dc2626;">' + escapeHtml(r.error || 'Could not generate brief') + '</div>';
+            btn.disabled = false; btn.textContent = orig;
+            return;
+        }
+        _winBrief = r.brief;
+        document.getElementById('winBody').innerHTML = renderBrief(r.brief, r.top_competitors || [], r.engines_used || []);
+        document.getElementById('winFooter').style.display = 'flex';
+        btn.disabled = false; btn.textContent = orig;
+    } catch(e) {
+        document.getElementById('winBody').innerHTML = '<div style="color:#dc2626;">' + escapeHtml(e.message) + '</div>';
+        btn.disabled = false; btn.textContent = orig;
+    }
+}
+
+function renderBrief(b, competitors, engines) {
+    const sections = (b.must_cover_sections || []).map(s => '<li>' + escapeHtml(s) + '</li>').join('');
+    const faqs = (b.faq_questions || []).map(q => '<li>' + escapeHtml(q) + '</li>').join('');
+    const secKws = (b.secondary_keywords || []).map(k => '<span class="aeo-cite">' + escapeHtml(k) + '</span>').join(' ');
+    const comp = competitors.length ? '<div style="font-size:11px; color:var(--text-light); margin-bottom:8px;">Currently beats: ' + competitors.slice(0,6).map(c => escapeHtml(c)).join(' · ') + '</div>' : '';
+    return `
+        <div style="font-size:11px; color:var(--text-light); text-transform:uppercase; letter-spacing:0.4px; margin-bottom:4px;">Title</div>
+        <div style="font-size:16px; font-weight:600; color:var(--text); margin-bottom:10px;">${escapeHtml(b.title || '')}</div>
+        ${comp}
+        <div style="font-size:11px; color:var(--text-light); text-transform:uppercase; letter-spacing:0.4px; margin-top:10px;">Winning hook (post opens with)</div>
+        <div style="font-size:13px; color:var(--text); font-style:italic; margin:4px 0 12px; padding:8px 10px; background:#f8fafc; border-left:3px solid var(--accent);">"${escapeHtml(b.winning_hook || '')}"</div>
+        <div style="font-size:11px; color:var(--text-light); text-transform:uppercase; letter-spacing:0.4px;">Angle</div>
+        <div style="font-size:13px; color:var(--text); margin:4px 0 12px;">${escapeHtml(b.angle || '')}</div>
+        <div style="font-size:11px; color:var(--text-light); text-transform:uppercase; letter-spacing:0.4px;">Why competitors lose</div>
+        <div style="font-size:13px; color:var(--text); margin:4px 0 12px;">${escapeHtml(b.competitor_gap || '')}</div>
+        <div style="display:grid; grid-template-columns:1fr 1fr; gap:14px; margin-top:8px;">
+            <div>
+                <div style="font-size:11px; color:var(--text-light); text-transform:uppercase; letter-spacing:0.4px; margin-bottom:4px;">Sections (${(b.must_cover_sections||[]).length})</div>
+                <ol style="font-size:12px; padding-left:18px; margin:0;">${sections}</ol>
+            </div>
+            <div>
+                <div style="font-size:11px; color:var(--text-light); text-transform:uppercase; letter-spacing:0.4px; margin-bottom:4px;">FAQ (${(b.faq_questions||[]).length})</div>
+                <ul style="font-size:12px; padding-left:18px; margin:0;">${faqs}</ul>
+            </div>
+        </div>
+        <div style="margin-top:12px; font-size:11px; color:var(--text-light);">
+            Target keyword: <strong style="color:#0f172a;">${escapeHtml(b.target_keyword || '')}</strong>
+            · ~${(b.recommended_word_count || 1500)} words
+            · ${secKws}
+        </div>
+    `;
+}
+
+async function addBriefToPlan(btn) {
+    if (!_winBrief || !_winQueryId) return;
+    btn.disabled = true; btn.textContent = 'Adding…';
+    try {
+        const r = await api({action:'add_winning_brief_to_plan', query_id: _winQueryId, brief: _winBrief});
+        if (!r.success) {
+            alert(r.error || 'Failed'); btn.disabled = false; btn.textContent = 'Add to Content Plan';
+            return;
+        }
+        window.location.href = '<?= url('/dashboard/plan-item.php?id=') ?>' + r.item_id;
+    } catch(e) { alert(e.message); btn.disabled = false; btn.textContent = 'Add to Content Plan'; }
+}
+
+function closeWin() { document.getElementById('winModal').style.display = 'none'; }
 
 function escapeHtml(s) {
     return String(s||'').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'})[c]);

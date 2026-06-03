@@ -785,6 +785,220 @@ function aeo_suggest_queries(PDO $db, array $site): array
 }
 
 /**
+ * Generate a content brief designed to WIN a specific AEO query.
+ *
+ * Loads the query + latest per-engine responses + cited competitor domains, then
+ * asks Claude to design a post that would be cited by AI engines for this query.
+ * Returns a structured brief the user can review and accept into the Content Plan.
+ *
+ * Brief shape:
+ *   {
+ *     title, slug, angle, target_keyword, secondary_keywords[],
+ *     recommended_word_count, must_cover_sections[], faq_questions[],
+ *     competitor_gap, winning_hook, schema_hints[]
+ *   }
+ */
+function aeo_generate_winning_brief(PDO $db, int $query_id): array
+{
+    $stmt = $db->prepare('SELECT q.*, s.id AS sid, s.name AS site_name, s.domain AS site_domain
+                          FROM aeo_queries q JOIN sites s ON q.site_id = s.id
+                          WHERE q.id = ?');
+    $stmt->execute([$query_id]);
+    $q = $stmt->fetch();
+    if (!$q) return ['success' => false, 'error' => 'Query not found'];
+
+    $per_engine = aeo_latest_per_engine($db, $query_id);
+
+    // Aggregate competitor evidence: domains cited + a sample of each engine's response
+    $competitor_domains = [];
+    $engine_responses = [];
+    foreach ($per_engine as $eng => $r) {
+        if (!empty($r['competitors'])) {
+            foreach ($r['competitors'] as $d) $competitor_domains[$d] = ($competitor_domains[$d] ?? 0) + 1;
+        }
+        if (!empty($r['response_text'])) {
+            $engine_responses[$eng] = mb_substr($r['response_text'], 0, 1200);
+        }
+    }
+    arsort($competitor_domains);
+    $top_competitors = array_slice(array_keys($competitor_domains), 0, 10);
+
+    // Business profile context so the brief sounds like the customer, not generic
+    require_once __DIR__ . '/business_profile.php';
+    $profile = profile_get($db, (int)$q['sid']);
+    $profile_block = $profile ? profile_prompt_block($profile) . "\n\n" : '';
+
+    $engines_text = '';
+    foreach ($engine_responses as $eng => $resp) {
+        $engines_text .= "\n### " . aeo_engine_label($eng) . " currently answers:\n" . $resp . "\n";
+    }
+    $competitors_text = $top_competitors
+        ? "\n### Currently cited domains (in citation count order):\n- " . implode("\n- ", $top_competitors) . "\n"
+        : '';
+
+    $system = "You are a content strategist whose ONE job is to design a blog post that would win a specific AI-search query for {$q['site_name']} ({$q['site_domain']}).\n\n"
+        . "AI search engines (Claude, ChatGPT, Gemini, Perplexity) cite pages that are:\n"
+        . "- Direct and specific to the question (lead with the answer, no preamble)\n"
+        . "- Rich in concrete data (numbers, ranges, year-stamped, named providers)\n"
+        . "- Clearly structured (H2/H3 hierarchy, bullet/table lists, FAQ section)\n"
+        . "- Genuinely useful (not thin SEO content)\n\n"
+        . "You will be told the exact query, what competitors currently rank, and an excerpt of each engine's current answer. Design a post that beats them.\n\n"
+        . "OUTPUT — strict JSON only:\n"
+        . "{\n"
+        . "  \"title\": \"60 chars max, direct and specific to the query\",\n"
+        . "  \"slug\": \"url-safe-lowercase-hyphenated\",\n"
+        . "  \"angle\": \"1-2 sentence positioning — what makes this post quotable that the competitors miss\",\n"
+        . "  \"target_keyword\": \"the primary phrase the post targets\",\n"
+        . "  \"secondary_keywords\": [\"phrase1\", \"phrase2\", ...],\n"
+        . "  \"recommended_word_count\": 1800,\n"
+        . "  \"must_cover_sections\": [\"H2 heading 1\", \"H2 heading 2\", ...],\n"
+        . "  \"faq_questions\": [\"Q1?\", \"Q2?\", ... 6-10 questions real buyers would ask\"],\n"
+        . "  \"competitor_gap\": \"1-2 sentences on what the cited competitors miss that this post will cover\",\n"
+        . "  \"winning_hook\": \"the opening sentence — must answer the query directly in the first ~20 words\",\n"
+        . "  \"schema_hints\": [\"FAQPage\", \"HowTo\", \"Article\", ...] /* schema.org types to emit */\n"
+        . "}\n\n"
+        . "Rules:\n"
+        . "- The title and winning_hook must MATCH the buyer's intent literally — if the query is a cost question, the title and hook are about cost.\n"
+        . "- FAQ questions must be ones a real buyer would ask AI next after the main query. Not generic. Not for SEO; for actual usefulness.\n"
+        . "- must_cover_sections: 5-9 H2s. Use specifics like prices, integrations, timelines — not generic platitudes.\n"
+        . "- Calibrate scope and tone to the business profile below. A 15-person Pune consultancy ≠ a Fortune 500.\n"
+        . "- Do NOT plagiarise competitor text — use it only to understand what's missing.";
+
+    $user = $profile_block
+        . "Query the post must win: \"{$q['query_text']}\"\n"
+        . "Category: " . ($q['category'] ?? 'industry') . "\n"
+        . $competitors_text
+        . $engines_text;
+
+    $resp = haiku_chat($system, $user, 2500);
+    if (empty($resp['success'])) {
+        return ['success' => false, 'error' => 'Claude error: ' . ($resp['error'] ?? 'unknown')];
+    }
+
+    $content = trim($resp['content']);
+    $content = preg_replace('/^```(?:json)?\s*|\s*```$/m', '', $content);
+    $brief = json_decode($content, true);
+    if (!is_array($brief) && preg_match('/\{[\s\S]*\}/', $content, $m)) {
+        $brief = json_decode($m[0], true);
+    }
+    if (!is_array($brief) || empty($brief['title'])) {
+        return ['success' => false, 'error' => 'Could not parse Claude output as JSON brief.'];
+    }
+
+    return [
+        'success'         => true,
+        'brief'           => $brief,
+        'top_competitors' => $top_competitors,
+        'engines_used'    => array_keys($per_engine),
+    ];
+}
+
+/**
+ * Take a generated brief + accept it into the Content Plan as an aeo_gap item.
+ * Find-or-creates the keyword and the "AEO Gap Winners" cluster on the active plan.
+ * Returns the new plan_item id.
+ */
+function aeo_add_brief_to_plan(PDO $db, int $query_id, array $brief): array
+{
+    $stmt = $db->prepare('SELECT site_id, query_text FROM aeo_queries WHERE id = ?');
+    $stmt->execute([$query_id]);
+    $q = $stmt->fetch();
+    if (!$q) return ['success' => false, 'error' => 'Query not found'];
+
+    $site_id = (int)$q['site_id'];
+
+    // Active plan
+    $stmt = $db->prepare('SELECT id FROM content_plans WHERE site_id = ? AND status = "active" ORDER BY created_at DESC LIMIT 1');
+    $stmt->execute([$site_id]);
+    $plan_id = (int)($stmt->fetchColumn() ?: 0);
+    if (!$plan_id) {
+        return ['success' => false, 'error' => 'No active content plan for this site. Generate one first from the Plan page.'];
+    }
+
+    // Find-or-create the "AEO Gap Winners" cluster on this plan
+    $cluster_name = 'AEO Gap Winners';
+    $stmt = $db->prepare('SELECT id FROM content_plan_clusters WHERE plan_id = ? AND name = ? LIMIT 1');
+    $stmt->execute([$plan_id, $cluster_name]);
+    $cluster_id = (int)($stmt->fetchColumn() ?: 0);
+    if (!$cluster_id) {
+        $stmt = $db->prepare('SELECT COALESCE(MAX(position), 0) + 1 FROM content_plan_clusters WHERE plan_id = ?');
+        $stmt->execute([$plan_id]);
+        $position = (int)$stmt->fetchColumn();
+        $db->prepare('INSERT INTO content_plan_clusters (plan_id, site_id, position, name, angle)
+                      VALUES (?, ?, ?, ?, ?)')
+           ->execute([$plan_id, $site_id, $position, $cluster_name,
+                      'Posts written specifically to win uncited AI-search queries. Each item targets one tracked AEO query.']);
+        $cluster_id = (int)$db->lastInsertId();
+    }
+
+    // Find-or-create the keyword
+    $kw = trim($brief['target_keyword'] ?? $q['query_text']);
+    $kw = mb_substr($kw, 0, 240);
+    $db->prepare('INSERT INTO keywords (site_id, keyword, priority)
+                  VALUES (?, ?, 70)
+                  ON DUPLICATE KEY UPDATE priority = GREATEST(priority, 70)')
+       ->execute([$site_id, $kw]);
+    $stmt = $db->prepare('SELECT id FROM keywords WHERE site_id = ? AND keyword = ? LIMIT 1');
+    $stmt->execute([$site_id, $kw]);
+    $kw_id = (int)$stmt->fetchColumn();
+
+    // Resolve channels — use whatever the site has configured globally
+    $channels = ['cms', 'schema', 'llms'];
+
+    // Pick a target_publish_date — 2 weeks out from today
+    $publish_date = date('Y-m-d', strtotime('+14 days'));
+    $week_num = (int)date('W');
+
+    // Insert the plan item
+    $stmt = $db->prepare('SELECT COALESCE(MAX(position), 0) + 1 FROM content_plan_items WHERE plan_id = ?');
+    $stmt->execute([$plan_id]);
+    $position = (int)$stmt->fetchColumn();
+
+    $db->prepare('INSERT INTO content_plan_items
+                  (plan_id, cluster_id, site_id, position, target_week, target_publish_date,
+                   role, content_type, bucket, primary_keyword_id, target_aeo_query_id,
+                   proposed_title, proposed_angle, recommended_word_count, channels, lock_state)
+                  VALUES (?, ?, ?, ?, ?, ?, "supporting", "blog", "aeo_gap", ?, ?, ?, ?, ?, ?, "committed")')
+       ->execute([
+           $plan_id, $cluster_id, $site_id, $position, $week_num, $publish_date,
+           $kw_id, $query_id,
+           mb_substr($brief['title'], 0, 500),
+           $brief['angle'] ?? '',
+           (int)($brief['recommended_word_count'] ?? 1500),
+           json_encode($channels),
+       ]);
+    $item_id = (int)$db->lastInsertId();
+
+    return [
+        'success'    => true,
+        'plan_id'    => $plan_id,
+        'cluster_id' => $cluster_id,
+        'item_id'    => $item_id,
+        'item_url'   => '/dashboard/plan-item.php?id=' . $item_id,
+    ];
+}
+
+/**
+ * For a given AEO query, does it already have a winning post queued or published?
+ * Returns null, or { item_id, item_status, post_id, post_status }.
+ */
+function aeo_winning_post_state(PDO $db, int $query_id): ?array
+{
+    $stmt = $db->prepare('SELECT id AS item_id, lock_state, post_id
+                          FROM content_plan_items
+                          WHERE target_aeo_query_id = ?
+                          ORDER BY id DESC LIMIT 1');
+    $stmt->execute([$query_id]);
+    $row = $stmt->fetch();
+    if (!$row) return null;
+    return [
+        'item_id'     => (int)$row['item_id'],
+        'item_status' => $row['lock_state'],
+        'post_id'     => $row['post_id'] ? (int)$row['post_id'] : null,
+    ];
+}
+
+/**
  * Site-wide AEO summary: citation rate, top competitor citers, trend.
  */
 function aeo_site_summary(PDO $db, int $site_id, int $days = 30): array

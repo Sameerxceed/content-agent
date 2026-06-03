@@ -100,6 +100,26 @@ try {
         exit;
     }
 
+    if ($action === 'generate_winning_brief') {
+        $qid = (int)($input['query_id'] ?? 0);
+        $stmt = $db->prepare('SELECT id FROM aeo_queries WHERE id = ? AND site_id = ?');
+        $stmt->execute([$qid, $site_id]);
+        if (!$stmt->fetch()) { http_response_code(404); echo json_encode(['error' => 'Query not found']); exit; }
+        echo json_encode(aeo_generate_winning_brief($db, $qid));
+        exit;
+    }
+
+    if ($action === 'add_winning_brief_to_plan') {
+        $qid = (int)($input['query_id'] ?? 0);
+        $brief = $input['brief'] ?? null;
+        if (!is_array($brief) || empty($brief['title'])) { echo json_encode(['error' => 'brief required']); exit; }
+        $stmt = $db->prepare('SELECT id FROM aeo_queries WHERE id = ? AND site_id = ?');
+        $stmt->execute([$qid, $site_id]);
+        if (!$stmt->fetch()) { http_response_code(404); echo json_encode(['error' => 'Query not found']); exit; }
+        echo json_encode(aeo_add_brief_to_plan($db, $qid, $brief));
+        exit;
+    }
+
     http_response_code(400);
     echo json_encode(['error' => 'Unknown action: ' . $action]);
 } catch (Throwable $e) {
