@@ -433,18 +433,257 @@ function aeo_check_query(PDO $db, int $query_id, ?string $engine = null): array
 }
 
 /**
- * Run a single query against EVERY configured engine. Returns per-engine results.
- * Each engine result is stored as a separate row in aeo_results keyed by (query, engine, date).
+ * Build a raw cURL request spec for one engine. Returns null if engine unsupported
+ * or key missing. Used to fire all engines in parallel via curl_multi.
+ */
+function aeo_build_request(string $engine, string $query): ?array
+{
+    if ($engine === 'claude_web') {
+        $key = config('haiku_api_key'); if (empty($key)) return null;
+        $model = config('haiku_model') ?: 'claude-sonnet-4-6';
+        if (str_contains($model, 'haiku')) $model = 'claude-sonnet-4-6';
+        return [
+            'url' => 'https://api.anthropic.com/v1/messages',
+            'headers' => ['x-api-key: ' . $key, 'anthropic-version: 2023-06-01', 'Content-Type: application/json'],
+            'body' => json_encode([
+                'model' => $model, 'max_tokens' => 2000,
+                'system' => 'You are an AI assistant answering search-style questions. Be concise. Use the web_search tool to look up current information and cite specific sources.',
+                'messages' => [['role' => 'user', 'content' => $query]],
+                'tools' => [['type' => 'web_search_20250305', 'name' => 'web_search', 'max_uses' => 3]],
+            ]),
+        ];
+    }
+    if ($engine === 'openai_web') {
+        $key = config('openai_api_key'); if (empty($key)) return null;
+        return [
+            'url' => 'https://api.openai.com/v1/chat/completions',
+            'headers' => ['Authorization: Bearer ' . $key, 'Content-Type: application/json'],
+            'body' => json_encode([
+                'model' => 'gpt-4o-search-preview',
+                'messages' => [
+                    ['role' => 'system', 'content' => 'Answer concisely. Cite specific sources for any factual claims.'],
+                    ['role' => 'user', 'content' => $query],
+                ],
+                'web_search_options' => new stdClass(),
+            ]),
+        ];
+    }
+    if ($engine === 'gemini_web') {
+        $key = config('gemini_api_key'); if (empty($key)) return null;
+        return [
+            'url' => 'https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=' . urlencode($key),
+            'headers' => ['Content-Type: application/json'],
+            'body' => json_encode([
+                'contents' => [['role' => 'user', 'parts' => [['text' => $query]]]],
+                'tools' => [['google_search' => new stdClass()]],
+                'systemInstruction' => ['parts' => [['text' => 'Answer concisely. Cite specific sources for any factual claims.']]],
+                'generationConfig' => ['temperature' => 0.2, 'maxOutputTokens' => 2000],
+            ]),
+        ];
+    }
+    if ($engine === 'perplexity') {
+        $key = config('perplexity_api_key'); if (empty($key)) return null;
+        return [
+            'url' => 'https://api.perplexity.ai/chat/completions',
+            'headers' => ['Authorization: Bearer ' . $key, 'Content-Type: application/json'],
+            'body' => json_encode([
+                'model' => 'sonar',
+                'messages' => [
+                    ['role' => 'system', 'content' => 'Answer concisely. Cite specific sources for any factual claims.'],
+                    ['role' => 'user', 'content' => $query],
+                ],
+                'return_citations' => true, 'temperature' => 0.2,
+            ]),
+        ];
+    }
+    return null;
+}
+
+/**
+ * Parse a raw HTTP response from one engine into the unified
+ * { success, text, citations[], error? } shape.
+ */
+function aeo_parse_response(string $engine, int $code, string $body): array
+{
+    if ($code < 200 || $code >= 300) {
+        $label = aeo_engine_label($engine);
+        return ['success' => false, 'error' => "{$label} HTTP {$code}: " . substr($body, 0, 250)];
+    }
+    $data = json_decode($body, true);
+    if (!is_array($data)) return ['success' => false, 'error' => 'Unparseable response'];
+
+    $urls = []; $seen = []; $text = '';
+
+    if ($engine === 'claude_web') {
+        foreach ($data['content'] ?? [] as $block) {
+            $t = $block['type'] ?? '';
+            if ($t === 'text') {
+                $text .= $block['text'] ?? '';
+                foreach ($block['citations'] ?? [] as $cite) {
+                    $u = $cite['url'] ?? null;
+                    if ($u && !isset($seen[$u])) { $urls[] = $u; $seen[$u] = true; }
+                }
+            } elseif ($t === 'web_search_tool_result') {
+                foreach ($block['content'] ?? [] as $r) {
+                    $u = $r['url'] ?? null;
+                    if ($u && !isset($seen[$u])) { $urls[] = $u; $seen[$u] = true; }
+                }
+            }
+        }
+    } elseif ($engine === 'openai_web') {
+        $msg  = $data['choices'][0]['message'] ?? [];
+        $text = $msg['content'] ?? '';
+        foreach ($msg['annotations'] ?? [] as $ann) {
+            if (($ann['type'] ?? '') !== 'url_citation') continue;
+            $u = $ann['url_citation']['url'] ?? null;
+            if ($u && !isset($seen[$u])) { $urls[] = $u; $seen[$u] = true; }
+        }
+    } elseif ($engine === 'gemini_web') {
+        $candidate = $data['candidates'][0] ?? [];
+        foreach ($candidate['content']['parts'] ?? [] as $part) $text .= $part['text'] ?? '';
+        foreach ($candidate['groundingMetadata']['groundingChunks'] ?? [] as $chunk) {
+            $u = $chunk['web']['uri'] ?? null;
+            if ($u && !isset($seen[$u])) { $urls[] = $u; $seen[$u] = true; }
+        }
+    } elseif ($engine === 'perplexity') {
+        $text  = $data['choices'][0]['message']['content'] ?? '';
+        $cites = $data['citations'] ?? ($data['choices'][0]['message']['citations'] ?? []);
+        if (!is_array($cites)) $cites = [];
+        foreach ($cites as $c) {
+            if (is_string($c)) $urls[] = $c;
+            elseif (is_array($c) && !empty($c['url'])) $urls[] = $c['url'];
+        }
+    }
+
+    if ($text === '' && empty($urls)) {
+        return ['success' => false, 'error' => aeo_engine_label($engine) . ' returned no text or citations'];
+    }
+    return ['success' => true, 'text' => $text, 'citations' => $urls];
+}
+
+/**
+ * Fire all configured engines IN PARALLEL via curl_multi. Returns engine => response.
+ * Total wall time ≈ slowest engine, not sum — keeps single-query checks under
+ * nginx's 60s proxy timeout.
+ */
+function aeo_query_all_engines_parallel(string $query, int $timeout = 55): array
+{
+    $engines = aeo_available_engines();
+    if (empty($engines)) return [];
+
+    $mh = curl_multi_init();
+    $handles = [];
+    foreach ($engines as $eng) {
+        $req = aeo_build_request($eng, $query);
+        if (!$req) continue;
+        $ch = curl_init($req['url']);
+        curl_setopt_array($ch, [
+            CURLOPT_RETURNTRANSFER => true,
+            CURLOPT_POST           => true,
+            CURLOPT_POSTFIELDS     => $req['body'],
+            CURLOPT_HTTPHEADER     => $req['headers'],
+            CURLOPT_TIMEOUT        => $timeout,
+        ]);
+        curl_multi_add_handle($mh, $ch);
+        $handles[$eng] = $ch;
+    }
+
+    $running = null;
+    do {
+        $status = curl_multi_exec($mh, $running);
+        if ($running > 0) curl_multi_select($mh, 1.0);
+    } while ($running > 0 && $status === CURLM_OK);
+
+    $results = [];
+    foreach ($handles as $eng => $ch) {
+        $body = curl_multi_getcontent($ch) ?: '';
+        $code = curl_getinfo($ch, CURLINFO_HTTP_CODE);
+        $err  = curl_error($ch);
+        if ($err && $code === 0) {
+            $results[$eng] = ['success' => false, 'error' => aeo_engine_label($eng) . ' transport: ' . $err];
+        } else {
+            $results[$eng] = aeo_parse_response($eng, $code, $body);
+        }
+        curl_multi_remove_handle($mh, $ch);
+        curl_close($ch);
+    }
+    curl_multi_close($mh);
+    return $results;
+}
+
+/**
+ * Run a single query against EVERY configured engine IN PARALLEL.
+ * Stores per-engine rows in aeo_results, updates the aeo_queries summary,
+ * returns engine => { success, cited, position, citations, competitors, response_text }.
  */
 function aeo_check_query_all_engines(PDO $db, int $query_id): array
 {
-    $engines = aeo_available_engines();
-    $results = [];
-    foreach ($engines as $engine) {
-        $results[$engine] = aeo_check_query($db, $query_id, $engine);
-        usleep(300000); // 0.3s between calls so we don't hammer any one provider
+    $stmt = $db->prepare('SELECT q.*, s.domain AS site_domain
+                          FROM aeo_queries q JOIN sites s ON q.site_id = s.id
+                          WHERE q.id = ?');
+    $stmt->execute([$query_id]);
+    $q = $stmt->fetch();
+    if (!$q) return [];
+
+    $site_domain = aeo_domain('https://' . $q['site_domain']);
+    $today = date('Y-m-d');
+    $raw = aeo_query_all_engines_parallel($q['query_text']);
+
+    $out = [];
+    $latest_cited = null; $latest_position = null;
+    foreach ($raw as $engine => $resp) {
+        if (empty($resp['success'])) {
+            $db->prepare('INSERT INTO aeo_results (query_id, engine, snapshot_date, error)
+                          VALUES (?, ?, ?, ?)
+                          ON DUPLICATE KEY UPDATE error = VALUES(error)')
+               ->execute([$query_id, $engine, $today, $resp['error']]);
+            $out[$engine] = ['success' => false, 'error' => $resp['error']];
+            continue;
+        }
+
+        $citations = []; $our_cited = 0; $our_position = null; $competitors = [];
+        foreach ($resp['citations'] as $i => $url) {
+            $domain = aeo_domain($url);
+            $position = $i + 1;
+            $is_ours = ($domain === $site_domain || str_ends_with($domain, '.' . $site_domain));
+            $citations[] = ['url' => $url, 'domain' => $domain, 'position' => $position, 'is_ours' => $is_ours];
+            if ($is_ours && $our_position === null) { $our_cited = 1; $our_position = $position; }
+            elseif (!$is_ours && !empty($domain)) { $competitors[] = $domain; }
+        }
+        $competitors = array_values(array_unique($competitors));
+
+        $db->prepare('INSERT INTO aeo_results
+                      (query_id, engine, snapshot_date, response_text, citations, our_cited, our_position, competitor_domains)
+                      VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                      ON DUPLICATE KEY UPDATE
+                        response_text = VALUES(response_text),
+                        citations = VALUES(citations),
+                        our_cited = VALUES(our_cited),
+                        our_position = VALUES(our_position),
+                        competitor_domains = VALUES(competitor_domains),
+                        error = NULL')
+           ->execute([$query_id, $engine, $today, $resp['text'], json_encode($citations), $our_cited, $our_position, json_encode($competitors)]);
+
+        $out[$engine] = [
+            'success' => true, 'cited' => (bool)$our_cited, 'position' => $our_position,
+            'citations' => $citations, 'competitors' => $competitors, 'response_text' => $resp['text'],
+        ];
+
+        // Track the strongest signal across engines for the query summary
+        if ($our_cited && ($latest_cited === null || $latest_cited === 0)) {
+            $latest_cited = 1; $latest_position = $our_position;
+        } elseif ($latest_cited === null) {
+            $latest_cited = 0;
+        }
     }
-    return $results;
+
+    // Update query summary: cited = TRUE if ANY engine cited us
+    $db->prepare('UPDATE aeo_queries
+                  SET last_checked_at = NOW(), last_cited = ?, last_position = ?
+                  WHERE id = ?')
+       ->execute([$latest_cited ?? 0, $latest_position, $query_id]);
+
+    return $out;
 }
 
 /**
