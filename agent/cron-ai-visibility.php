@@ -57,7 +57,7 @@ foreach ($sites as $site) {
                 alert_create($db, $sid, 'visibility_drop',
                     'AI Visibility dropped (' . (int)$prev['score'] . ' → ' . $score . ')',
                     "Mentions: {$prev['mentions_count']} → {$mentions} across {$queries} queries.\nLikely cause: AI models updated their training data, or competitors gained citations.",
-                    '/dashboard/ai-visibility.php?site=' . $sid,
+                    '/dashboard/aeo.php?site=' . $sid,
                     'warning',
                     ['prev_score' => (int)$prev['score'], 'now_score' => $score]
                 );

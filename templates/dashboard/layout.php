@@ -508,7 +508,7 @@ function sidebar_active(string $page, array $pages_or_query = []): string {
             <a href="<?= url('/dashboard/mentions.php?site=' . $ctx_site_id) ?>" class="<?= sidebar_active('', ['mentions', 'ai-presence', 'brand-mentions']) ?>">
                 <span class="nav-icon">&#128172;</span> Mentions
             </a>
-            <a href="<?= url('/dashboard/aeo.php?site=' . $ctx_site_id) ?>" class="<?= sidebar_active('', ['aeo', 'ai-visibility']) ?>">
+            <a href="<?= url('/dashboard/aeo.php?site=' . $ctx_site_id) ?>" class="<?= sidebar_active('aeo') ?>">
                 <span class="nav-icon">&#128301;</span> AEO Tracker
             </a>
             <a href="<?= url('/dashboard/alerts.php?site=' . $ctx_site_id) ?>" class="<?= sidebar_active('alerts') ?>" style="display:flex;justify-content:space-between;align-items:center;">
