@@ -14,16 +14,14 @@ require_once __DIR__ . '/../helpers.php';
 
 function linkedin_get_auth_url(int $site_id): string
 {
-    // Scopes:
-    //   openid, profile          → identify the user (sub, name)
-    //   w_member_social          → post on the user's personal profile
-    //   w_organization_social    → post on company pages the user admins
-    //   r_organization_admin     → list the company pages they admin (so we can offer a chooser)
+    // Personal-only scopes. Org scopes (w_organization_social, r_organization_admin)
+    // require Community Management API, which can't coexist with other products on
+    // the same LinkedIn app. Two-app support lands when CMA vetting approves.
     $params = [
         'response_type' => 'code',
         'client_id'     => config('linkedin_client_id'),
         'redirect_uri'  => config('app_url') . '/api/oauth/linkedin-callback.php',
-        'scope'         => 'openid profile w_member_social w_organization_social r_organization_admin',
+        'scope'         => 'openid profile w_member_social',
         'state'         => $site_id,
     ];
     return 'https://www.linkedin.com/oauth/v2/authorization?' . http_build_query($params);
