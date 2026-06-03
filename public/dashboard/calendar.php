@@ -33,6 +33,8 @@ $next_month = date('Y-m', strtotime('+1 month', $first_of_month));
 
 $days_in_month = (int)date('t', $first_of_month);
 $first_weekday = (int)date('w', $first_of_month); // 0 = Sunday
+$highlight_date = $_GET['highlight'] ?? '';
+if ($highlight_date && !preg_match('/^\d{4}-\d{2}-\d{2}$/', $highlight_date)) $highlight_date = '';
 
 // Date window (extend a few days each side so we don't miss cross-month items)
 $from = date('Y-m-d 00:00:00', strtotime('-7 days', $first_of_month));
@@ -88,6 +90,12 @@ ob_start();
 .cal-grid > .cal-blank { background:#fafbfc; min-height: 110px; }
 .cal-day-num { font-weight:600; color:#475569; font-size:11px; margin-bottom:4px; }
 .cal-day-num.today { background:var(--accent); color:#fff; border-radius:3px; padding:1px 6px; display:inline-block; }
+.cal-cell-highlight { box-shadow: 0 0 0 3px var(--accent); animation: cal-pulse 1.4s ease-out 2; }
+@keyframes cal-pulse {
+    0%   { box-shadow: 0 0 0 3px var(--accent); }
+    50%  { box-shadow: 0 0 0 8px rgba(251, 191, 36, 0.4); }
+    100% { box-shadow: 0 0 0 3px var(--accent); }
+}
 .cal-item { display:block; font-size:10px; padding:2px 4px; border-radius:3px; margin-bottom:2px; text-decoration:none; color:#fff; line-height:1.4; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
 .cal-item.failed { background:#dc2626; }
 .cal-item.publishing { background:#f59e0b; }
@@ -129,9 +137,10 @@ ob_start();
             <?php for ($day = 1; $day <= $days_in_month; $day++):
                 $date_str = date('Y-m-d', strtotime($month_param . '-' . str_pad((string)$day, 2, '0', STR_PAD_LEFT)));
                 $is_today = $date_str === date('Y-m-d');
+                $is_highlighted = $highlight_date === $date_str;
                 $items = $by_date[$date_str] ?? [];
             ?>
-            <div>
+            <div<?= $is_highlighted ? ' class="cal-cell-highlight" id="cal-target"' : '' ?>>
                 <div class="cal-day-num <?= $is_today ? 'today' : '' ?>"><?= $day ?></div>
                 <?php foreach ($items as $r):
                     $adapter = $registry->get($r['channel']);
@@ -202,6 +211,17 @@ ob_start();
         </div>
     </div>
 </div>
+
+<?php if ($highlight_date): ?>
+<script>
+// Smooth-scroll to the highlighted cell so the user immediately sees the
+// just-scheduled post in calendar context.
+document.addEventListener('DOMContentLoaded', () => {
+    const t = document.getElementById('cal-target');
+    if (t) t.scrollIntoView({behavior: 'smooth', block: 'center'});
+});
+</script>
+<?php endif; ?>
 
 <?php
 $page_content = ob_get_clean();

@@ -641,8 +641,15 @@ async function approveItem(itemId) {
     if (!confirm('Approve this item and schedule it for publication?')) return;
     const data = await callAction('approve', {item_id: itemId});
     if (data.success) {
-        alert('Approved and queued for publish on ' + (data.scheduled_for || 'the target date') + '.');
-        location.reload();
+        // Land on the Calendar so the user immediately sees the new item in the
+        // pipeline alongside everything else queued. Calendar opens on the month
+        // of the scheduled publish date, with the day pre-highlighted.
+        const scheduledFor = data.scheduled_for || '<?= e($item['target_publish_date'] ?? '') ?>';
+        const month = scheduledFor ? scheduledFor.substring(0, 7) : '';
+        const url = '<?= url('/dashboard/calendar.php?site=' . $site_id) ?>'
+                  + (month ? '&month=' + month : '')
+                  + (scheduledFor ? '&highlight=' + scheduledFor : '');
+        window.location.href = url;
     } else {
         alert('Failed: ' + (data.error || 'unknown'));
     }
