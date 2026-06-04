@@ -69,8 +69,10 @@ try {
             $cmd = sprintf('start /B "" "%s" "%s" --site=%d%s', $php, $script, $site_id, $extra);
             pclose(popen($cmd, 'r'));
         } else {
+            // setsid + </dev/null fully detaches so PHP-FPM reaping or browser
+            // disconnect doesn't kill the background job.
             $cmd = sprintf(
-                'nohup %s %s --site=%d%s >> %s 2>&1 &',
+                'setsid %s %s --site=%d%s </dev/null >> %s 2>&1 &',
                 escapeshellarg($php),
                 escapeshellarg($script),
                 $site_id,

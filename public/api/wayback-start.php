@@ -59,8 +59,10 @@ if (PHP_OS_FAMILY === 'Windows') {
     $cmd = sprintf('start /B "" "%s" "%s" --site=%d', $php, $script, $site_id);
     pclose(popen($cmd, 'r'));
 } else {
+    // setsid + </dev/null fully detaches the child so PHP-FPM reaping or browser
+    // disconnect doesn't kill it (the bare nohup pattern was being reaped).
     $cmd = sprintf(
-        'nohup %s %s --site=%d >> %s 2>&1 &',
+        'setsid %s %s --site=%d </dev/null >> %s 2>&1 &',
         escapeshellarg($php),
         escapeshellarg($script),
         $site_id,

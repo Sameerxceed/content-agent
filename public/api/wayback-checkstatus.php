@@ -43,8 +43,11 @@ if (PHP_OS_FAMILY === 'Windows') {
     $cmd = sprintf('start /B "" "%s" "%s" --site=%d', $php, $script, $site_id);
     pclose(popen($cmd, 'r'));
 } else {
+    // setsid detaches into a new session + process group so the child survives
+    // when PHP-FPM reaps its worker. </dev/null breaks stdin so SIGHUP doesn't
+    // propagate. Tested fix for "background job dies on tab close" symptom.
     $cmd = sprintf(
-        'nohup %s %s --site=%d >> %s 2>&1 &',
+        'setsid %s %s --site=%d </dev/null >> %s 2>&1 &',
         escapeshellarg($php),
         escapeshellarg($script),
         $site_id,

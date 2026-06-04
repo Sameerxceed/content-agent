@@ -44,7 +44,8 @@ try {
             $cmd = sprintf('start /B "" "%s" "%s" --site=%d', $php, $script, $site_id);
             pclose(popen($cmd, 'r'));
         } else {
-            $cmd = sprintf('nohup %s %s --site=%d >> %s 2>&1 &', escapeshellarg($php), escapeshellarg($script), $site_id, escapeshellarg($log));
+            // setsid detaches from PHP-FPM process group so the job survives reaping.
+            $cmd = sprintf('setsid %s %s --site=%d </dev/null >> %s 2>&1 &', escapeshellarg($php), escapeshellarg($script), $site_id, escapeshellarg($log));
             exec($cmd);
         }
         sch_respond(['success' => true, 'launched' => true]);
