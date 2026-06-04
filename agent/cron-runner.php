@@ -81,6 +81,7 @@ $valid_jobs = [
     'publish', 'performance-fetch', 'serp-tracking', 'seo-audit',
     'plan-autopilot', 'plan-monthly-review',
     'website-hygiene', // weekly: harvest + live-check + crawl + redirect-build per site
+    'psi-baseline',    // weekly: page-speed + Core Web Vitals snapshot per site
 ];
 
 if (!in_array($job, $valid_jobs, true)) {

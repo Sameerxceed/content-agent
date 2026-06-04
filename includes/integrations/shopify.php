@@ -139,6 +139,86 @@ function shopify_admin_delete_redirect(string $shop_url, string $token, int $red
 }
 
 /**
+ * List published products (paginated up to $cap). Returns flat array of
+ * { id, handle, title, vendor, type, status, variants_count, image }.
+ *
+ * Used by GMC Module 4 to audit product-level feed health and by future
+ * "freshness" features (which product pages haven't been updated in months).
+ */
+function shopify_admin_list_products(string $shop_url, string $token, int $cap = 250): array
+{
+    $out = [];
+    $url = shopify_admin_base($shop_url) . '/products.json?limit=250&status=active';
+    while ($url && count($out) < $cap) {
+        $r = shopify_admin_call('GET', $url, $token);
+        if ($r['error']) break;
+        foreach ($r['body']['products'] ?? [] as $p) {
+            $out[] = [
+                'id'       => $p['id'] ?? null,
+                'handle'   => $p['handle'] ?? '',
+                'title'    => $p['title'] ?? '',
+                'vendor'   => $p['vendor'] ?? '',
+                'type'     => $p['product_type'] ?? '',
+                'status'   => $p['status'] ?? '',
+                'variants_count' => isset($p['variants']) ? count($p['variants']) : 0,
+                'image'    => $p['image']['src'] ?? null,
+                'tags'     => $p['tags'] ?? '',
+                'updated_at' => $p['updated_at'] ?? null,
+                'first_variant' => $p['variants'][0] ?? null,
+            ];
+            if (count($out) >= $cap) break 2;
+        }
+        // Shopify pagination via Link header (omitted for brevity — one page is
+        // enough for v1 audit; can extend with header parsing later).
+        $url = null;
+        usleep(SHOPIFY_DELAY_US);
+    }
+    return $out;
+}
+
+/** Single product detail — used by feed audit per-product fix generation. */
+function shopify_admin_get_product(string $shop_url, string $token, int $product_id): ?array
+{
+    $r = shopify_admin_call('GET', shopify_admin_base($shop_url) . '/products/' . $product_id . '.json', $token);
+    if ($r['error']) return null;
+    return $r['body']['product'] ?? null;
+}
+
+/** List collections — covers both smart + custom. */
+function shopify_admin_list_collections(string $shop_url, string $token, int $cap = 250): array
+{
+    $out = [];
+    foreach (['custom_collections', 'smart_collections'] as $kind) {
+        $r = shopify_admin_call('GET', shopify_admin_base($shop_url) . "/{$kind}.json?limit=250", $token);
+        if ($r['error']) continue;
+        foreach ($r['body'][$kind] ?? [] as $c) {
+            $out[] = [
+                'id'     => $c['id'] ?? null,
+                'kind'   => $kind,
+                'handle' => $c['handle'] ?? '',
+                'title'  => $c['title'] ?? '',
+            ];
+            if (count($out) >= $cap) break 2;
+        }
+        usleep(SHOPIFY_DELAY_US);
+    }
+    return $out;
+}
+
+/** Set a metafield on a product — used by GMC fix push (custom_label, etc). */
+function shopify_admin_set_product_metafield(string $shop_url, string $token, int $product_id, string $namespace, string $key, string $type, string $value): array
+{
+    $r = shopify_admin_call('POST', shopify_admin_base($shop_url) . '/products/' . $product_id . '/metafields.json', $token, [
+        'metafield' => [
+            'namespace' => $namespace, 'key' => $key,
+            'type' => $type, 'value' => $value,
+        ],
+    ]);
+    if ($r['status'] >= 200 && $r['status'] < 300) return ['success' => true, 'id' => $r['body']['metafield']['id'] ?? null];
+    return ['success' => false, 'error' => $r['error'] ?: 'HTTP ' . $r['status']];
+}
+
+/**
  * Bulk-push approved redirects to a Shopify store. Returns counters.
  *
  * Used by the Module 3 "Apply to Shopify" action: pulls every redirect with
