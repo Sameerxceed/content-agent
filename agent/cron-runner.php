@@ -82,6 +82,7 @@ $valid_jobs = [
     'plan-autopilot', 'plan-monthly-review',
     'website-hygiene', // weekly: harvest + live-check + crawl + redirect-build per site
     'psi-baseline',    // weekly: page-speed + Core Web Vitals snapshot per site
+    'schema-audit',    // weekly: verify JSON-LD persistence on every tracked URL
 ];
 
 if (!in_array($job, $valid_jobs, true)) {

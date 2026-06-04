@@ -517,6 +517,9 @@ function sidebar_active(string $page, array $pages_or_query = []): string {
             <a href="<?= url('/dashboard/cwv.php?site=' . $ctx_site_id) ?>" class="<?= sidebar_active('cwv') ?>">
                 <span class="nav-icon">&#9889;</span> Page Speed
             </a>
+            <a href="<?= url('/dashboard/schema.php?site=' . $ctx_site_id) ?>" class="<?= sidebar_active('schema') ?>">
+                <span class="nav-icon">&#10070;</span> Schema audit
+            </a>
             <a href="<?= url('/dashboard/alerts.php?site=' . $ctx_site_id) ?>" class="<?= sidebar_active('alerts') ?>" style="display:flex;justify-content:space-between;align-items:center;">
                 <span><span class="nav-icon">&#128276;</span> Alerts</span>
                 <?php if ($ctx_alerts_unread > 0): ?>
