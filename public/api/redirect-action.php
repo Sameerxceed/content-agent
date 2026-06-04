@@ -164,6 +164,19 @@ try {
         rd_csv($body, 'shopify-url-redirects.csv');
     }
 
+    if ($action === 'apply_to_shopify') {
+        require_once __DIR__ . '/../../includes/integrations/shopify.php';
+        $shop_url = trim((string)($site['cms_url'] ?? ''));
+        $token    = trim((string)($site['cms_api_key'] ?? ''));
+        if ($shop_url === '' || $token === '') {
+            rd_respond(['error' => 'This site needs cms_url + cms_api_key set in Setup → Channels → CMS to push to Shopify.'], 400);
+        }
+        $verify = shopify_admin_verify($shop_url, $token);
+        if (!$verify['ok']) rd_respond(['error' => 'Shopify auth failed: ' . $verify['error']], 400);
+        $r = shopify_admin_push_approved($db, $site_id, $shop_url, $token);
+        rd_respond(['success' => true] + $r);
+    }
+
     rd_respond(['error' => 'Unknown action: ' . $action], 400);
 } catch (Throwable $e) {
     error_log('[redirect-action] ' . $e->getMessage());

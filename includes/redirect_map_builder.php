@@ -60,6 +60,19 @@ function rmb_heuristic_match(string $dead_path, array $live_index): ?array
     $dead_slug = rmb_slug_of($dead_path);
     $dead_type = rmb_classify_path($dead_path);
 
+    // index.*, home.*, default.* → homepage (/). Common after CMS migrations where
+    // the old site used directory indexes (index.php, home.html) and the new site
+    // serves the homepage from /.
+    $basename = basename($dead_path);
+    $stem     = strtolower(preg_replace('/\.\w+$/', '', $basename));
+    if (in_array($stem, ['index', 'home', 'default'], true)) {
+        foreach ($live_index as $live) {
+            if ($live['path'] === '/' || $live['url_type'] === 'home') {
+                return ['to_path' => '/', 'confidence' => 95, 'match_method' => 'slug_exact'];
+            }
+        }
+    }
+
     // Exact path? Live site happens to have the same path (e.g. /about == /about)
     foreach ($live_index as $live) {
         if ($live['path'] === $dead_path) {
@@ -83,9 +96,14 @@ function rmb_heuristic_match(string $dead_path, array $live_index): ?array
             if ($live['path'] === $clean) {
                 return ['to_path' => $live['path'], 'confidence' => 92, 'match_method' => 'slug_exact'];
             }
-            // also try slug-similarity match (levenshtein-style)
+            // also try slug-similarity match (levenshtein-style) — but only on
+            // longer slugs. Short slugs (team vs terms, four vs five) collide
+            // semantically too often: a 1-2 letter levenshtein distance on a
+            // 4-char slug is just noise.
             $live_slug = rmb_slug_of($live['path']);
-            if ($live_slug !== '' && $dead_slug !== '' && levenshtein($dead_slug, $live_slug) <= 2) {
+            if ($live_slug !== '' && $dead_slug !== ''
+                && strlen($dead_slug) >= 6 && strlen($live_slug) >= 6
+                && levenshtein($dead_slug, $live_slug) <= 2) {
                 return ['to_path' => $live['path'], 'confidence' => 78, 'match_method' => 'type_match'];
             }
         }

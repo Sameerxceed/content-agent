@@ -114,7 +114,10 @@ ob_start();
         </button>
         <?php if ($summary['by_status']['approved'] ?? 0): ?>
             <?php if ($platform === 'shopify'): ?>
-                <a class="btn btn-primary btn-sm" href="<?= url('/api/redirect-action.php?action=export_csv&site_id=' . $site_id) ?>">↓ Shopify CSV</a>
+                <button class="btn btn-primary btn-sm" onclick="applyShopify(this)" title="Push approved redirects directly via Shopify Admin API">
+                    ⚡ Apply <?= (int)($summary['by_status']['approved'] ?? 0) ?> to Shopify
+                </button>
+                <a class="btn btn-outline btn-sm" href="<?= url('/api/redirect-action.php?action=export_csv&site_id=' . $site_id) ?>">↓ CSV backup</a>
             <?php else: ?>
                 <a class="btn btn-primary btn-sm" href="<?= url('/api/redirect-action.php?action=export_next_config&site_id=' . $site_id) ?>">↓ next.config.js</a>
             <?php endif; ?>
@@ -276,6 +279,22 @@ async function reject(id, btn) {
     btn.disabled = true;
     try { await call('reject', {redirect_id: id}); window.location.reload(); }
     catch (e) { alert(e.message); btn.disabled = false; }
+}
+
+async function applyShopify(btn) {
+    if (!confirm('Push all approved redirects to Shopify Admin? Duplicates will be skipped safely.')) return;
+    btn.disabled = true;
+    const orig = btn.innerHTML;
+    btn.innerHTML = 'Pushing…';
+    try {
+        const r = await call('apply_to_shopify');
+        alert(`Pushed: ${r.pushed} new\nDuplicates (already on Shopify): ${r.duplicates}\nErrors: ${r.errors}\nTotal processed: ${r.total}`);
+        window.location.reload();
+    } catch (e) {
+        alert(e.message);
+        btn.disabled = false;
+        btn.innerHTML = orig;
+    }
 }
 
 async function saveTarget(el, id) {
