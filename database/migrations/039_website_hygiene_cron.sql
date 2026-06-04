@@ -14,7 +14,7 @@ INSERT INTO cron_schedules (
     'website-hygiene',
     'Website Hygiene: redirect map + archive refresh',
     'Weekly maintenance pass per site. Pulls the latest archive history from search-engine indexes, re-checks every URL''s live status, refreshes the live-URL inventory, and rebuilds the redirect map for any newly-discovered dead URLs. Keeps your redirect coverage current without you having to remember to click anything.',
-    'weeks', 1, 4, 0, 0,  -- weekly, Sunday 04:00 IST
+    'weekly', 1, 4, 0, 0,  -- weekly, Sunday 04:00 IST
     1,
     DATE_ADD(DATE(CURDATE() + INTERVAL (7 - WEEKDAY(CURDATE())) DAY), INTERVAL '04:00' HOUR_MINUTE),
     NOW()
