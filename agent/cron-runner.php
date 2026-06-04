@@ -80,6 +80,7 @@ $valid_jobs = [
     'ai-visibility', 'gap-analysis', 'weekly-digest', 'news-scrape',
     'publish', 'performance-fetch', 'serp-tracking', 'seo-audit',
     'plan-autopilot', 'plan-monthly-review',
+    'website-hygiene', // weekly: harvest + live-check + crawl + redirect-build per site
 ];
 
 if (!in_array($job, $valid_jobs, true)) {
