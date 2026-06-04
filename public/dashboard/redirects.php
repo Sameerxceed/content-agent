@@ -85,6 +85,8 @@ ob_start();
 .rd-to-input:hover, .rd-to-input:focus { border-color:var(--border); background:#fff; color:#0f172a; outline:none; }
 .rd-to-input.dirty { color:#0f172a; border-color:#fbbf24; }
 .rd-to-input.saved { background:#d1fae5; }
+.rd-quick { font-size:11px; padding:2px 8px; margin-left:4px; border:1px solid var(--border); background:#f8fafc; border-radius:10px; cursor:pointer; color:#475569; }
+.rd-quick:hover { background:#e0e7ff; border-color:#6366f1; color:#312e81; }
 .rd-meta { font-size:10px; color:var(--text-light); margin-top:2px; }
 .rd-confidence { font-size:11px; padding:2px 9px; border-radius:10px; font-weight:600; white-space:nowrap; }
 .rd-confidence.high { background:#d1fae5; color:#065f46; }
@@ -209,7 +211,20 @@ ob_start();
                 <div class="rd-paths">
                     <span class="rd-from"><?= e($r['from_path']) ?></span>
                     <span class="rd-arrow">→</span>
-                    <input class="rd-to-input" list="live-paths" data-original="<?= e($r['to_path'] ?? '') ?>" value="<?= e($r['to_path'] ?? '') ?>" placeholder="(no target — consider 410)" onblur="saveTarget(this, <?= (int)$r['id'] ?>)">
+                    <input class="rd-to-input" list="live-paths" data-original="<?= e($r['to_path'] ?? '') ?>" value="<?= e($r['to_path'] ?? '') ?>" placeholder="type a target page, e.g. /about" onblur="saveTarget(this, <?= (int)$r['id'] ?>)">
+                    <?php if ($r['to_path'] === null): ?>
+                        <span style="margin-left:8px; font-size:11px; color:var(--text-light);">Quick pick:</span>
+                        <button type="button" class="rd-quick" onclick="setQuickTarget(this, <?= (int)$r['id'] ?>, '/')">Homepage</button>
+                        <?php
+                        // surface the most useful common destinations if the site has them
+                        $common_targets = [];
+                        foreach (['/contact', '/about', '/services', '/work', '/shop', '/collections/all'] as $c) {
+                            if (in_array($c, $live_paths, true)) $common_targets[] = $c;
+                        }
+                        foreach ($common_targets as $c): ?>
+                            <button type="button" class="rd-quick" onclick="setQuickTarget(this, <?= (int)$r['id'] ?>, '<?= e($c) ?>')"><?= e($c) ?></button>
+                        <?php endforeach; ?>
+                    <?php endif; ?>
                 </div>
                 <div class="rd-meta">
                     <?= e($r['match_method'] ?: '?') ?>
@@ -303,6 +318,18 @@ async function reject(id, btn) {
     catch (e) { alert(e.message); btn.disabled = false; }
 }
 
+async function setQuickTarget(btn, id, target) {
+    btn.disabled = true;
+    const orig = btn.textContent;
+    btn.textContent = '…';
+    try {
+        await call('set_target', {redirect_id: id, to_path: target});
+        // Row should now be approved + have a target — easiest to refresh so
+        // the row leaves the Pending filter cleanly.
+        window.location.reload();
+    } catch (e) { alert(e.message); btn.disabled = false; btn.textContent = orig; }
+}
+
 async function approveAllPending(btn) {
     if (!confirm('Approve every pending redirect that already has a target? Rows with no target stay pending — they need a manual call.')) return;
     btn.disabled = true;
@@ -345,6 +372,15 @@ async function saveTarget(el, id) {
         el.classList.remove('dirty');
         el.classList.add('saved');
         setTimeout(() => el.classList.remove('saved'), 800);
+        // set_target flips the row to approved on the backend — reflect that
+        // immediately in the status pill so the UI doesn't lie until reload.
+        const row = el.closest('.rd-row');
+        if (row) {
+            const pill = row.querySelector('.rd-status');
+            if (pill) { pill.classList.remove('pending'); pill.classList.add('approved'); pill.textContent = 'approved'; }
+            const conf = row.querySelector('.rd-confidence');
+            if (conf) { conf.className = 'rd-confidence high'; conf.textContent = '100%'; }
+        }
     } catch (e) { alert(e.message); el.value = el.dataset.original; }
 }
 
