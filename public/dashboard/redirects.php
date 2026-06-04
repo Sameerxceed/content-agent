@@ -148,31 +148,113 @@ ob_start();
                 </button>
                 <a class="btn btn-outline btn-sm" href="<?= url('/api/redirect-action.php?action=export_csv&site_id=' . $site_id) ?>">↓ CSV backup</a>
             <?php else: ?>
-                <button class="btn btn-primary btn-sm" onclick="showDeployHelp()">↓ Download redirects file</button>
+                <button class="btn btn-primary btn-sm" onclick="showDeployHelp()">↓ Download redirects</button>
             <?php endif; ?>
         <?php endif; ?>
     </div>
     <div id="rd-progress"></div>
 
     <?php if (($summary['by_status']['approved'] ?? 0) > 0 && $platform !== 'shopify'): ?>
-    <!-- Explicit deploy instructions so non-developers know what to do with the downloaded file -->
+    <!-- Platform-aware deploy panel — pick your stack, get the right download + steps -->
+    <?php
+        // Per-platform instructions. Keys are the platform_choice ids; each is
+        // {file, action, steps[]}. Customer's site.platform pre-selects the right tab.
+        $platform_help = [
+            'nextjs' => [
+                'label' => 'Next.js', 'file' => 'next.config.js', 'action' => 'export_next_config',
+                'steps' => [
+                    'Open your website code repo (the Next.js project for <strong>' . e($site['domain']) . '</strong>).',
+                    'Find <code>next.config.js</code> at the project root. If you have no other settings, replace the whole file with our download. If you have existing settings, copy only the <code>async redirects() { … }</code> block into your existing config.',
+                    'Commit + push. Vercel (or your host) auto-deploys.',
+                ],
+            ],
+            'wordpress' => [
+                'label' => 'WordPress', 'file' => 'wp-redirects.txt', 'action' => 'export_wordpress',
+                'steps' => [
+                    'Download <code>wp-redirects.txt</code> — it contains <strong>three options</strong> ranked easiest first.',
+                    '<strong>Easiest:</strong> install the free "Redirection" plugin → Tools → Redirection → Import/Export → upload the CSV we also generate.',
+                    'Or paste the <code>.htaccess</code> block from the file into your WP root <code>.htaccess</code> ABOVE the <code># BEGIN WordPress</code> line.',
+                    'Or paste the <code>functions.php</code> snippet into your active child theme.',
+                ],
+            ],
+            'apache' => [
+                'label' => 'Apache / plain PHP / .htaccess', 'file' => '.htaccess', 'action' => 'export_apache',
+                'steps' => [
+                    'Download <code>.htaccess</code>.',
+                    'SFTP or SSH into your server. Open the <code>.htaccess</code> file at your web root (the same directory as <code>index.php</code> or <code>index.html</code>).',
+                    'If no <code>.htaccess</code> exists, upload ours. If one exists, paste the <code>&lt;IfModule mod_rewrite.c&gt;</code> block from our file into yours.',
+                    'No restart needed — Apache reads <code>.htaccess</code> on every request.',
+                ],
+            ],
+            'nginx' => [
+                'label' => 'nginx', 'file' => 'redirects.conf', 'action' => 'export_nginx',
+                'steps' => [
+                    'Download <code>redirects.conf</code>.',
+                    'Paste the location blocks inside your <code>server { … }</code> stanza — typically in <code>/etc/nginx/sites-available/&lt;your-site&gt;</code>.',
+                    'Run <code>sudo nginx -t</code> to test the config, then <code>sudo systemctl reload nginx</code>.',
+                ],
+            ],
+            'netlify' => [
+                'label' => 'Netlify / Cloudflare Pages', 'file' => '_redirects', 'action' => 'export_netlify',
+                'steps' => [
+                    'Download <code>_redirects</code> (no file extension — keep it that way).',
+                    'Place it at the root of your project (next to <code>index.html</code> or your build output directory like <code>public/</code> or <code>dist/</code>).',
+                    'Commit + push. Netlify and Cloudflare Pages both auto-deploy.',
+                ],
+            ],
+            'vercel' => [
+                'label' => 'Vercel (non-Next.js)', 'file' => 'vercel.json', 'action' => 'export_vercel',
+                'steps' => [
+                    'Download <code>vercel.json</code>.',
+                    'Place at your project root. If you already have a <code>vercel.json</code>, merge the <code>redirects</code> array into yours.',
+                    'Commit + push. Vercel auto-deploys.',
+                ],
+            ],
+            'custom' => [
+                'label' => 'Other / hosted (Webflow, Wix, Squarespace, etc.)', 'file' => 'redirects.csv', 'action' => 'export_csv',
+                'steps' => [
+                    'Download <code>redirects.csv</code> — clean two-column from/to format.',
+                    '<strong>Webflow:</strong> Project Settings → Publishing → 301 redirects → bulk import the CSV.',
+                    '<strong>Wix:</strong> SEO menu → URL Redirect Manager → add each row manually (Wix has no bulk import).',
+                    '<strong>Squarespace:</strong> Settings → Advanced → URL Mappings → paste each line in their format <code>/old-path -&gt; /new-path 301</code>.',
+                    '<strong>Any developer:</strong> hand them the CSV — works for any stack.',
+                ],
+            ],
+        ];
+        $current_platform = isset($platform_help[$platform]) ? $platform : 'custom';
+    ?>
     <div id="deploy-help" style="display:none; margin-top:14px; padding:14px 16px; background:#f0f9ff; border:1px solid #bae6fd; border-radius:6px; font-size:13px; line-height:1.6;">
-        <div style="font-weight:600; color:#0c4a6e; margin-bottom:8px;">How to deploy your <?= number_format((int)($summary['by_status']['approved'] ?? 0)) ?> redirects</div>
-        <ol style="margin:0 0 8px; padding-left:18px; color:#075985;">
-            <li><strong>Click the link below</strong> to download <code>next.config.js</code>.</li>
-            <li><strong>Open your website's code repo</strong> (the Next.js project for <?= e($site['domain']) ?>).</li>
-            <li>Find the existing <code>next.config.js</code> file at the root of the project.
-                <ul style="margin:4px 0; padding-left:18px;">
-                    <li>If you have <em>no other settings</em> in it → replace the whole file with our download.</li>
-                    <li>If you have <em>existing settings</em> → copy only the <code>async redirects() { … }</code> block from our file into your existing config.</li>
-                </ul>
-            </li>
-            <li>Commit + push to your main branch. Vercel (or whichever host) auto-deploys.</li>
-            <li>Once deployed, every old dead URL now serves a 301 to its new target. Search engines will pick this up within a few weeks.</li>
-        </ol>
-        <a class="btn btn-primary btn-sm" href="<?= url('/api/redirect-action.php?action=export_next_config&site_id=' . $site_id) ?>" style="margin-top:4px;">↓ Download next.config.js</a>
-        <button class="btn btn-outline btn-sm" onclick="document.getElementById('deploy-help').style.display='none'" style="margin-left:6px;">Close</button>
+        <div style="font-weight:600; color:#0c4a6e; margin-bottom:10px;">Deploy your <?= number_format((int)($summary['by_status']['approved'] ?? 0)) ?> redirects — pick your platform</div>
+        <div style="display:flex; flex-wrap:wrap; gap:4px; margin-bottom:12px;">
+            <?php foreach ($platform_help as $pkey => $p): ?>
+                <button class="dh-pill <?= $pkey === $current_platform ? 'active' : '' ?>" onclick="dhSwitch('<?= e($pkey) ?>')">
+                    <?= e($p['label']) ?>
+                </button>
+            <?php endforeach; ?>
+        </div>
+        <?php foreach ($platform_help as $pkey => $p): ?>
+            <div class="dh-panel" data-platform="<?= e($pkey) ?>" style="display:<?= $pkey === $current_platform ? 'block' : 'none' ?>;">
+                <ol style="margin:0 0 8px; padding-left:18px; color:#075985;">
+                    <?php foreach ($p['steps'] as $step): ?>
+                        <li><?= $step ?></li>
+                    <?php endforeach; ?>
+                </ol>
+                <a class="btn btn-primary btn-sm" href="<?= url('/api/redirect-action.php?action=' . $p['action'] . '&site_id=' . $site_id) ?>" style="margin-top:4px;">↓ Download <?= e($p['file']) ?></a>
+            </div>
+        <?php endforeach; ?>
+        <button class="btn btn-outline btn-sm" onclick="document.getElementById('deploy-help').style.display='none'" style="margin-top:10px;">Close</button>
     </div>
+    <style>
+        .dh-pill { font-size:11px; padding:5px 10px; border:1px solid #bae6fd; background:#fff; color:#075985; border-radius:14px; cursor:pointer; }
+        .dh-pill:hover { background:#e0f2fe; }
+        .dh-pill.active { background:#0284c7; color:#fff; border-color:#0284c7; }
+    </style>
+    <script>
+        function dhSwitch(key) {
+            document.querySelectorAll('.dh-pill').forEach(b => b.classList.toggle('active', b.textContent.trim() === document.querySelector('.dh-pill[onclick*="' + key + '"]').textContent.trim()));
+            document.querySelectorAll('.dh-panel').forEach(p => p.style.display = p.dataset.platform === key ? 'block' : 'none');
+        }
+    </script>
     <?php endif; ?>
 
     <?php if ($crawl['total'] > 0): ?>

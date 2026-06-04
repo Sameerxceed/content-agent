@@ -148,6 +148,30 @@ try {
         rd_text($body, 'next.config.js');
     }
 
+    // Multi-platform redirect exports — same input shape (approved+to_path), platform-specific format
+    $platform_export_map = [
+        'export_apache'    => ['fn' => 'redirect_export_apache_htaccess', 'file' => '.htaccess',         'mime' => 'text/plain'],
+        'export_nginx'     => ['fn' => 'redirect_export_nginx',           'file' => 'redirects.conf',    'mime' => 'text/plain'],
+        'export_netlify'   => ['fn' => 'redirect_export_netlify',         'file' => '_redirects',        'mime' => 'text/plain'],
+        'export_vercel'    => ['fn' => 'redirect_export_vercel_json',     'file' => 'vercel.json',       'mime' => 'application/json'],
+        'export_wordpress' => ['fn' => 'redirect_export_wordpress',       'file' => 'wp-redirects.txt',  'mime' => 'text/plain'],
+    ];
+    if (isset($platform_export_map[$action])) {
+        require_once __DIR__ . '/../../includes/redirect_exporters.php';
+        $stmt = $db->prepare("SELECT from_path, to_path FROM redirect_map
+                              WHERE site_id = ? AND status IN ('approved','applied') AND to_path IS NOT NULL
+                              ORDER BY id");
+        $stmt->execute([$site_id]);
+        $rows = $stmt->fetchAll();
+        $cfg = $platform_export_map[$action];
+        $body = $cfg['fn']($rows);
+        if (ob_get_length()) ob_end_clean();
+        header('Content-Type: ' . $cfg['mime']);
+        header('Content-Disposition: attachment; filename="' . $cfg['file'] . '"');
+        echo $body;
+        exit;
+    }
+
     if ($action === 'export_csv') {
         // Shopify URL Redirects bulk-import CSV: columns Redirect from,Redirect to
         $stmt = $db->prepare("SELECT from_path, to_path FROM redirect_map
