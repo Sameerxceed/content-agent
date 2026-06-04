@@ -9,7 +9,11 @@
 --   - WordPress: REST API / .htaccess
 --   - Other: manual checklist with copy buttons
 
-CREATE TABLE IF NOT EXISTS `redirects` (
+-- NOTE: named `redirect_map` (not `redirects`) because a pre-existing
+-- `redirects` table from the older SEO auto-fix path (auto-fix-all.php,
+-- seo-data.php) uses different columns (to_url, type, hits). Keeping them
+-- separate avoids breakage; we may consolidate later.
+CREATE TABLE IF NOT EXISTS `redirect_map` (
     `id`                INT UNSIGNED    NOT NULL AUTO_INCREMENT,
     `site_id`           INT UNSIGNED    NOT NULL,
     `from_path`         VARCHAR(2048)   NOT NULL  COMMENT 'dead URL path (no host)',

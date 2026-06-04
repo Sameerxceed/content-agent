@@ -94,7 +94,7 @@ try {
         if ($filter === 'low')       { $where .= " AND (confidence < 60 OR confidence IS NULL)"; }
         $limit = max(1, min(500, (int)($input['limit'] ?? $_GET['limit'] ?? 200)));
         $stmt = $db->prepare("SELECT id, from_path, to_path, confidence, match_method, reasoning, status, auto_approved, applied_at
-                              FROM redirects WHERE {$where}
+                              FROM redirect_map WHERE {$where}
                               ORDER BY confidence DESC, id LIMIT {$limit}");
         $stmt->execute($args);
         rd_respond([
@@ -109,7 +109,7 @@ try {
         if (!$rid) rd_respond(['error' => 'redirect_id required'], 400);
         // 410-style: empty → null
         $to = $to === '' ? null : $to;
-        $db->prepare("UPDATE redirects SET to_path = ?, match_method = 'manual', confidence = 100,
+        $db->prepare("UPDATE redirect_map SET to_path = ?, match_method = 'manual', confidence = 100,
                       reasoning = 'manually set', status = 'approved', auto_approved = 0, updated_at = NOW()
                       WHERE id = ? AND site_id = ?")
            ->execute([$to, $rid, $site_id]);
@@ -120,13 +120,13 @@ try {
         $rid = (int)($input['redirect_id'] ?? 0);
         if (!$rid) rd_respond(['error' => 'redirect_id required'], 400);
         $new = $action === 'approve' ? 'approved' : 'rejected';
-        $db->prepare("UPDATE redirects SET status = ?, updated_at = NOW() WHERE id = ? AND site_id = ?")
+        $db->prepare("UPDATE redirect_map SET status = ?, updated_at = NOW() WHERE id = ? AND site_id = ?")
            ->execute([$new, $rid, $site_id]);
         rd_respond(['success' => true, 'status' => $new]);
     }
 
     if ($action === 'export_next_config') {
-        $stmt = $db->prepare("SELECT from_path, to_path FROM redirects
+        $stmt = $db->prepare("SELECT from_path, to_path FROM redirect_map
                               WHERE site_id = ? AND status IN ('approved','applied') AND to_path IS NOT NULL
                               ORDER BY id");
         $stmt->execute([$site_id]);
@@ -150,7 +150,7 @@ try {
 
     if ($action === 'export_csv') {
         // Shopify URL Redirects bulk-import CSV: columns Redirect from,Redirect to
-        $stmt = $db->prepare("SELECT from_path, to_path FROM redirects
+        $stmt = $db->prepare("SELECT from_path, to_path FROM redirect_map
                               WHERE site_id = ? AND status IN ('approved','applied') AND to_path IS NOT NULL
                               ORDER BY id");
         $stmt->execute([$site_id]);

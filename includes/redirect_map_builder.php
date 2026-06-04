@@ -191,7 +191,7 @@ function rmb_build_map(PDO $db, int $site_id, ?int $limit = null, ?callable $pro
     // Dead URLs that don't yet have a redirect row (or have one we should refresh)
     $sql = "SELECT h.id, h.url, h.path
             FROM historical_urls h
-            LEFT JOIN redirects r ON r.site_id = h.site_id
+            LEFT JOIN redirect_map r ON r.site_id = h.site_id
                                  AND r.from_path_hash = SHA1(h.path)
                                  AND r.status IN ('approved','applied','rejected')
             WHERE h.site_id = ? AND h.is_dead = 1 AND r.id IS NULL
@@ -201,7 +201,7 @@ function rmb_build_map(PDO $db, int $site_id, ?int $limit = null, ?callable $pro
     $stmt->execute([$site_id]);
     $dead_rows = $stmt->fetchAll();
 
-    $upsert = $db->prepare("INSERT INTO redirects
+    $upsert = $db->prepare("INSERT INTO redirect_map
         (site_id, from_path, from_path_hash, to_path, source, source_ref,
          confidence, match_method, reasoning, status, auto_approved)
         VALUES (?, ?, ?, ?, 'wayback', ?, ?, ?, ?, ?, ?)
@@ -280,14 +280,14 @@ function rmb_build_map(PDO $db, int $site_id, ?int $limit = null, ?callable $pro
 /** Summary counts for the dashboard. */
 function rmb_site_summary(PDO $db, int $site_id): array
 {
-    $stmt = $db->prepare("SELECT status, COUNT(*) AS cnt FROM redirects WHERE site_id = ? GROUP BY status");
+    $stmt = $db->prepare("SELECT status, COUNT(*) AS cnt FROM redirect_map WHERE site_id = ? GROUP BY status");
     $stmt->execute([$site_id]);
     $by_status = $stmt->fetchAll(PDO::FETCH_KEY_PAIR);
     $stmt = $db->prepare("SELECT
         SUM(CASE WHEN confidence >= 85 THEN 1 ELSE 0 END) AS high,
         SUM(CASE WHEN confidence BETWEEN 60 AND 84 THEN 1 ELSE 0 END) AS med,
         SUM(CASE WHEN confidence < 60 OR confidence IS NULL THEN 1 ELSE 0 END) AS low
-        FROM redirects WHERE site_id = ?");
+        FROM redirect_map WHERE site_id = ?");
     $stmt->execute([$site_id]);
     $by_conf = $stmt->fetch() ?: [];
     return [

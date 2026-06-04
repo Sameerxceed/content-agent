@@ -44,7 +44,7 @@ $filter_sql = [
 if (isset($filter_sql[$filter])) $where .= $filter_sql[$filter];
 
 $stmt = $db->prepare("SELECT id, from_path, to_path, confidence, match_method, reasoning, status, auto_approved
-                      FROM redirects WHERE {$where} ORDER BY confidence DESC, id LIMIT 200");
+                      FROM redirect_map WHERE {$where} ORDER BY confidence DESC, id LIMIT 200");
 $stmt->execute($args);
 $redirects = $stmt->fetchAll();
 
