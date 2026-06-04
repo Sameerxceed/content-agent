@@ -78,10 +78,52 @@ ob_start();
 .wb-status.alive   { background:#d1fae5; color:#065f46; }
 .wb-status.unknown { background:#f1f5f9; color:#64748b; }
 #wb-progress { display:none; font-size:12px; color:var(--text-light); margin-top:8px; padding:8px 10px; background:#f8fafc; border-radius:4px; border:1px dashed var(--border); }
+/* Bold "LIVE — check is running" indicator with a pulsing dot, rate, ETA. */
+#wb-live-banner {
+    display:none;
+    padding:14px 18px;
+    margin-bottom:14px;
+    background:linear-gradient(135deg, #d1fae5 0%, #a7f3d0 100%);
+    border:1px solid #059669;
+    border-radius:8px;
+    color:#064e3b;
+    align-items:center;
+    gap:14px;
+    box-shadow:0 2px 8px rgba(5, 150, 105, 0.18);
+}
+#wb-live-banner.active { display:flex; }
+.wb-live-dot {
+    width:14px; height:14px; border-radius:50%; background:#059669; flex-shrink:0;
+    animation:wb-pulse 1.4s infinite;
+}
+@keyframes wb-pulse {
+    0%   { box-shadow:0 0 0 0 rgba(5,150,105,0.7); }
+    70%  { box-shadow:0 0 0 14px rgba(5,150,105,0); }
+    100% { box-shadow:0 0 0 0 rgba(5,150,105,0); }
+}
+.wb-live-title { font-weight:700; font-size:15px; margin-bottom:3px; color:#064e3b; }
+.wb-live-sub   { font-size:12px; color:#065f46; line-height:1.5; }
+.wb-live-stat  { font-weight:700; color:#022c22; }
 </style>
 
 <div style="margin-bottom:10px;">
     <a href="<?= url('/dashboard/seo.php?site=' . $site_id) ?>" style="font-size:13px;color:var(--primary);text-decoration:none;">← Back to SEO</a>
+</div>
+
+<!-- Bold "LIVE" indicator. Shows up only when the live-check is actively running. -->
+<div id="wb-live-banner" style="max-width:980px;">
+    <div class="wb-live-dot"></div>
+    <div style="flex:1;">
+        <div class="wb-live-title">Live status check running <span id="wb-live-pct" style="font-weight:400;color:#065f46;"></span></div>
+        <div class="wb-live-sub">
+            <span class="wb-live-stat" id="wb-live-checked">0</span> of <span id="wb-live-total">0</span> URLs checked
+            · <span class="wb-live-stat" id="wb-live-dead">0</span> dead found
+            · <span class="wb-live-stat" id="wb-live-rate">—</span> URLs/min
+            · ETA <span class="wb-live-stat" id="wb-live-eta">—</span>
+            <br>
+            <span style="opacity:0.8;">Page auto-refreshes as we work. Safe to navigate away or close this tab — the check keeps running on the server.</span>
+        </div>
+    </div>
 </div>
 
 <div class="setup-section" style="max-width:980px;">
@@ -240,30 +282,68 @@ const SITE_ID = <?= $site_id ?>;
 let pollTimer = null;
 let liveStatsTimer = null;
 
-// If there are unchecked URLs AND nothing else is running, auto-refresh the
-// stat cards every 8 seconds so the user sees progress without manually reloading.
-const INITIAL_UNCHECKED = <?= (int)$summary['unchecked'] ?>;
-if (INITIAL_UNCHECKED > 0) {
-    liveStatsTimer = setInterval(async () => {
-        try {
-            const r = await fetch('<?= url('/api/wayback-status.php?site_id=') ?>' + SITE_ID);
-            const d = await r.json();
-            // Find the dashboard cards by their text and update in place
-            const cards = document.querySelectorAll('.wb-card .num');
-            // [0]=total, [1]=dead, [2]=unchecked, [3]=last-harvest (skip)
-            if (cards.length >= 3) {
-                cards[0].textContent = (d.total_urls || 0).toLocaleString();
-                cards[1].textContent = (d.dead_urls || 0).toLocaleString();
-                cards[2].textContent = (d.unchecked || 0).toLocaleString();
+// Track previous reading to compute throughput (URLs/min) live.
+let prevReading = null;
+
+async function refreshLiveStats() {
+    try {
+        const r = await fetch('<?= url('/api/wayback-status.php?site_id=') ?>' + SITE_ID);
+        const d = await r.json();
+        const total = d.total_urls || 0;
+        const dead  = d.dead_urls  || 0;
+        const unck  = d.unchecked  || 0;
+        const checked = total - unck;
+
+        // Update the four stat cards (total / dead / unchecked / last-harvest)
+        const cards = document.querySelectorAll('.wb-card .num');
+        if (cards.length >= 3) {
+            cards[0].textContent = total.toLocaleString();
+            cards[1].textContent = dead.toLocaleString();
+            cards[2].textContent = unck.toLocaleString();
+        }
+
+        const banner = document.getElementById('wb-live-banner');
+        if (d.is_running && unck > 0) {
+            banner.classList.add('active');
+            document.getElementById('wb-live-checked').textContent = checked.toLocaleString();
+            document.getElementById('wb-live-total').textContent   = total.toLocaleString();
+            document.getElementById('wb-live-dead').textContent    = dead.toLocaleString();
+            const pct = total > 0 ? Math.round((checked / total) * 100) : 0;
+            document.getElementById('wb-live-pct').textContent = '· ' + pct + '%';
+
+            // Rate from delta between polls
+            const now = Date.now();
+            if (prevReading) {
+                const dtMs   = now - prevReading.t;
+                const dCheck = checked - prevReading.checked;
+                if (dtMs > 0 && dCheck > 0) {
+                    const ratePerMin = (dCheck / dtMs) * 60000;
+                    document.getElementById('wb-live-rate').textContent = Math.round(ratePerMin).toLocaleString();
+                    const etaMin = unck / Math.max(1, ratePerMin);
+                    let etaTxt;
+                    if (etaMin < 1)        etaTxt = '<1 min';
+                    else if (etaMin < 60)  etaTxt = Math.round(etaMin) + ' min';
+                    else                   etaTxt = (etaMin / 60).toFixed(1) + ' hours';
+                    document.getElementById('wb-live-eta').textContent = etaTxt;
+                }
             }
-            if ((d.unchecked || 0) === 0) {
-                clearInterval(liveStatsTimer);
-                // refresh page once-only to repopulate the table + pill counts
-                setTimeout(() => window.location.reload(), 1500);
-            }
-        } catch (e) { /* poll errors silenced */ }
-    }, 8000);
+            prevReading = { t: now, checked: checked };
+        } else {
+            banner.classList.remove('active');
+        }
+
+        // Finished — reload once to refresh table + pill counts
+        if (unck === 0 && checked > 0) {
+            clearInterval(liveStatsTimer);
+            setTimeout(() => window.location.reload(), 1500);
+        }
+    } catch (e) { /* poll errors silenced */ }
 }
+
+// Always poll on this page — banner only shows when is_running flips true.
+// Catches both the "user just clicked" case AND the "process started elsewhere".
+refreshLiveStats();
+liveStatsTimer = setInterval(refreshLiveStats, 6000);
 
 async function runHarvest() {
     const btn = document.getElementById('wb-run');
