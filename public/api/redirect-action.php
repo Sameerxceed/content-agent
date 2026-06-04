@@ -1,0 +1,171 @@
+<?php
+/**
+ * Redirects API — single endpoint, multiple actions.
+ *
+ * POST JSON: { action, site_id, ... }
+ *
+ * Actions:
+ *   crawl_site        — launch site crawler in background (sitemap-first)
+ *   build_map         — launch redirect builder in background (uses live URLs from crawl)
+ *   list              — return paginated redirects { items, summary }
+ *   set_target        — manually edit a redirect's to_path
+ *   approve           — mark pending → approved
+ *   reject            — mark pending → rejected
+ *   export_next_config — return next.config.js redirects block as text
+ *   export_csv        — return CSV body suitable for Shopify URL Redirects import
+ */
+ini_set('display_errors', '0');
+ob_start();
+
+require_once __DIR__ . '/../../includes/helpers.php';
+require_once __DIR__ . '/../../includes/auth.php';
+require_once __DIR__ . '/../../includes/redirect_map_builder.php';
+
+auth_start();
+if (!auth_check()) { http_response_code(401); ob_end_clean(); echo json_encode(['error' => 'Unauthorized']); exit; }
+
+function rd_respond(array $payload, int $status = 200): void {
+    if (ob_get_length()) ob_end_clean();
+    header('Content-Type: application/json');
+    http_response_code($status);
+    echo json_encode($payload);
+    exit;
+}
+function rd_text(string $body, string $filename = ''): void {
+    if (ob_get_length()) ob_end_clean();
+    header('Content-Type: text/plain; charset=utf-8');
+    if ($filename) header('Content-Disposition: attachment; filename="' . $filename . '"');
+    echo $body; exit;
+}
+function rd_csv(string $body, string $filename = 'redirects.csv'): void {
+    if (ob_get_length()) ob_end_clean();
+    header('Content-Type: text/csv; charset=utf-8');
+    header('Content-Disposition: attachment; filename="' . $filename . '"');
+    echo $body; exit;
+}
+
+$db = require __DIR__ . '/../../includes/db.php';
+
+// GET-friendly export actions need to read from $_GET (browser direct-download)
+$input = json_decode(file_get_contents('php://input'), true) ?: [];
+$action = (string)($input['action'] ?? $_GET['action'] ?? '');
+$site_id = (int)($input['site_id'] ?? $_GET['site_id'] ?? 0);
+
+$site = auth_get_accessible_site($db, $site_id);
+if (!$site) rd_respond(['error' => 'Site not found'], 404);
+
+try {
+    if ($action === 'crawl_site' || $action === 'build_map') {
+        $script_name = $action === 'crawl_site' ? 'cron-site-crawl.php' : 'cron-redirect-build.php';
+        $php    = config('php_path') ?: '/usr/bin/php8.3';
+        $script = realpath(__DIR__ . '/../../agent/' . $script_name);
+        if (!$script) rd_respond(['error' => 'CLI script not found'], 500);
+
+        $log_dir = config('log_path') ?: '/var/log/contentagent';
+        $log     = rtrim($log_dir, '/') . '/redirects.log';
+        $extra   = $action === 'build_map' && !empty($input['limit']) ? ' --limit=' . (int)$input['limit'] : '';
+
+        if (PHP_OS_FAMILY === 'Windows') {
+            $cmd = sprintf('start /B "" "%s" "%s" --site=%d%s', $php, $script, $site_id, $extra);
+            pclose(popen($cmd, 'r'));
+        } else {
+            $cmd = sprintf(
+                'nohup %s %s --site=%d%s >> %s 2>&1 &',
+                escapeshellarg($php),
+                escapeshellarg($script),
+                $site_id,
+                $extra,
+                escapeshellarg($log)
+            );
+            exec($cmd);
+        }
+        rd_respond(['success' => true, 'launched' => true]);
+    }
+
+    if ($action === 'list') {
+        $filter = (string)($input['filter'] ?? $_GET['filter'] ?? 'all');
+        $where = 'site_id = ?'; $args = [$site_id];
+        if ($filter === 'pending')   { $where .= " AND status = 'pending'"; }
+        if ($filter === 'approved')  { $where .= " AND status IN ('approved','applied')"; }
+        if ($filter === 'rejected')  { $where .= " AND status = 'rejected'"; }
+        if ($filter === 'no_target') { $where .= " AND to_path IS NULL"; }
+        if ($filter === 'high')      { $where .= " AND confidence >= 85"; }
+        if ($filter === 'medium')    { $where .= " AND confidence BETWEEN 60 AND 84"; }
+        if ($filter === 'low')       { $where .= " AND (confidence < 60 OR confidence IS NULL)"; }
+        $limit = max(1, min(500, (int)($input['limit'] ?? $_GET['limit'] ?? 200)));
+        $stmt = $db->prepare("SELECT id, from_path, to_path, confidence, match_method, reasoning, status, auto_approved, applied_at
+                              FROM redirects WHERE {$where}
+                              ORDER BY confidence DESC, id LIMIT {$limit}");
+        $stmt->execute($args);
+        rd_respond([
+            'items'   => $stmt->fetchAll(),
+            'summary' => rmb_site_summary($db, $site_id),
+        ]);
+    }
+
+    if ($action === 'set_target') {
+        $rid = (int)($input['redirect_id'] ?? 0);
+        $to  = trim((string)($input['to_path'] ?? ''));
+        if (!$rid) rd_respond(['error' => 'redirect_id required'], 400);
+        // 410-style: empty → null
+        $to = $to === '' ? null : $to;
+        $db->prepare("UPDATE redirects SET to_path = ?, match_method = 'manual', confidence = 100,
+                      reasoning = 'manually set', status = 'approved', auto_approved = 0, updated_at = NOW()
+                      WHERE id = ? AND site_id = ?")
+           ->execute([$to, $rid, $site_id]);
+        rd_respond(['success' => true]);
+    }
+
+    if ($action === 'approve' || $action === 'reject') {
+        $rid = (int)($input['redirect_id'] ?? 0);
+        if (!$rid) rd_respond(['error' => 'redirect_id required'], 400);
+        $new = $action === 'approve' ? 'approved' : 'rejected';
+        $db->prepare("UPDATE redirects SET status = ?, updated_at = NOW() WHERE id = ? AND site_id = ?")
+           ->execute([$new, $rid, $site_id]);
+        rd_respond(['success' => true, 'status' => $new]);
+    }
+
+    if ($action === 'export_next_config') {
+        $stmt = $db->prepare("SELECT from_path, to_path FROM redirects
+                              WHERE site_id = ? AND status IN ('approved','applied') AND to_path IS NOT NULL
+                              ORDER BY id");
+        $stmt->execute([$site_id]);
+        $entries = [];
+        foreach ($stmt->fetchAll() as $r) {
+            $from = addslashes($r['from_path']);
+            $to   = addslashes($r['to_path']);
+            $entries[] = "    { source: '{$from}', destination: '{$to}', permanent: true },";
+        }
+        $body = "// Generated by ContentAgent. Paste this `async redirects()` into next.config.js.\n"
+              . "// Each entry is a 301 from a dead historical URL to its living target.\n\n"
+              . "module.exports = {\n"
+              . "  async redirects() {\n"
+              . "    return [\n"
+              . implode("\n", $entries) . "\n"
+              . "    ];\n"
+              . "  },\n"
+              . "};\n";
+        rd_text($body, 'next.config.js');
+    }
+
+    if ($action === 'export_csv') {
+        // Shopify URL Redirects bulk-import CSV: columns Redirect from,Redirect to
+        $stmt = $db->prepare("SELECT from_path, to_path FROM redirects
+                              WHERE site_id = ? AND status IN ('approved','applied') AND to_path IS NOT NULL
+                              ORDER BY id");
+        $stmt->execute([$site_id]);
+        $rows = [['Redirect from', 'Redirect to']];
+        foreach ($stmt->fetchAll() as $r) $rows[] = [$r['from_path'], $r['to_path']];
+        $out = fopen('php://temp', 'w+');
+        foreach ($rows as $row) fputcsv($out, $row);
+        rewind($out);
+        $body = stream_get_contents($out);
+        fclose($out);
+        rd_csv($body, 'shopify-url-redirects.csv');
+    }
+
+    rd_respond(['error' => 'Unknown action: ' . $action], 400);
+} catch (Throwable $e) {
+    error_log('[redirect-action] ' . $e->getMessage());
+    rd_respond(['error' => $e->getMessage()], 500);
+}
