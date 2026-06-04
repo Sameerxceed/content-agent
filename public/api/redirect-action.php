@@ -173,6 +173,17 @@ try {
         rd_respond(['success' => true, 'approved' => $stmt->rowCount()]);
     }
 
+    if ($action === 'export_not_found') {
+        require_once __DIR__ . '/../../includes/not_found_generator.php';
+        $destinations = nfg_pick_destinations($db, $site_id);
+        if (empty($destinations)) rd_respond(['error' => 'Crawl your site first so we know what to suggest on the 404 page.'], 400);
+        $platform = strtolower((string)($site['platform'] ?? 'custom'));
+        if ($platform === 'shopify') {
+            rd_text(nfg_generate_shopify($site, $destinations), 'ca-404.liquid');
+        }
+        rd_text(nfg_generate_nextjs($site, $destinations), 'not-found.tsx');
+    }
+
     if ($action === 'apply_to_shopify') {
         require_once __DIR__ . '/../../includes/integrations/shopify.php';
         $shop_url = trim((string)($site['cms_url'] ?? ''));

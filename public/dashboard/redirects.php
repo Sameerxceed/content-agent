@@ -136,6 +136,11 @@ ob_start();
                 ✓ Approve all pending (<?= (int)($summary['by_status']['pending'] ?? 0) ?>)
             </button>
         <?php endif; ?>
+        <?php if ($crawl['total'] > 0): ?>
+            <button class="btn btn-outline btn-sm" onclick="showNotFoundHelp()" title="On-brand 404 page that catches URLs not covered by your redirect map">
+                ↓ 404 page
+            </button>
+        <?php endif; ?>
         <?php if ($summary['by_status']['approved'] ?? 0): ?>
             <?php if ($platform === 'shopify'): ?>
                 <button class="btn btn-primary btn-sm" onclick="applyShopify(this)" title="Push approved redirects directly via Shopify Admin API">
@@ -167,6 +172,32 @@ ob_start();
         </ol>
         <a class="btn btn-primary btn-sm" href="<?= url('/api/redirect-action.php?action=export_next_config&site_id=' . $site_id) ?>" style="margin-top:4px;">↓ Download next.config.js</a>
         <button class="btn btn-outline btn-sm" onclick="document.getElementById('deploy-help').style.display='none'" style="margin-left:6px;">Close</button>
+    </div>
+    <?php endif; ?>
+
+    <?php if ($crawl['total'] > 0): ?>
+    <!-- 404 page companion: catches URLs not in the redirect map (mistypes, bots, long-tail) -->
+    <div id="notfound-help" style="display:none; margin-top:14px; padding:14px 16px; background:#fefce8; border:1px solid #fde047; border-radius:6px; font-size:13px; line-height:1.6;">
+        <div style="font-weight:600; color:#713f12; margin-bottom:8px;">Branded 404 page — catches the URLs your redirect map doesn't cover</div>
+        <p style="margin:0 0 8px; color:#713f12;">Even with redirects in place, some URLs will still hit your site as 404s — mistyped links, bot scans, very old long-tail URLs not yet in any archive. The default Next.js / Shopify 404 page looks generic and tells visitors nothing. <strong>This download is a custom 404 page on your brand</strong> with links to your most useful pages so visitors who land there have somewhere to go.</p>
+        <?php if ($platform === 'shopify'): ?>
+            <ol style="margin:8px 0; padding-left:18px; color:#713f12;">
+                <li>Download the <code>ca-404.liquid</code> file below.</li>
+                <li>In your Shopify admin → Online Store → Themes → <strong>Edit code</strong> on your published theme.</li>
+                <li>Under <strong>Sections</strong>, click <strong>Add a new section</strong>, name it <code>ca-404</code>, paste the contents.</li>
+                <li>In <code>templates/404.json</code> (or <code>templates/404.liquid</code> for older themes), add the section to the layout.</li>
+                <li>Save. New 404s now render your on-brand page.</li>
+            </ol>
+        <?php else: ?>
+            <ol style="margin:8px 0; padding-left:18px; color:#713f12;">
+                <li>Download the <code>not-found.tsx</code> file below.</li>
+                <li>Open your Next.js project repo and place it at <code>app/not-found.tsx</code> (App Router) or <code>pages/404.tsx</code> if you're still on Pages router (rename file accordingly).</li>
+                <li>Commit + push. Vercel auto-deploys.</li>
+                <li>Test by visiting any random URL like <code><?= e('https://' . $site['domain']) ?>/this-does-not-exist</code> — you should see your branded page.</li>
+            </ol>
+        <?php endif; ?>
+        <a class="btn btn-primary btn-sm" href="<?= url('/api/redirect-action.php?action=export_not_found&site_id=' . $site_id) ?>" style="margin-top:4px;">↓ Download 404 page</a>
+        <button class="btn btn-outline btn-sm" onclick="document.getElementById('notfound-help').style.display='none'" style="margin-left:6px;">Close</button>
     </div>
     <?php endif; ?>
 
@@ -343,6 +374,11 @@ async function reject(id, btn) {
     btn.disabled = true;
     try { await call('reject', {redirect_id: id}); window.location.reload(); }
     catch (e) { alert(e.message); btn.disabled = false; }
+}
+
+function showNotFoundHelp() {
+    const help = document.getElementById('notfound-help');
+    if (help) { help.style.display = 'block'; help.scrollIntoView({behavior: 'smooth', block: 'nearest'}); }
 }
 
 function showDeployHelp() {
