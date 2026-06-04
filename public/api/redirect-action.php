@@ -164,6 +164,15 @@ try {
         rd_csv($body, 'shopify-url-redirects.csv');
     }
 
+    if ($action === 'bulk_approve') {
+        // Approve every pending row that has a non-null to_path. Skips
+        // no-target rows (those need a manual decision).
+        $stmt = $db->prepare("UPDATE redirect_map SET status = 'approved', updated_at = NOW()
+                              WHERE site_id = ? AND status = 'pending' AND to_path IS NOT NULL");
+        $stmt->execute([$site_id]);
+        rd_respond(['success' => true, 'approved' => $stmt->rowCount()]);
+    }
+
     if ($action === 'apply_to_shopify') {
         require_once __DIR__ . '/../../includes/integrations/shopify.php';
         $shop_url = trim((string)($site['cms_url'] ?? ''));

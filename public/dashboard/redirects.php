@@ -48,6 +48,12 @@ $stmt = $db->prepare("SELECT id, from_path, to_path, confidence, match_method, r
 $stmt->execute($args);
 $redirects = $stmt->fetchAll();
 
+// Inventory of live URL paths — drives the autocomplete datalist on every
+// editable to_path field so the user can't misspell into a 404.
+$stmt = $db->prepare("SELECT path FROM current_site_urls WHERE site_id = ? ORDER BY url_type, path");
+$stmt->execute([$site_id]);
+$live_paths = $stmt->fetchAll(PDO::FETCH_COLUMN);
+
 $platform = $site['platform'] ?? 'custom';
 
 $page_title = '301 Redirects — ' . $site['name'];
@@ -75,6 +81,10 @@ ob_start();
 .rd-arrow { color:var(--text-light); margin:0 6px; }
 .rd-to   { color:#059669; }
 .rd-to.editable { color:#0f172a; }
+.rd-to-input { width:240px; padding:3px 8px; font-family:ui-monospace, monospace; font-size:12px; color:#059669; border:1px solid transparent; background:transparent; border-radius:4px; }
+.rd-to-input:hover, .rd-to-input:focus { border-color:var(--border); background:#fff; color:#0f172a; outline:none; }
+.rd-to-input.dirty { color:#0f172a; border-color:#fbbf24; }
+.rd-to-input.saved { background:#d1fae5; }
 .rd-meta { font-size:10px; color:var(--text-light); margin-top:2px; }
 .rd-confidence { font-size:11px; padding:2px 9px; border-radius:10px; font-weight:600; white-space:nowrap; }
 .rd-confidence.high { background:#d1fae5; color:#065f46; }
@@ -96,6 +106,13 @@ ob_start();
     <a href="<?= url('/dashboard/wayback.php?site=' . $site_id) ?>" style="font-size:13px;color:var(--primary);text-decoration:none;">← Archive history</a>
 </div>
 
+<!-- Native browser autocomplete: every editable to_path uses list="live-paths" -->
+<datalist id="live-paths">
+    <?php foreach ($live_paths as $p): ?>
+        <option value="<?= e($p) ?>"></option>
+    <?php endforeach; ?>
+</datalist>
+
 <div class="setup-section" style="max-width:980px;">
     <h3 style="margin:0 0 3px; font-size:11px; text-transform:uppercase; letter-spacing:0.4px; color:var(--primary);">301 redirect map</h3>
     <p class="desc" style="margin:0 0 8px; max-width:720px;">
@@ -112,6 +129,11 @@ ob_start();
             ⚡ Build redirect map
             <?php if ($archive['dead_urls']): ?><span style="font-size:10px;"> · <?= number_format($archive['dead_urls']) ?> dead URLs queued</span><?php endif; ?>
         </button>
+        <?php if (($summary['by_status']['pending'] ?? 0) > 0): ?>
+            <button class="btn btn-outline btn-sm" onclick="approveAllPending(this)" title="Approve every pending redirect that has a target (skips no-target rows)">
+                ✓ Approve all pending (<?= (int)($summary['by_status']['pending'] ?? 0) ?>)
+            </button>
+        <?php endif; ?>
         <?php if ($summary['by_status']['approved'] ?? 0): ?>
             <?php if ($platform === 'shopify'): ?>
                 <button class="btn btn-primary btn-sm" onclick="applyShopify(this)" title="Push approved redirects directly via Shopify Admin API">
@@ -187,7 +209,7 @@ ob_start();
                 <div class="rd-paths">
                     <span class="rd-from"><?= e($r['from_path']) ?></span>
                     <span class="rd-arrow">→</span>
-                    <span class="rd-to <?= $r['to_path'] === null ? '' : 'editable' ?>" contenteditable="true" data-original="<?= e($r['to_path'] ?? '') ?>" onblur="saveTarget(this, <?= (int)$r['id'] ?>)"><?= e($r['to_path'] ?? '(no target — consider 410 Gone)') ?></span>
+                    <input class="rd-to-input" list="live-paths" data-original="<?= e($r['to_path'] ?? '') ?>" value="<?= e($r['to_path'] ?? '') ?>" placeholder="(no target — consider 410)" onblur="saveTarget(this, <?= (int)$r['id'] ?>)">
                 </div>
                 <div class="rd-meta">
                     <?= e($r['match_method'] ?: '?') ?>
@@ -281,6 +303,22 @@ async function reject(id, btn) {
     catch (e) { alert(e.message); btn.disabled = false; }
 }
 
+async function approveAllPending(btn) {
+    if (!confirm('Approve every pending redirect that already has a target? Rows with no target stay pending — they need a manual call.')) return;
+    btn.disabled = true;
+    const orig = btn.innerHTML;
+    btn.innerHTML = 'Approving…';
+    try {
+        const r = await call('bulk_approve');
+        alert(`Approved ${r.approved} redirects.`);
+        window.location.reload();
+    } catch (e) {
+        alert(e.message);
+        btn.disabled = false;
+        btn.innerHTML = orig;
+    }
+}
+
 async function applyShopify(btn) {
     if (!confirm('Push all approved redirects to Shopify Admin? Duplicates will be skipped safely.')) return;
     btn.disabled = true;
@@ -298,16 +336,26 @@ async function applyShopify(btn) {
 }
 
 async function saveTarget(el, id) {
-    const newVal = el.textContent.trim();
+    const newVal = el.value.trim();
     if (newVal === el.dataset.original) return;
-    if (newVal && !newVal.startsWith('/')) { alert('Target must start with /'); el.textContent = el.dataset.original; return; }
+    if (newVal && !newVal.startsWith('/')) { alert('Target must start with /'); el.value = el.dataset.original; return; }
     try {
         await call('set_target', {redirect_id: id, to_path: newVal});
         el.dataset.original = newVal;
-        el.classList.add('editable');
-        el.style.background = '#d1fae5'; setTimeout(() => { el.style.background = ''; }, 600);
-    } catch (e) { alert(e.message); el.textContent = el.dataset.original; }
+        el.classList.remove('dirty');
+        el.classList.add('saved');
+        setTimeout(() => el.classList.remove('saved'), 800);
+    } catch (e) { alert(e.message); el.value = el.dataset.original; }
 }
+
+// Mark inputs as dirty as the user types so the colour cue tells them an
+// unsaved change is pending — saves on blur.
+document.addEventListener('input', (e) => {
+    if (e.target.classList && e.target.classList.contains('rd-to-input')) {
+        if (e.target.value !== e.target.dataset.original) e.target.classList.add('dirty');
+        else e.target.classList.remove('dirty');
+    }
+});
 </script>
 
 <?php
