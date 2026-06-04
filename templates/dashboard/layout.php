@@ -523,6 +523,9 @@ function sidebar_active(string $page, array $pages_or_query = []): string {
             <a href="<?= url('/dashboard/indexnow.php?site=' . $ctx_site_id) ?>" class="<?= sidebar_active('indexnow') ?>">
                 <span class="nav-icon">&#128640;</span> Fast indexing
             </a>
+            <a href="<?= url('/dashboard/freshness.php?site=' . $ctx_site_id) ?>" class="<?= sidebar_active('freshness') ?>">
+                <span class="nav-icon">&#127811;</span> Freshness
+            </a>
             <a href="<?= url('/dashboard/alerts.php?site=' . $ctx_site_id) ?>" class="<?= sidebar_active('alerts') ?>" style="display:flex;justify-content:space-between;align-items:center;">
                 <span><span class="nav-icon">&#128276;</span> Alerts</span>
                 <?php if ($ctx_alerts_unread > 0): ?>

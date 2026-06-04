@@ -83,6 +83,7 @@ $valid_jobs = [
     'website-hygiene', // weekly: harvest + live-check + crawl + redirect-build per site
     'psi-baseline',    // weekly: page-speed + Core Web Vitals snapshot per site
     'schema-audit',    // weekly: verify JSON-LD persistence on every tracked URL
+    'content-freshness', // weekly: rank published posts by staleness for refresh
 ];
 
 if (!in_array($job, $valid_jobs, true)) {
