@@ -26,17 +26,32 @@ if (!$site) { http_response_code(404); exit('Site not found or access denied.');
 
 $summary = wayback_site_summary($db, $site_id);
 
-// Sample of historical URLs — top 50 by last_seen DESC, optionally filtered
-$filter = $_GET['filter'] ?? 'all';
+// Paginated historical URL list — supports filter + per-page + page param
+$filter   = $_GET['filter'] ?? 'all';
+$per_page = (int)($_GET['per_page'] ?? 100);
+if (!in_array($per_page, [50, 100, 250, 500], true)) $per_page = 100;
+$page     = max(1, (int)($_GET['page'] ?? 1));
+$offset   = ($page - 1) * $per_page;
+
 $where = 'site_id = ?';
 $args  = [$site_id];
-if ($filter === 'dead') { $where .= ' AND is_dead = 1'; }
+if ($filter === 'dead')      { $where .= ' AND is_dead = 1'; }
+if ($filter === 'alive')     { $where .= ' AND current_status_code BETWEEN 200 AND 399'; }
 if ($filter === 'unchecked') { $where .= ' AND current_checked_at IS NULL'; }
+
+// total matching the filter (for the pagination footer)
+$cnt = $db->prepare("SELECT COUNT(*) FROM historical_urls WHERE {$where}");
+$cnt->execute($args);
+$matching = (int)$cnt->fetchColumn();
+$total_pages = max(1, (int)ceil($matching / $per_page));
+if ($page > $total_pages) $page = $total_pages;
+$offset = ($page - 1) * $per_page;
+
 $stmt = $db->prepare("SELECT url, path, first_seen, last_seen, snapshot_count, current_status_code, current_checked_at, is_dead
                       FROM historical_urls
                       WHERE {$where}
                       ORDER BY last_seen DESC
-                      LIMIT 50");
+                      LIMIT {$per_page} OFFSET {$offset}");
 $stmt->execute($args);
 $urls = $stmt->fetchAll();
 
@@ -129,10 +144,21 @@ ob_start();
     </div>
 </div>
 
+<?php
+    $alive_count = $summary['total_urls'] - $summary['dead_urls'] - $summary['unchecked'];
+    $base = '/dashboard/wayback.php?site=' . $site_id;
+    $qs = function($extra) use ($base) {
+        $params = [];
+        parse_str(parse_url($base, PHP_URL_QUERY), $params);
+        $params = array_merge($params, $extra);
+        return strtok($base, '?') . '?' . http_build_query($params);
+    };
+?>
 <div class="wb-pills" style="max-width:980px;">
-    <a class="wb-pill <?= $filter === 'all' ? 'active' : '' ?>" href="<?= url('/dashboard/wayback.php?site=' . $site_id) ?>">All (<?= number_format($summary['total_urls']) ?>)</a>
-    <a class="wb-pill <?= $filter === 'dead' ? 'active' : '' ?>" href="<?= url('/dashboard/wayback.php?site=' . $site_id . '&filter=dead') ?>">Dead (<?= number_format($summary['dead_urls']) ?>)</a>
-    <a class="wb-pill <?= $filter === 'unchecked' ? 'active' : '' ?>" href="<?= url('/dashboard/wayback.php?site=' . $site_id . '&filter=unchecked') ?>">Unchecked (<?= number_format($summary['unchecked']) ?>)</a>
+    <a class="wb-pill <?= $filter === 'all'       ? 'active' : '' ?>" href="<?= url($base) ?>">All (<?= number_format($summary['total_urls']) ?>)</a>
+    <a class="wb-pill <?= $filter === 'alive'     ? 'active' : '' ?>" href="<?= url($base . '&filter=alive') ?>">Alive (<?= number_format($alive_count) ?>)</a>
+    <a class="wb-pill <?= $filter === 'dead'      ? 'active' : '' ?>" href="<?= url($base . '&filter=dead') ?>">Dead (<?= number_format($summary['dead_urls']) ?>)</a>
+    <a class="wb-pill <?= $filter === 'unchecked' ? 'active' : '' ?>" href="<?= url($base . '&filter=unchecked') ?>">Unchecked (<?= number_format($summary['unchecked']) ?>)</a>
 </div>
 
 <div style="max-width:980px; background:#fff; border:1px solid var(--border); border-radius:6px; overflow:hidden;">
@@ -175,11 +201,37 @@ ob_start();
                 <?php endforeach; ?>
             </tbody>
         </table>
-        <?php if ($summary['total_urls'] > 50): ?>
-        <div style="padding:10px 14px; font-size:11px; color:var(--text-light); border-top:1px solid var(--border);">
-            Showing 50 of <?= number_format($summary['total_urls']) ?>. Full list + bulk redirect mapping in Module 3.
+        <div style="padding:10px 14px; border-top:1px solid var(--border); display:flex; justify-content:space-between; align-items:center; gap:10px; flex-wrap:wrap; font-size:12px; color:var(--text-light);">
+            <div>
+                Showing <strong style="color:#0f172a;"><?= number_format($offset + 1) ?>–<?= number_format(min($offset + $per_page, $matching)) ?></strong> of <strong style="color:#0f172a;"><?= number_format($matching) ?></strong>
+                <?php if ($filter !== 'all'): ?> (<?= e($filter) ?>)<?php endif; ?>
+            </div>
+            <div style="display:flex; gap:6px; align-items:center;">
+                <span>Per page:</span>
+                <?php foreach ([50, 100, 250, 500] as $pp): ?>
+                    <a href="<?= e(url($qs(['per_page' => $pp, 'page' => 1]))) ?>" style="padding:2px 8px; border:1px solid <?= $per_page === $pp ? 'var(--accent)' : 'var(--border)' ?>; border-radius:10px; text-decoration:none; color:<?= $per_page === $pp ? 'var(--accent)' : 'var(--text-light)' ?>; font-weight:<?= $per_page === $pp ? 600 : 400 ?>;">
+                        <?= $pp ?>
+                    </a>
+                <?php endforeach; ?>
+            </div>
+            <div style="display:flex; gap:6px; align-items:center;">
+                <?php if ($page > 1): ?>
+                    <a href="<?= e(url($qs(['page' => 1]))) ?>" style="color:var(--primary); text-decoration:none;">«</a>
+                    <a href="<?= e(url($qs(['page' => $page - 1]))) ?>" style="color:var(--primary); text-decoration:none;">‹ Prev</a>
+                <?php else: ?>
+                    <span style="color:#cbd5e1;">«</span>
+                    <span style="color:#cbd5e1;">‹ Prev</span>
+                <?php endif; ?>
+                <span>Page <strong style="color:#0f172a;"><?= $page ?></strong> of <?= number_format($total_pages) ?></span>
+                <?php if ($page < $total_pages): ?>
+                    <a href="<?= e(url($qs(['page' => $page + 1]))) ?>" style="color:var(--primary); text-decoration:none;">Next ›</a>
+                    <a href="<?= e(url($qs(['page' => $total_pages]))) ?>" style="color:var(--primary); text-decoration:none;">»</a>
+                <?php else: ?>
+                    <span style="color:#cbd5e1;">Next ›</span>
+                    <span style="color:#cbd5e1;">»</span>
+                <?php endif; ?>
+            </div>
         </div>
-        <?php endif; ?>
     <?php endif; ?>
 </div>
 
