@@ -238,6 +238,32 @@ ob_start();
 <script>
 const SITE_ID = <?= $site_id ?>;
 let pollTimer = null;
+let liveStatsTimer = null;
+
+// If there are unchecked URLs AND nothing else is running, auto-refresh the
+// stat cards every 8 seconds so the user sees progress without manually reloading.
+const INITIAL_UNCHECKED = <?= (int)$summary['unchecked'] ?>;
+if (INITIAL_UNCHECKED > 0) {
+    liveStatsTimer = setInterval(async () => {
+        try {
+            const r = await fetch('<?= url('/api/wayback-status.php?site_id=') ?>' + SITE_ID);
+            const d = await r.json();
+            // Find the dashboard cards by their text and update in place
+            const cards = document.querySelectorAll('.wb-card .num');
+            // [0]=total, [1]=dead, [2]=unchecked, [3]=last-harvest (skip)
+            if (cards.length >= 3) {
+                cards[0].textContent = (d.total_urls || 0).toLocaleString();
+                cards[1].textContent = (d.dead_urls || 0).toLocaleString();
+                cards[2].textContent = (d.unchecked || 0).toLocaleString();
+            }
+            if ((d.unchecked || 0) === 0) {
+                clearInterval(liveStatsTimer);
+                // refresh page once-only to repopulate the table + pill counts
+                setTimeout(() => window.location.reload(), 1500);
+            }
+        } catch (e) { /* poll errors silenced */ }
+    }, 8000);
+}
 
 async function runHarvest() {
     const btn = document.getElementById('wb-run');

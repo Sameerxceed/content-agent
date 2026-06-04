@@ -36,6 +36,16 @@ $php    = config('php_path') ?: '/usr/bin/php8.3';
 $script = realpath(__DIR__ . '/../../agent/cron-wayback-checkstatus.php');
 if (!$script || !file_exists($script)) wbc_respond(['error' => 'CLI script not found'], 500);
 
+// Concurrency guard: refuse to start a second process for the same site if
+// one is already running. Prevents the "user clicks 3 times → 3 processes
+// racing" scenario we saw on Anna Lou.
+if (PHP_OS_FAMILY !== 'Windows') {
+    $existing = trim((string)shell_exec("pgrep -f 'cron-wayback-checkstatus.php --site={$site_id}' 2>/dev/null"));
+    if ($existing !== '') {
+        wbc_respond(['success' => true, 'already_running' => true, 'pid' => (int)explode("\n", $existing)[0]]);
+    }
+}
+
 $log_dir = config('log_path') ?: '/var/log/contentagent';
 $log     = rtrim($log_dir, '/') . '/wayback.log';
 

@@ -287,7 +287,7 @@ function wayback_check_pending(PDO $db, int $site_id, int $batch_size = 500): ar
         if ($code === 0) $errors++;
         elseif ($code >= 400) $dead++;
         else $alive++;
-        usleep(800000); // 0.8s — polite to small customer servers
+        usleep(300000); // 0.3s — ~3 req/sec, well within polite range for any customer server
     }
     return ['checked' => $checked, 'dead' => $dead, 'alive' => $alive, 'errors' => $errors];
 }
