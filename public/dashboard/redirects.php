@@ -143,11 +143,38 @@ ob_start();
                 </button>
                 <a class="btn btn-outline btn-sm" href="<?= url('/api/redirect-action.php?action=export_csv&site_id=' . $site_id) ?>">↓ CSV backup</a>
             <?php else: ?>
-                <a class="btn btn-primary btn-sm" href="<?= url('/api/redirect-action.php?action=export_next_config&site_id=' . $site_id) ?>">↓ next.config.js</a>
+                <button class="btn btn-primary btn-sm" onclick="showDeployHelp()">↓ Download redirects file</button>
             <?php endif; ?>
         <?php endif; ?>
     </div>
     <div id="rd-progress"></div>
+
+    <?php if (($summary['by_status']['approved'] ?? 0) > 0 && $platform !== 'shopify'): ?>
+    <!-- Explicit deploy instructions so non-developers know what to do with the downloaded file -->
+    <div id="deploy-help" style="display:none; margin-top:14px; padding:14px 16px; background:#f0f9ff; border:1px solid #bae6fd; border-radius:6px; font-size:13px; line-height:1.6;">
+        <div style="font-weight:600; color:#0c4a6e; margin-bottom:8px;">How to deploy your <?= number_format((int)($summary['by_status']['approved'] ?? 0)) ?> redirects</div>
+        <ol style="margin:0 0 8px; padding-left:18px; color:#075985;">
+            <li><strong>Click the link below</strong> to download <code>next.config.js</code>.</li>
+            <li><strong>Open your website's code repo</strong> (the Next.js project for <?= e($site['domain']) ?>).</li>
+            <li>Find the existing <code>next.config.js</code> file at the root of the project.
+                <ul style="margin:4px 0; padding-left:18px;">
+                    <li>If you have <em>no other settings</em> in it → replace the whole file with our download.</li>
+                    <li>If you have <em>existing settings</em> → copy only the <code>async redirects() { … }</code> block from our file into your existing config.</li>
+                </ul>
+            </li>
+            <li>Commit + push to your main branch. Vercel (or whichever host) auto-deploys.</li>
+            <li>Once deployed, every old dead URL now serves a 301 to its new target. Search engines will pick this up within a few weeks.</li>
+        </ol>
+        <a class="btn btn-primary btn-sm" href="<?= url('/api/redirect-action.php?action=export_next_config&site_id=' . $site_id) ?>" style="margin-top:4px;">↓ Download next.config.js</a>
+        <button class="btn btn-outline btn-sm" onclick="document.getElementById('deploy-help').style.display='none'" style="margin-left:6px;">Close</button>
+    </div>
+    <?php endif; ?>
+
+    <?php if (($summary['by_status']['approved'] ?? 0) > 0 && $platform === 'shopify'): ?>
+    <div style="margin-top:14px; padding:12px 14px; background:#f0f9ff; border:1px solid #bae6fd; border-radius:6px; font-size:12px; color:#075985; line-height:1.5;">
+        <strong>Apply</strong> pushes redirects directly into your Shopify store via the Admin API — no manual upload needed. The <strong>CSV backup</strong> is in case you ever want a copy or want to import manually under Shopify admin → Online Store → Navigation → URL Redirects.
+    </div>
+    <?php endif; ?>
 </div>
 
 <div class="rd-stats" style="max-width:980px;">
@@ -316,6 +343,14 @@ async function reject(id, btn) {
     btn.disabled = true;
     try { await call('reject', {redirect_id: id}); window.location.reload(); }
     catch (e) { alert(e.message); btn.disabled = false; }
+}
+
+function showDeployHelp() {
+    const help = document.getElementById('deploy-help');
+    if (help) {
+        help.style.display = 'block';
+        help.scrollIntoView({behavior: 'smooth', block: 'nearest'});
+    }
 }
 
 async function setQuickTarget(btn, id, target) {
