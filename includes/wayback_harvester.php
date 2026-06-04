@@ -221,6 +221,78 @@ function wayback_parse_timestamp(string $ts): ?string
 }
 
 /**
+ * HEAD-check a single URL, falling back to GET if the server rejects HEAD.
+ * Follows redirects up to 5 hops so a 301-chain ending at 200 is reported as 200
+ * (those URLs aren't dead — they're already redirected). Returns the final
+ * status code, or 0 on transport failure.
+ */
+function wayback_check_url_status(string $url): int
+{
+    $do = function (string $method) use ($url): int {
+        $ch = curl_init($url);
+        curl_setopt_array($ch, [
+            CURLOPT_RETURNTRANSFER => true,
+            CURLOPT_NOBODY         => $method === 'HEAD',
+            CURLOPT_CUSTOMREQUEST  => $method,
+            CURLOPT_FOLLOWLOCATION => true,
+            CURLOPT_MAXREDIRS      => 5,
+            CURLOPT_TIMEOUT        => 15,
+            CURLOPT_CONNECTTIMEOUT => 8,
+            CURLOPT_USERAGENT      => 'ContentAgent-LinkChecker/1.0',
+            CURLOPT_SSL_VERIFYPEER => false, // forgive cert issues — we only care about the status
+        ]);
+        curl_exec($ch);
+        $code = (int)curl_getinfo($ch, CURLINFO_HTTP_CODE);
+        curl_close($ch);
+        return $code;
+    };
+
+    $code = $do('HEAD');
+    // 405 Method Not Allowed / some servers return 0 or 4xx for HEAD —
+    // fall back to GET so we don't false-positive a live URL as dead.
+    if ($code === 0 || $code === 405 || $code === 403) {
+        $code = $do('GET');
+    }
+    return $code;
+}
+
+/**
+ * Live-check a batch of historical URLs for a site. Marks current_status_code
+ * + current_checked_at on each row. Polite: 0.8s between checks.
+ *
+ * @param int $batch_size  hard cap per call so CLI runs don't go forever
+ * @return array { checked, dead, alive, errors }
+ */
+function wayback_check_pending(PDO $db, int $site_id, int $batch_size = 500): array
+{
+    $stmt = $db->prepare("SELECT id, url FROM historical_urls
+                          WHERE site_id = ? AND current_checked_at IS NULL
+                          ORDER BY id LIMIT ?");
+    // PDO binds LIMIT as integer
+    $stmt->bindValue(1, $site_id, PDO::PARAM_INT);
+    $stmt->bindValue(2, $batch_size, PDO::PARAM_INT);
+    $stmt->execute();
+    $rows = $stmt->fetchAll();
+
+    $update = $db->prepare("UPDATE historical_urls SET current_status_code = ?, current_checked_at = NOW() WHERE id = ?");
+    $checked = 0; $dead = 0; $alive = 0; $errors = 0;
+    foreach ($rows as $r) {
+        $code = wayback_check_url_status((string)$r['url']);
+        try {
+            $update->execute([$code ?: null, (int)$r['id']]);
+        } catch (Throwable $e) {
+            error_log('[wayback] check update: ' . $e->getMessage());
+        }
+        $checked++;
+        if ($code === 0) $errors++;
+        elseif ($code >= 400) $dead++;
+        else $alive++;
+        usleep(800000); // 0.8s — polite to small customer servers
+    }
+    return ['checked' => $checked, 'dead' => $dead, 'alive' => $alive, 'errors' => $errors];
+}
+
+/**
  * Aggregate counts for a site — feeds the dashboard widget.
  */
 function wayback_site_summary(PDO $db, int $site_id): array

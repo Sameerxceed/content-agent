@@ -79,9 +79,16 @@ ob_start();
                 is a candidate for a 301 redirect to a living page (Module 3 builds the redirect map).
             </p>
         </div>
-        <button id="wb-run" class="btn btn-accent btn-sm" onclick="runHarvest()" style="white-space:nowrap;">
-            <?= $summary['last_run'] ? 'Re-pull history' : 'Pull archive history' ?>
-        </button>
+        <div style="display:flex; gap:6px; white-space:nowrap;">
+            <?php if ($summary['unchecked'] > 0): ?>
+                <button id="wb-check" class="btn btn-outline btn-sm" onclick="runCheckStatus()" title="HEAD each historical URL to mark which are alive vs dead today">
+                    Check live status (<?= number_format($summary['unchecked']) ?>)
+                </button>
+            <?php endif; ?>
+            <button id="wb-run" class="btn btn-accent btn-sm" onclick="runHarvest()">
+                <?= $summary['last_run'] ? 'Re-pull history' : 'Pull archive history' ?>
+            </button>
+        </div>
     </div>
     <div id="wb-progress"></div>
 </div>
@@ -199,6 +206,51 @@ async function runHarvest() {
         prog.innerHTML = '<span style="color:#dc2626;">' + e.message + '</span>';
         btn.disabled = false;
     }
+}
+
+async function runCheckStatus() {
+    const btn = document.getElementById('wb-check');
+    const prog = document.getElementById('wb-progress');
+    if (btn) btn.disabled = true;
+    prog.style.display = 'block';
+    prog.innerHTML = 'Starting live-status check…';
+    try {
+        const res = await fetch('<?= url('/api/wayback-checkstatus.php') ?>', {
+            method: 'POST', headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({site_id: SITE_ID})
+        });
+        const data = await res.json();
+        if (!res.ok || !data.success) throw new Error(data.error || ('HTTP ' + res.status));
+        prog.innerHTML = 'Checking each URL with HEAD requests — about 1.2s per URL. Page will auto-refresh as the counter drops.';
+        startCheckPolling();
+    } catch (e) {
+        prog.innerHTML = '<span style="color:#dc2626;">' + e.message + '</span>';
+        if (btn) btn.disabled = false;
+    }
+}
+
+function startCheckPolling() {
+    if (pollTimer) clearInterval(pollTimer);
+    pollTimer = setInterval(pollCheckStatus, 5000);
+    pollCheckStatus();
+}
+
+let lastUnchecked = null;
+async function pollCheckStatus() {
+    try {
+        const res = await fetch('<?= url('/api/wayback-status.php?site_id=') ?>' + SITE_ID);
+        const data = await res.json();
+        const prog = document.getElementById('wb-progress');
+        const unchecked = data.unchecked || 0;
+        if (unchecked === 0) {
+            window.location.reload(); // done — refresh to show dead/alive counts + table
+            return;
+        }
+        if (lastUnchecked === null || unchecked < lastUnchecked) {
+            prog.innerHTML = `<strong>Checking…</strong> ${parseInt(unchecked).toLocaleString()} URLs left to check (${(data.total_urls - unchecked).toLocaleString()} done · ${data.dead_urls.toLocaleString()} dead found so far).`;
+        }
+        lastUnchecked = unchecked;
+    } catch (e) { /* swallow */ }
 }
 
 function startPolling() {
