@@ -288,8 +288,19 @@ let prevReading = null;
 async function refreshLiveStats() {
     try {
         const r = await fetch('<?= url('/api/wayback-status.php?site_id=') ?>' + SITE_ID);
+        // If the session expired or the API errored, the response will be an
+        // error object (e.g. {"error":"Unauthorized"}). Never overwrite the
+        // visible stats with 0 in that case — keep the last known good values.
+        if (!r.ok) {
+            if (r.status === 401) {
+                clearInterval(liveStatsTimer);
+                document.getElementById('wb-live-banner').classList.remove('active');
+            }
+            return;
+        }
         const d = await r.json();
-        const total = d.total_urls || 0;
+        if (d.error || typeof d.total_urls !== 'number') return;
+        const total = d.total_urls;
         const dead  = d.dead_urls  || 0;
         const unck  = d.unchecked  || 0;
         const checked = total - unck;
