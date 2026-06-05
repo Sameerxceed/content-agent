@@ -16,6 +16,7 @@
 require_once __DIR__ . '/../../includes/helpers.php';
 require_once __DIR__ . '/../../includes/auth.php';
 require_once __DIR__ . '/../../includes/integrations/linkedin.php';
+require_once __DIR__ . '/../../includes/integrations/google.php';
 
 auth_start();
 auth_require();
@@ -443,7 +444,7 @@ include __DIR__ . '/_site_stepper.php';
             <?php
             $channel_meta = [
                 'cms'                    => ['name' => 'CMS (your website)', 'desc' => 'Push posts + legal pages to your CMS.', 'configure' => '/dashboard/setup.php?site=' . $site_id . '&tab=publishing', 'cta' => 'Configure'],
-                'google_search_console'  => ['name' => 'Google Search Console', 'desc' => 'Track impressions, clicks, position from Google.', 'configure' => '/dashboard/integrations.php#gsc', 'cta' => 'Connect via OAuth'],
+                'google_search_console'  => ['name' => 'Google Search Console', 'desc' => 'Track impressions, clicks, position from Google. Also unlocks Merchant Center diagnostics if you sell on Google Shopping.', 'configure' => google_get_auth_url($site_id), 'connect_url' => google_get_auth_url($site_id), 'reconnect_url' => google_get_auth_url($site_id), 'disconnect_action' => 'google_search_console', 'cta' => 'Connect Google'],
                 'linkedin'               => ['name' => 'LinkedIn',  'desc' => 'Post to your LinkedIn page or personal profile.', 'configure' => '/dashboard/linkedin-author.php?site=' . $site_id, 'connect_url' => linkedin_get_auth_url($site_id), 'cta' => 'Connect LinkedIn'],
                 'twitter'                => ['name' => 'Twitter / X', 'desc' => 'Auto-post threads to your X account.', 'configure' => '/dashboard/integrations.php#twitter', 'cta' => 'Connect Twitter'],
                 'newsletter'             => ['name' => 'Newsletter (Resend)', 'desc' => 'Send blog drops to your subscriber list.', 'configure' => '/dashboard/integrations.php#resend', 'cta' => 'Configure'],
@@ -479,13 +480,37 @@ include __DIR__ . '/_site_stepper.php';
                         <?php endif; ?>
                     </div>
                     <?php
-                        // For channels with an OAuth start URL (LinkedIn), use it when
-                        // not yet connected — `configure` is the post-connect manage page.
+                        // For channels with an OAuth start URL (LinkedIn, Google), use it
+                        // when not yet connected — `configure` is the post-connect manage
+                        // page for everything else.
                         $cta_href = (!$effective_on && !empty($meta['connect_url']))
                             ? $meta['connect_url']
                             : url($meta['configure']);
                     ?>
                     <a class="cta" href="<?= e($cta_href) ?>"><?= $effective_on ? 'Manage →' : $meta['cta'] . ' →' ?></a>
+                    <?php
+                        // When already connected via OAuth, give explicit Reconnect +
+                        // Disconnect controls. Reconnect re-fires the consent flow with
+                        // the current scope list — used after scope additions like the
+                        // new GMC `content` scope.
+                        if ($effective_on && !empty($meta['reconnect_url'])):
+                    ?>
+                        <div style="display:flex; gap:8px; align-items:center; margin-top:8px; padding-top:8px; border-top:1px solid #f1f5f9;">
+                            <a href="<?= e($meta['reconnect_url']) ?>" style="font-size:11px; color:#0c4a6e; text-decoration:none;" title="Re-run OAuth consent. Use this after we add new scopes (e.g. when Merchant Center support went live).">
+                                &#x21bb; Reconnect (re-grant permissions)
+                            </a>
+                            <?php if (!empty($meta['disconnect_action'])): ?>
+                                <span style="color:#cbd5e1;">·</span>
+                                <form method="POST" action="<?= url('/api/oauth/disconnect.php') ?>" style="display:inline;" onsubmit="return confirm('Disconnect Google for this site? Your data is preserved — you can reconnect any time.')">
+                                    <?= csrf_field() ?>
+                                    <input type="hidden" name="site_id" value="<?= $site_id ?>">
+                                    <input type="hidden" name="platform" value="<?= e($meta['disconnect_action']) ?>">
+                                    <input type="hidden" name="return_to" value="/dashboard/setup.php?site=<?= $site_id ?>&tab=channels">
+                                    <button type="submit" style="background:none; border:0; color:#dc2626; font-size:11px; cursor:pointer; padding:0;">Disconnect</button>
+                                </form>
+                            <?php endif; ?>
+                        </div>
+                    <?php endif; ?>
                 </div>
             <?php endforeach; ?>
         </div>
