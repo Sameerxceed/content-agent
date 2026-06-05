@@ -481,56 +481,82 @@ function sidebar_active(string $page, array $pages_or_query = []): string {
                 <div style="font-size:11px;color:#cbd5e1;"><?= e($ctx_site['domain']) ?></div>
             </div>
 
+            <!-- Phase 2 IA: 16 flat items collapsed into 6 groups matching the customer journey
+                 stepper (Setup → Create → Distribute → Maintain → Track → Grow). Every new
+                 module slots into one of these groups; no more flat top-level entries. -->
+
             <a href="<?= url('/dashboard/site.php?id=' . $ctx_site_id) ?>" class="<?= sidebar_active('site') ?>">
                 <span class="nav-icon">&#8962;</span> Overview
             </a>
+
+            <div class="nav-section" style="margin-top:14px;">Create</div>
             <a href="<?= url('/dashboard/posts.php?site=' . $ctx_site_id) ?>" class="<?= sidebar_active('', ['posts', 'write']) ?>">
                 <span class="nav-icon">&#9998;</span> Content
             </a>
             <a href="<?= url('/dashboard/keywords.php?site=' . $ctx_site_id) ?>" class="<?= sidebar_active('', ['keywords', 'search-console']) ?>">
                 <span class="nav-icon">&#128269;</span> Keywords
             </a>
-            <a href="<?= url('/dashboard/seo.php?site=' . $ctx_site_id) ?>" class="<?= sidebar_active('', ['seo', 'seo-audit', 'report', 'ai-seo', 'seo-approvals']) ?>">
-                <span class="nav-icon">&#9874;</span> SEO/AEO
+            <a href="<?= url('/dashboard/plan.php?site=' . $ctx_site_id) ?>" class="<?= sidebar_active('', ['plan', 'plan-item', 'plan-review']) ?>">
+                <span class="nav-icon">&#128221;</span> Content Plan
             </a>
-            <a href="<?= url('/dashboard/competitors.php?site=' . $ctx_site_id) ?>" class="<?= sidebar_active('', ['competitors', 'content-gaps']) ?>">
-                <span class="nav-icon">&#127919;</span> Competitors
-            </a>
+
+            <div class="nav-section" style="margin-top:14px;">Distribute</div>
             <a href="<?= url('/dashboard/calendar.php?site=' . $ctx_site_id) ?>" class="<?= sidebar_active('calendar') ?>">
                 <span class="nav-icon">&#128197;</span> Calendar
-            </a>
-            <a href="<?= url('/dashboard/performance.php?site=' . $ctx_site_id) ?>" class="<?= sidebar_active('performance') ?>">
-                <span class="nav-icon">&#128200;</span> Performance
             </a>
             <a href="<?= url('/dashboard/subscribers.php?site=' . $ctx_site_id) ?>" class="<?= sidebar_active('subscribers') ?>">
                 <span class="nav-icon">&#9993;</span> Subscribers
             </a>
-            <a href="<?= url('/dashboard/mentions.php?site=' . $ctx_site_id) ?>" class="<?= sidebar_active('', ['mentions', 'ai-presence', 'brand-mentions']) ?>">
-                <span class="nav-icon">&#128172;</span> Mentions
+            <a href="<?= url('/dashboard/legal.php?site=' . $ctx_site_id) ?>" class="<?= sidebar_active('', ['legal', 'legal-edit']) ?>">
+                <span class="nav-icon">&#128196;</span> Legal docs
+            </a>
+
+            <div class="nav-section" style="margin-top:14px;">Maintain</div>
+            <a href="<?= url('/dashboard/site-health.php?site=' . $ctx_site_id) ?>" class="<?= sidebar_active('site-health') ?>">
+                <span class="nav-icon">&#10084;</span> Site Health
+            </a>
+            <a href="<?= url('/dashboard/redirects.php?site=' . $ctx_site_id) ?>" class="<?= sidebar_active('', ['redirects', 'wayback']) ?>" style="padding-left:30px;font-size:12px;">
+                <span class="nav-icon">&#8631;</span> Redirects
+            </a>
+            <a href="<?= url('/dashboard/cwv.php?site=' . $ctx_site_id) ?>" class="<?= sidebar_active('cwv') ?>" style="padding-left:30px;font-size:12px;">
+                <span class="nav-icon">&#9889;</span> Page Speed
+            </a>
+            <a href="<?= url('/dashboard/schema.php?site=' . $ctx_site_id) ?>" class="<?= sidebar_active('schema') ?>" style="padding-left:30px;font-size:12px;">
+                <span class="nav-icon">&#10070;</span> Schema
+            </a>
+            <a href="<?= url('/dashboard/freshness.php?site=' . $ctx_site_id) ?>" class="<?= sidebar_active('freshness') ?>" style="padding-left:30px;font-size:12px;">
+                <span class="nav-icon">&#127811;</span> Freshness
+            </a>
+            <a href="<?= url('/dashboard/indexnow.php?site=' . $ctx_site_id) ?>" class="<?= sidebar_active('indexnow') ?>" style="padding-left:30px;font-size:12px;">
+                <span class="nav-icon">&#128640;</span> Fast indexing
+            </a>
+
+            <div class="nav-section" style="margin-top:14px;">Track</div>
+            <a href="<?= url('/dashboard/seo.php?site=' . $ctx_site_id) ?>" class="<?= sidebar_active('', ['seo', 'seo-audit', 'report', 'ai-seo', 'seo-approvals']) ?>">
+                <span class="nav-icon">&#9874;</span> SEO/AEO
+            </a>
+            <a href="<?= url('/dashboard/performance.php?site=' . $ctx_site_id) ?>" class="<?= sidebar_active('performance') ?>">
+                <span class="nav-icon">&#128200;</span> Performance
             </a>
             <a href="<?= url('/dashboard/aeo.php?site=' . $ctx_site_id) ?>" class="<?= sidebar_active('aeo') ?>">
                 <span class="nav-icon">&#128301;</span> AEO Tracker
             </a>
-            <a href="<?= url('/dashboard/redirects.php?site=' . $ctx_site_id) ?>" class="<?= sidebar_active('', ['redirects', 'wayback']) ?>">
-                <span class="nav-icon">&#8631;</span> Redirects
+            <a href="<?= url('/dashboard/mentions.php?site=' . $ctx_site_id) ?>" class="<?= sidebar_active('', ['mentions', 'ai-presence', 'brand-mentions']) ?>">
+                <span class="nav-icon">&#128172;</span> Mentions
             </a>
-            <a href="<?= url('/dashboard/cwv.php?site=' . $ctx_site_id) ?>" class="<?= sidebar_active('cwv') ?>">
-                <span class="nav-icon">&#9889;</span> Page Speed
-            </a>
-            <a href="<?= url('/dashboard/schema.php?site=' . $ctx_site_id) ?>" class="<?= sidebar_active('schema') ?>">
-                <span class="nav-icon">&#10070;</span> Schema audit
-            </a>
-            <a href="<?= url('/dashboard/indexnow.php?site=' . $ctx_site_id) ?>" class="<?= sidebar_active('indexnow') ?>">
-                <span class="nav-icon">&#128640;</span> Fast indexing
-            </a>
-            <a href="<?= url('/dashboard/freshness.php?site=' . $ctx_site_id) ?>" class="<?= sidebar_active('freshness') ?>">
-                <span class="nav-icon">&#127811;</span> Freshness
+            <a href="<?= url('/dashboard/competitors.php?site=' . $ctx_site_id) ?>" class="<?= sidebar_active('', ['competitors', 'content-gaps']) ?>">
+                <span class="nav-icon">&#127919;</span> Competitors
             </a>
             <a href="<?= url('/dashboard/alerts.php?site=' . $ctx_site_id) ?>" class="<?= sidebar_active('alerts') ?>" style="display:flex;justify-content:space-between;align-items:center;">
                 <span><span class="nav-icon">&#128276;</span> Alerts</span>
                 <?php if ($ctx_alerts_unread > 0): ?>
                     <span style="background:#ef4444;color:#fff;font-size:10px;padding:1px 6px;border-radius:10px;font-weight:600;"><?= $ctx_alerts_unread ?></span>
                 <?php endif; ?>
+            </a>
+
+            <div class="nav-section" style="margin-top:14px;">Grow</div>
+            <a href="<?= url('/dashboard/grow.php?site=' . $ctx_site_id) ?>" class="<?= sidebar_active('grow') ?>">
+                <span class="nav-icon">&#127793;</span> Grow ideas
             </a>
 
             <div class="nav-section" style="margin-top:14px;">Global</div>
