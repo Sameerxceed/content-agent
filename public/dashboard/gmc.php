@@ -23,7 +23,7 @@ $site = auth_get_accessible_site($db, $site_id);
 if (!$site) { http_response_code(404); exit('Site not found or access denied.'); }
 
 // Is Google OAuth connected at all?
-$stmt = $db->prepare("SELECT id, platform_user_id FROM integrations
+$stmt = $db->prepare("SELECT id, account_id FROM integrations
     WHERE site_id = ? AND platform = 'google_search_console' AND is_active = 1");
 $stmt->execute([$site_id]);
 $google = $stmt->fetch();

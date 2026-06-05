@@ -26,14 +26,16 @@ if (!$site) { http_response_code(404); exit('Site not found or access denied.');
 $summary = img_audit_site_summary($db, $site_id);
 
 $filter = (string)($_GET['filter'] ?? 'all');
-$where = "site_id = ? AND dismissed_at IS NULL"; $args = [$site_id];
-if ($filter === 'needs_alt')  { $where .= " AND status = 'needs_alt'"; }
-if ($filter === 'weak_alt')   { $where .= " AND status = 'weak_alt'"; }
-if ($filter === 'oversized')  { $where .= " AND status = 'oversized'"; }
-if ($filter === 'broken')     { $where .= " AND status = 'broken'"; }
-if ($filter === 'no_dims')    { $where .= " AND status = 'no_dims'"; }
-if ($filter === 'good')       { $where .= " AND status = 'good'"; }
-if ($filter === 'issues')     { $where .= " AND status != 'good'"; }
+// All column refs must be aliased — posts.site_id collides with image_audits.site_id
+// and posts.status collides with image_audits.status. MySQL would throw "ambiguous".
+$where = "a.site_id = ? AND a.dismissed_at IS NULL"; $args = [$site_id];
+if ($filter === 'needs_alt')  { $where .= " AND a.status = 'needs_alt'"; }
+if ($filter === 'weak_alt')   { $where .= " AND a.status = 'weak_alt'"; }
+if ($filter === 'oversized')  { $where .= " AND a.status = 'oversized'"; }
+if ($filter === 'broken')     { $where .= " AND a.status = 'broken'"; }
+if ($filter === 'no_dims')    { $where .= " AND a.status = 'no_dims'"; }
+if ($filter === 'good')       { $where .= " AND a.status = 'good'"; }
+if ($filter === 'issues')     { $where .= " AND a.status != 'good'"; }
 
 $stmt = $db->prepare("SELECT a.*, p.title AS post_title, p.slug AS post_slug
     FROM image_audits a LEFT JOIN posts p ON p.id = a.post_id

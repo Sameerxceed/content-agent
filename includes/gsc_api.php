@@ -89,7 +89,7 @@ function gsc_fetch_performance(PDO $db, int $site_id, int $days_back = 1): array
     $token = google_get_token($db, $site_id);
     if (!$token) return ['success' => false, 'error' => 'No active Google integration on this site'];
 
-    $stmt = $db->prepare("SELECT i.platform_user_id AS gsc_site, s.domain
+    $stmt = $db->prepare("SELECT i.account_id AS gsc_site, s.domain
         FROM integrations i JOIN sites s ON s.id = i.site_id
         WHERE i.site_id = ? AND i.platform = 'google_search_console' AND i.is_active = 1");
     $stmt->execute([$site_id]);
