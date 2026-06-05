@@ -6,6 +6,7 @@
 
 require_once __DIR__ . '/helpers.php';
 require_once __DIR__ . '/ai_cost.php';
+require_once __DIR__ . '/quotas.php';
 
 /**
  * Send a message to Claude Haiku and get a response.
@@ -27,6 +28,41 @@ function haiku_chat(string $system_prompt, string $user_message, int $max_tokens
     $api_key    = config('haiku_api_key');
     $model      = config('haiku_model');
     $max_tokens = $max_tokens ?: config('haiku_max_tokens');
+
+    // ── Guardrails ─────────────────────────────────────────────────
+    // Master monthly-budget check. Bypasses on super-admin sites + on
+    // calls without site context (rare global ops). Returns a structured
+    // error instead of throwing so existing callers don't crash.
+    if ($site_id) {
+        try {
+            $db_for_guard = _ai_db();
+            if ($db_for_guard) {
+                $q = quota_check_budget($db_for_guard, $site_id);
+                if (!$q['allowed']) {
+                    return [
+                        'success' => false,
+                        'content' => '',
+                        'usage'   => [],
+                        'error'   => 'QUOTA_EXCEEDED: ' . $q['message'],
+                        'quota'   => $q,
+                    ];
+                }
+                $m = quota_check_model_allowed($db_for_guard, $site_id, $model);
+                if (!$m['allowed']) {
+                    return [
+                        'success' => false,
+                        'content' => '',
+                        'usage'   => [],
+                        'error'   => 'QUOTA_EXCEEDED: ' . $m['message'],
+                        'quota'   => $m,
+                    ];
+                }
+            }
+        } catch (Throwable $e) {
+            // Guard failure must never block the call — log and proceed.
+            error_log('[haiku quota_check] ' . $e->getMessage());
+        }
+    }
 
     $payload = [
         'model'      => $model,

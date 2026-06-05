@@ -600,6 +600,9 @@ function sidebar_active(string $page, array $pages_or_query = []): string {
             <a href="<?= url('/dashboard/ai-costs.php') ?>" class="<?= sidebar_active('ai-costs') ?>">
                 <span class="nav-icon">&#128176;</span> AI Costs
             </a>
+            <a href="<?= url('/dashboard/plans.php') ?>" class="<?= sidebar_active('plans') ?>">
+                <span class="nav-icon">&#128737;</span> Plans &amp; Limits
+            </a>
             <?php endif; ?>
             <a href="<?= url('/dashboard/settings.php') ?>" class="<?= sidebar_active('settings') ?>">
                 <span class="nav-icon">&#9881;</span> Settings
@@ -621,6 +624,9 @@ function sidebar_active(string $page, array $pages_or_query = []): string {
             </a>
             <a href="<?= url('/dashboard/ai-costs.php') ?>" class="<?= sidebar_active('ai-costs') ?>">
                 <span class="nav-icon">&#128176;</span> AI Costs
+            </a>
+            <a href="<?= url('/dashboard/plans.php') ?>" class="<?= sidebar_active('plans') ?>">
+                <span class="nav-icon">&#128737;</span> Plans &amp; Limits
             </a>
             <?php endif; ?>
             <a href="<?= url('/dashboard/settings.php') ?>" class="<?= sidebar_active('settings') ?>">

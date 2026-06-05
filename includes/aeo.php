@@ -18,6 +18,7 @@
 require_once __DIR__ . '/helpers.php';
 require_once __DIR__ . '/haiku.php';
 require_once __DIR__ . '/ai_cost.php';
+require_once __DIR__ . '/quotas.php';
 
 /** Engines configured (have API keys) on this install, in display order. */
 function aeo_available_engines(): array
@@ -592,6 +593,25 @@ function aeo_query_all_engines_parallel(string $query, int $timeout = 55, ?int $
 {
     $engines = aeo_available_engines();
     if (empty($engines)) return [];
+
+    // Master budget guard — refuse the whole multi-engine burst if the
+    // site is out of budget. Returns a synthesised error per engine so
+    // the caller's existing error-handling kicks in.
+    if ($site_id) {
+        try {
+            $guard_db = _ai_db();
+            if ($guard_db) {
+                $q = quota_check_budget($guard_db, $site_id);
+                if (!$q['allowed']) {
+                    $out = [];
+                    foreach ($engines as $e) {
+                        $out[$e] = ['success' => false, 'error' => 'QUOTA_EXCEEDED: ' . $q['message']];
+                    }
+                    return $out;
+                }
+            }
+        } catch (Throwable $e) { error_log('[aeo quota] ' . $e->getMessage()); }
+    }
 
     $mh = curl_multi_init();
     $handles = [];

@@ -25,6 +25,7 @@
 
 require_once __DIR__ . '/helpers.php';
 require_once __DIR__ . '/ai_cost.php';
+require_once __DIR__ . '/quotas.php';
 
 const IMAGE_GEN_MAX_BYTES = 6 * 1024 * 1024;  // 6MB upload cap
 const IMAGE_GEN_TARGET_W  = 1792;
@@ -134,6 +135,17 @@ function image_save_upload(PDO $db, int $post_id, array $upload_file, string $al
  */
 function _image_gen_gemini(string $prompt, string $api_key, int $site_id, int $post_id): ?string
 {
+    // Guardrails — both budget and per-month image cap
+    try {
+        $guard_db = _ai_db();
+        if ($guard_db) {
+            $q1 = quota_check_budget($guard_db, $site_id);
+            if (!$q1['allowed']) { error_log('[image_gen gemini] quota: ' . $q1['message']); return null; }
+            $q2 = quota_check_images_per_month($guard_db, $site_id);
+            if (!$q2['allowed']) { error_log('[image_gen gemini] quota: ' . $q2['message']); return null; }
+        }
+    } catch (Throwable $e) { error_log('[image_gen gemini guard] ' . $e->getMessage()); }
+
     $payload = json_encode([
         'instances'  => [['prompt' => mb_substr($prompt, 0, 4000)]],
         'parameters' => [
@@ -195,6 +207,16 @@ function _image_gen_gemini(string $prompt, string $api_key, int $site_id, int $p
  */
 function _image_gen_dalle3(string $prompt, string $api_key, int $site_id, int $post_id): ?string
 {
+    try {
+        $guard_db = _ai_db();
+        if ($guard_db) {
+            $q1 = quota_check_budget($guard_db, $site_id);
+            if (!$q1['allowed']) { error_log('[image_gen dalle3] quota: ' . $q1['message']); return null; }
+            $q2 = quota_check_images_per_month($guard_db, $site_id);
+            if (!$q2['allowed']) { error_log('[image_gen dalle3] quota: ' . $q2['message']); return null; }
+        }
+    } catch (Throwable $e) { error_log('[image_gen dalle3 guard] ' . $e->getMessage()); }
+
     $payload = json_encode([
         'model'  => 'gpt-image-1',
         'prompt' => mb_substr($prompt, 0, 4000),
