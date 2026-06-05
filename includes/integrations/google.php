@@ -25,7 +25,11 @@ function google_get_auth_url(int $site_id): string
         'client_id'     => $client_id,
         'redirect_uri'  => $redirect_uri,
         'response_type' => 'code',
-        'scope'         => 'https://www.googleapis.com/auth/webmasters.readonly',
+        // Three scopes:
+        //   webmasters.readonly — Search Console performance + index status (Item 2)
+        //   content              — Google Merchant Center diagnostics (Module 4)
+        // Both ask for read-only access in their respective products.
+        'scope'         => 'https://www.googleapis.com/auth/webmasters.readonly https://www.googleapis.com/auth/content',
         'access_type'   => 'offline',
         'prompt'        => 'consent',
         'state'         => $site_id,

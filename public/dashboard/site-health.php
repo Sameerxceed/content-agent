@@ -19,6 +19,9 @@ require_once __DIR__ . '/../../includes/psi_runner.php';
 require_once __DIR__ . '/../../includes/schema_auditor.php';
 require_once __DIR__ . '/../../includes/content_freshness.php';
 require_once __DIR__ . '/../../includes/sitemap_indexnow.php';
+require_once __DIR__ . '/../../includes/image_auditor.php';
+require_once __DIR__ . '/../../includes/outbound_link_checker.php';
+require_once __DIR__ . '/../../includes/gmc_api.php';
 
 auth_start();
 auth_require();
@@ -38,6 +41,14 @@ $fresh   = cf_site_summary($db, $site_id);
 // that side effect belongs on the IndexNow page itself.
 $_notes = json_decode($site['notes'] ?? '{}', true) ?: [];
 $indexnow_key = $_notes['indexnow_key'] ?? null;
+
+// Phase 4 modules — wrap calls in try/catch because tables may not exist
+// yet if Phase 4 migrations haven't been run.
+$image_sum    = []; $outbound_sum = []; $gmc_sum = null;
+try { $image_sum    = img_audit_site_summary($db, $site_id); }    catch (Throwable $e) {}
+try { $outbound_sum = outbound_site_summary($db, $site_id); }     catch (Throwable $e) {}
+try { $gmc_sum      = gmc_site_summary($db, $site_id); }          catch (Throwable $e) {}
+$gmc_merchant_id = (string)($_notes['gmc_merchant_id'] ?? '');
 
 $page_title = 'Site Health — ' . $site['name'];
 ob_start();
@@ -194,6 +205,66 @@ ob_start();
             <div class="stat"><div class="k">Coverage</div><div class="v good">Auto</div></div>
         </div>
         <a class="open" href="<?= url('/dashboard/redirects.php?site=' . $site_id) ?>#notfound-help">Generate 404 page &rarr;</a>
+    </div>
+
+    <!-- Image SEO (Phase 4) -->
+    <div class="sh-card">
+        <div class="top">
+            <div class="title"><span class="ico">&#127912;</span> Image SEO</div>
+            <?php
+                $img_total = (int)($image_sum['total'] ?? 0);
+                $img_issues = $img_total - (int)($image_sum['by_status']['good'] ?? 0);
+                $pill_cls = $img_total === 0 ? '' : ($img_issues > 0 ? 'warn' : 'ok');
+                $pill_txt = $img_total === 0 ? 'not run yet' : ($img_issues > 0 ? "{$img_issues} issues" : 'all good');
+            ?>
+            <span class="pill <?= $pill_cls ?>"><?= $pill_txt ?></span>
+        </div>
+        <div class="one-line">Missing alt text, oversized files, missing dimensions — tank LCP, accessibility, and Google Image traffic.</div>
+        <div class="stats">
+            <div class="stat"><div class="k">Images checked</div><div class="v"><?= number_format($img_total) ?></div></div>
+            <div class="stat"><div class="k">Issues</div><div class="v <?= $img_issues > 0 ? 'warn' : '' ?>"><?= number_format($img_issues) ?></div></div>
+        </div>
+        <a class="open" href="<?= url('/dashboard/image-seo.php?site=' . $site_id) ?>">Open Image SEO &rarr;</a>
+    </div>
+
+    <!-- Outbound links (Phase 4) -->
+    <div class="sh-card">
+        <div class="top">
+            <div class="title"><span class="ico">&#128279;</span> Outbound links</div>
+            <?php
+                $ob_total = (int)($outbound_sum['total'] ?? 0);
+                $ob_broken = (int)($outbound_sum['by_status']['broken'] ?? 0);
+                $pill_cls = $ob_total === 0 ? '' : ($ob_broken > 0 ? 'bad' : 'ok');
+                $pill_txt = $ob_total === 0 ? 'not run yet' : ($ob_broken > 0 ? "{$ob_broken} broken" : 'all healthy');
+            ?>
+            <span class="pill <?= $pill_cls ?>"><?= $pill_txt ?></span>
+        </div>
+        <div class="one-line">Every link in your posts that points to another site — broken outbounds erode reader trust and page SEO.</div>
+        <div class="stats">
+            <div class="stat"><div class="k">Links checked</div><div class="v"><?= number_format($ob_total) ?></div></div>
+            <div class="stat"><div class="k">Broken</div><div class="v <?= $ob_broken > 0 ? 'bad' : '' ?>"><?= number_format($ob_broken) ?></div></div>
+        </div>
+        <a class="open" href="<?= url('/dashboard/outbound-links.php?site=' . $site_id) ?>">Open Outbound links &rarr;</a>
+    </div>
+
+    <!-- Merchant Center (Phase 4, Module 4) -->
+    <div class="sh-card">
+        <div class="top">
+            <div class="title"><span class="ico">&#128722;</span> Merchant Center</div>
+            <?php
+                $gmc_products = (int)($gmc_sum['products'] ?? 0);
+                $gmc_errors   = (int)($gmc_sum['errors']   ?? 0);
+                $pill_cls = $gmc_merchant_id === '' ? 'warn' : ($gmc_errors > 0 ? 'bad' : ($gmc_products > 0 ? 'ok' : ''));
+                $pill_txt = $gmc_merchant_id === '' ? 'needs setup' : ($gmc_errors > 0 ? "{$gmc_errors} errors" : ($gmc_products > 0 ? 'feed healthy' : 'not synced'));
+            ?>
+            <span class="pill <?= $pill_cls ?>"><?= $pill_txt ?></span>
+        </div>
+        <div class="one-line">Per-product diagnostics from Google Merchant Center — disapprovals, missing GTIN, image issues, policy violations.</div>
+        <div class="stats">
+            <div class="stat"><div class="k">Products synced</div><div class="v"><?= number_format($gmc_products) ?></div></div>
+            <div class="stat"><div class="k">With issues</div><div class="v <?= ($gmc_sum['with_issues'] ?? 0) > 0 ? 'warn' : '' ?>"><?= number_format((int)($gmc_sum['with_issues'] ?? 0)) ?></div></div>
+        </div>
+        <a class="open" href="<?= url('/dashboard/gmc.php?site=' . $site_id) ?>">Open Merchant Center &rarr;</a>
     </div>
 
 </div>

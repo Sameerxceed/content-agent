@@ -530,6 +530,15 @@ function sidebar_active(string $page, array $pages_or_query = []): string {
             <a href="<?= url('/dashboard/indexnow.php?site=' . $ctx_site_id) ?>" class="<?= sidebar_active('indexnow') ?>" style="padding-left:30px;font-size:12px;">
                 <span class="nav-icon">&#128640;</span> Fast indexing
             </a>
+            <a href="<?= url('/dashboard/image-seo.php?site=' . $ctx_site_id) ?>" class="<?= sidebar_active('image-seo') ?>" style="padding-left:30px;font-size:12px;">
+                <span class="nav-icon">&#127912;</span> Image SEO
+            </a>
+            <a href="<?= url('/dashboard/outbound-links.php?site=' . $ctx_site_id) ?>" class="<?= sidebar_active('outbound-links') ?>" style="padding-left:30px;font-size:12px;">
+                <span class="nav-icon">&#128279;</span> Outbound links
+            </a>
+            <a href="<?= url('/dashboard/gmc.php?site=' . $ctx_site_id) ?>" class="<?= sidebar_active('gmc') ?>" style="padding-left:30px;font-size:12px;">
+                <span class="nav-icon">&#128722;</span> Merchant Center
+            </a>
 
             <div class="nav-section" style="margin-top:14px;">Track</div>
             <a href="<?= url('/dashboard/seo.php?site=' . $ctx_site_id) ?>" class="<?= sidebar_active('', ['seo', 'seo-audit', 'report', 'ai-seo', 'seo-approvals']) ?>">
