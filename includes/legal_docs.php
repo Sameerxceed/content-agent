@@ -312,7 +312,7 @@ function legal_docs_generate(PDO $db, int $site_id, string $doc_type): array
             . "Critical guidance: {$spec['notes']}\n\n"
             . "Produce the document now.";
 
-    $resp = haiku_chat($sys, $prompt, 8000);
+    $resp = haiku_chat($sys, $prompt, 8000, 'legal_doc_generate', $site_id);
     if (empty($resp['success'])) {
         $err = (string)($resp['error'] ?? 'unknown Claude error');
         $db->prepare("UPDATE legal_docs SET status='failed', last_error=? WHERE id=?")->execute([$err, $row_id]);

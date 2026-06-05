@@ -262,7 +262,7 @@ SYS;
         . "\nDomain: " . ($site['domain'] ?? 'unknown')
         . "\n\nWebsite excerpts:" . $page_block;
 
-    $resp = haiku_chat($system, $user_prompt, 1500);
+    $resp = haiku_chat($system, $user_prompt, 1500, 'business_profile_infer', (int)($site['id'] ?? 0) ?: null);
     if (empty($resp['success'])) {
         return ['success' => false, 'error' => $resp['error'] ?? 'Haiku call failed'];
     }

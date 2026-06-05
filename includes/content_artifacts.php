@@ -294,7 +294,7 @@ function content_artifacts_generate_full_package(PDO $db, int $item_id, ?array $
         . ($serp_brief ? "\nSERP brief — what's currently ranking:\n" . json_encode($serp_brief, JSON_PRETTY_PRINT) . "\n" : '');
 
     // ── One Claude call returns the full package ──────────────
-    $resp = haiku_chat($sys, $context, 16000);
+    $resp = haiku_chat($sys, $context, 16000, 'content_artifact_bundle', $site_id);
     if (empty($resp['success'])) {
         throw new RuntimeException('Claude error: ' . ($resp['error'] ?? 'unknown'));
     }

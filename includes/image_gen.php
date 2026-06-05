@@ -24,6 +24,7 @@
  */
 
 require_once __DIR__ . '/helpers.php';
+require_once __DIR__ . '/ai_cost.php';
 
 const IMAGE_GEN_MAX_BYTES = 6 * 1024 * 1024;  // 6MB upload cap
 const IMAGE_GEN_TARGET_W  = 1792;
@@ -143,6 +144,7 @@ function _image_gen_gemini(string $prompt, string $api_key, int $site_id, int $p
     ]);
     // Imagen 4 Fast — cheapest tier, fine for hero images
     $url = 'https://generativelanguage.googleapis.com/v1beta/models/imagen-4.0-fast-generate-001:predict';
+    $t0 = microtime(true);
     $ch = curl_init($url);
     curl_setopt_array($ch, [
         CURLOPT_RETURNTRANSFER => true,
@@ -161,6 +163,10 @@ function _image_gen_gemini(string $prompt, string $api_key, int $site_id, int $p
         error_log('[image_gen gemini] HTTP ' . $http . ' body=' . substr((string)$body, 0, 250));
         return null;
     }
+    // Image models bill per-image, not per-token. Pass count=1 as input_tokens.
+    ai_log_call('gemini', 'imagen-4.0-fast', 'image_hero_gemini', $site_id,
+        ['input_tokens' => 1, 'output_tokens' => 0],
+        (int)round((microtime(true) - $t0) * 1000), $post_id);
     $data = json_decode($body, true);
     $b64  = $data['predictions'][0]['bytesBase64Encoded'] ?? null;
     $mime = $data['predictions'][0]['mimeType'] ?? 'image/png';
@@ -195,6 +201,7 @@ function _image_gen_dalle3(string $prompt, string $api_key, int $site_id, int $p
         'size'   => '1536x1024',  // landscape — closest gpt-image-1 supports to 16:9
         'n'      => 1,
     ]);
+    $t0 = microtime(true);
     $ch = curl_init('https://api.openai.com/v1/images/generations');
     curl_setopt_array($ch, [
         CURLOPT_RETURNTRANSFER => true,
@@ -213,6 +220,9 @@ function _image_gen_dalle3(string $prompt, string $api_key, int $site_id, int $p
         error_log('[image_gen dalle3] HTTP ' . $http . ' body=' . substr((string)$body, 0, 250));
         return null;
     }
+    ai_log_call('openai', 'gpt-image-1', 'image_hero_openai', $site_id,
+        ['input_tokens' => 1, 'output_tokens' => 0],
+        (int)round((microtime(true) - $t0) * 1000), $post_id);
     $data = json_decode($body, true);
     $b64  = $data['data'][0]['b64_json'] ?? null;
     if (!$b64) {

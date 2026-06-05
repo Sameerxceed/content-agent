@@ -34,6 +34,8 @@ const AI_PRICES = [
     'sonar'                          => ['input_per_mtok' => 1.00,  'output_per_mtok' => 1.00],
     'dall-e-3'                       => ['per_image' => 0.04],
     'gpt-image-1'                    => ['per_image' => 0.04],
+    'imagen-4.0-fast'                => ['per_image' => 0.02],
+    'imagen-4.0-fast-generate-001'   => ['per_image' => 0.02],
 ];
 
 /**
@@ -252,24 +254,55 @@ function ai_estimate_job(string $job_type, array $params): array
 }
 
 /**
- * Stub: log a single completed AI call. Phase 0 will implement this against
- * the ai_calls table; until that migration lands, this is a no-op so callers
- * can already pass usage through without conditional checks at every site.
+ * Lazy-cached PDO handle for the cost logger. AI wrappers can be called
+ * multiple times per request — PHP's `require` cache means the second
+ * `require db.php` returns true, not the PDO. So we open our own and
+ * cache it in a static.
+ */
+function _ai_db(): ?PDO
+{
+    static $db = null;
+    if ($db !== null) return $db ?: null;
+    try {
+        $config = require __DIR__ . '/../config/config.php';
+        $dsn = sprintf('mysql:host=%s;port=%d;dbname=%s;charset=%s',
+            $config['db_host'], $config['db_port'], $config['db_name'], $config['db_charset']);
+        $db = new PDO($dsn, $config['db_user'], $config['db_pass'], [
+            PDO::ATTR_ERRMODE            => PDO::ERRMODE_EXCEPTION,
+            PDO::ATTR_DEFAULT_FETCH_MODE => PDO::FETCH_ASSOC,
+            PDO::ATTR_EMULATE_PREPARES   => false,
+        ]);
+        return $db;
+    } catch (Throwable $e) {
+        error_log('[ai_cost _ai_db] ' . $e->getMessage());
+        $db = false; // sentinel so we don't retry every call
+        return null;
+    }
+}
+
+/**
+ * Log a single completed AI call to ai_calls. No-op if the migration
+ * hasn't been run yet (existence cached per-request).
  *
- * @param PDO         $db
- * @param string      $provider      'anthropic' | 'openai' | 'gemini' | 'perplexity'
+ * Callers don't need to pass a PDO — we open our own lazily so this works
+ * from anywhere (CLI, web, cron).
+ *
+ * @param string      $provider 'anthropic' | 'openai' | 'gemini' | 'perplexity'
  * @param string      $model
- * @param string      $feature       Stable identifier, e.g. 'redirect_fuzzy_match'
+ * @param string      $feature  Stable identifier, e.g. 'redirect_fuzzy_match'
  * @param int|null    $site_id
- * @param array       $usage         Provider's usage block. Anthropic: { input_tokens, output_tokens }.
- * @param int         $ms            Wall-clock ms for the call.
+ * @param array       $usage    Provider's usage block.
+ *                              Anthropic: { input_tokens, output_tokens }
+ *                              OpenAI:    { prompt_tokens, completion_tokens }
+ *                              Gemini:    { promptTokenCount, candidatesTokenCount }
+ * @param int         $ms       Wall-clock ms for the call.
  * @param int|null    $post_id
  */
-function ai_log_call(PDO $db, string $provider, string $model, string $feature, ?int $site_id, array $usage, int $ms, ?int $post_id = null): void
+function ai_log_call(string $provider, string $model, string $feature, ?int $site_id, array $usage, int $ms, ?int $post_id = null): void
 {
-    // Detect ai_calls existence once per request — if Phase 0 hasn't been
-    // run yet, just return. Cached in a static so we don't hit the schema
-    // table on every Claude call.
+    $db = _ai_db();
+    if (!$db) return;
+
     static $exists = null;
     if ($exists === null) {
         try {
@@ -281,8 +314,14 @@ function ai_log_call(PDO $db, string $provider, string $model, string $feature, 
     }
     if (!$exists) return;
 
-    $in  = (int)($usage['input_tokens']  ?? $usage['prompt_tokens']     ?? 0);
-    $out = (int)($usage['output_tokens'] ?? $usage['completion_tokens'] ?? 0);
+    $in  = (int)($usage['input_tokens']
+        ?? $usage['prompt_tokens']
+        ?? $usage['promptTokenCount']
+        ?? 0);
+    $out = (int)($usage['output_tokens']
+        ?? $usage['completion_tokens']
+        ?? $usage['candidatesTokenCount']
+        ?? 0);
     $cost = ai_cost_for_call($model, $in, $out);
 
     try {
@@ -291,7 +330,6 @@ function ai_log_call(PDO $db, string $provider, string $model, string $feature, 
             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, NOW())");
         $stmt->execute([$provider, $model, $feature, $site_id, $post_id, $in, $out, $cost, $ms]);
     } catch (Throwable $e) {
-        // Logging must never break a real AI call. Swallow + error_log.
         error_log('[ai_log_call] ' . $e->getMessage());
     }
 }

@@ -541,6 +541,9 @@ function sidebar_active(string $page, array $pages_or_query = []): string {
             <a href="<?= url('/dashboard/cron-jobs.php') ?>" class="<?= sidebar_active('cron-jobs') ?>">
                 <span class="nav-icon">&#9201;</span> Cron Jobs
             </a>
+            <a href="<?= url('/dashboard/ai-costs.php') ?>" class="<?= sidebar_active('ai-costs') ?>">
+                <span class="nav-icon">&#128176;</span> AI Costs
+            </a>
             <?php endif; ?>
             <a href="<?= url('/dashboard/settings.php') ?>" class="<?= sidebar_active('settings') ?>">
                 <span class="nav-icon">&#9881;</span> Settings
@@ -559,6 +562,9 @@ function sidebar_active(string $page, array $pages_or_query = []): string {
             <?php if (function_exists('auth_is_super_admin') && auth_is_super_admin()): ?>
             <a href="<?= url('/dashboard/cron-jobs.php') ?>" class="<?= sidebar_active('cron-jobs') ?>">
                 <span class="nav-icon">&#9201;</span> Cron Jobs
+            </a>
+            <a href="<?= url('/dashboard/ai-costs.php') ?>" class="<?= sidebar_active('ai-costs') ?>">
+                <span class="nav-icon">&#128176;</span> AI Costs
             </a>
             <?php endif; ?>
             <a href="<?= url('/dashboard/settings.php') ?>" class="<?= sidebar_active('settings') ?>">

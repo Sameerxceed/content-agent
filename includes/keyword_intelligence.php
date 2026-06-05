@@ -270,7 +270,7 @@ function ki_generate_keywords_ai(array $profile): array
 
     $prompt = "Generate the keyword list now. Aim for 100 keywords, all genuinely buyer-shaped for this business.";
 
-    $resp = haiku_chat($sys, $prompt, 8000);
+    $resp = haiku_chat($sys, $prompt, 8000, 'keyword_research_generate', (int)($profile['site_id'] ?? 0) ?: null);
     if (empty($resp['success'])) {
         error_log('[ki_generate_keywords_ai] Claude error: ' . ($resp['error'] ?? 'unknown'));
         return [];
@@ -393,7 +393,7 @@ function ki_build_seeds_ai(array $profile): ?array
          . "  \"AI consulting for manufacturing\"\n\n"
          . profile_prompt_block($profile);
 
-    $resp = haiku_chat($sys, "Write 6-8 narrow seed phrases for this business.", 400);
+    $resp = haiku_chat($sys, "Write 6-8 narrow seed phrases for this business.", 400, 'keyword_seed_phrases', (int)($profile['site_id'] ?? 0) ?: null);
     if (empty($resp['success'])) {
         error_log('[ki_build_seeds_ai] Claude error: ' . ($resp['error'] ?? 'unknown'));
         return null;
@@ -467,7 +467,7 @@ function ki_relevance_drop_set(array $keywords, array $profile): array
               . $profile_block;
         $prompt = "Candidate keywords:\n\n{$list}";
 
-        $resp = haiku_chat($sys, $prompt, 3000);
+        $resp = haiku_chat($sys, $prompt, 3000, 'keyword_relevance_filter', (int)($profile['site_id'] ?? 0) ?: null);
         if (empty($resp['success'])) {
             error_log('[ki_relevance_drop_set] Claude error: ' . ($resp['error'] ?? 'unknown'));
             continue;
@@ -555,7 +555,7 @@ function ki_classify_intent_bulk(array $keywords, array $profile): array
               . $profile_block;
         $prompt = "Classify these keywords:\n\n{$list}";
 
-        $resp = haiku_chat($sys, $prompt, 4000);
+        $resp = haiku_chat($sys, $prompt, 4000, 'keyword_intent_classify', (int)($profile['site_id'] ?? 0) ?: null);
         if (empty($resp['success'])) {
             error_log('[ki_classify_intent_bulk] Claude error: ' . ($resp['error'] ?? 'unknown'));
             continue;

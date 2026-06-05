@@ -96,7 +96,7 @@ function seo_issue_parse_alert(string $raw_text, array $site): array
 
     $user = "Site: {$domain}\n\nAlert text:\n{$raw_text}";
 
-    $resp = haiku_chat($system, $user, 2500);
+    $resp = haiku_chat($system, $user, 2500, 'seo_issue_parse_alert', (int)($site['id'] ?? 0) ?: null);
     if (empty($resp['success'])) {
         return ['success' => false, 'error' => $resp['error'] ?? 'AI call failed'];
     }

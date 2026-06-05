@@ -116,7 +116,7 @@ function rmb_heuristic_match(string $dead_path, array $live_index): ?array
  * Ask Claude to pick the best target from a curated candidate list.
  * @return array { to_path: string|null, confidence: int, reasoning: string }
  */
-function rmb_claude_match(string $dead_path, string $dead_type, array $candidates): array
+function rmb_claude_match(string $dead_path, string $dead_type, array $candidates, ?int $site_id = null): array
 {
     if (empty($candidates)) {
         return ['to_path' => null, 'confidence' => 0, 'reasoning' => 'no candidates supplied'];
@@ -131,7 +131,7 @@ function rmb_claude_match(string $dead_path, string $dead_type, array $candidate
 
     $user = "Dead URL path: {$dead_path}\nDead URL type: {$dead_type}\n\nCandidate live URLs:\n{$candidate_block}";
 
-    $resp = haiku_chat($system, $user, 500);
+    $resp = haiku_chat($system, $user, 500, 'redirect_fuzzy_match', $site_id);
     if (empty($resp['success'])) {
         return ['to_path' => null, 'confidence' => 0, 'reasoning' => 'claude error: ' . ($resp['error'] ?? 'unknown')];
     }
@@ -244,7 +244,7 @@ function rmb_build_map(PDO $db, int $site_id, ?int $limit = null, ?callable $pro
         // 2. Claude fuzzy if heuristic missed
         if (!$match) {
             $candidates = rmb_shortlist_candidates($dead_path, $dead_type, $live_index, 15);
-            $cm = rmb_claude_match($dead_path, $dead_type, $candidates);
+            $cm = rmb_claude_match($dead_path, $dead_type, $candidates, $site_id);
             if ($cm['to_path']) {
                 $match = [
                     'to_path' => $cm['to_path'],

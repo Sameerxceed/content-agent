@@ -17,6 +17,7 @@
 
 require_once __DIR__ . '/helpers.php';
 require_once __DIR__ . '/haiku.php';
+require_once __DIR__ . '/ai_cost.php';
 
 /** Engines configured (have API keys) on this install, in display order. */
 function aeo_available_engines(): array
@@ -57,7 +58,7 @@ function aeo_default_engine(): string
  *
  * We extract every URL Claude actually looked at, in the order they appeared.
  */
-function aeo_query_claude_web(string $query): array
+function aeo_query_claude_web(string $query, ?int $site_id = null): array
 {
     $api_key = config('haiku_api_key');
     if (empty($api_key)) return ['success' => false, 'error' => 'Claude API key not set'];
@@ -67,6 +68,7 @@ function aeo_query_claude_web(string $query): array
     if (str_contains($model, 'haiku')) {
         $model = 'claude-sonnet-4-6';
     }
+    $t0 = microtime(true);
 
     $payload = [
         'model'      => $model,
@@ -129,6 +131,9 @@ function aeo_query_claude_web(string $query): array
         return ['success' => false, 'error' => 'Claude returned no text or citations — web_search may have failed.'];
     }
 
+    ai_log_call('anthropic', $model, 'aeo_recall_claude', $site_id,
+        $data['usage'] ?? [], (int)round((microtime(true) - $t0) * 1000));
+
     return ['success' => true, 'text' => $text, 'citations' => $urls];
 }
 
@@ -142,10 +147,11 @@ function aeo_query_claude_web(string $query): array
  *   error?: string,
  * }
  */
-function aeo_query_perplexity(string $query): array
+function aeo_query_perplexity(string $query, ?int $site_id = null): array
 {
     $key = config('perplexity_api_key');
     if (empty($key)) return ['success' => false, 'error' => 'Perplexity API key not set'];
+    $t0 = microtime(true);
 
     $payload = [
         'model'    => 'sonar',
@@ -190,6 +196,9 @@ function aeo_query_perplexity(string $query): array
         elseif (is_array($c) && !empty($c['url'])) $urls[] = $c['url'];
     }
 
+    ai_log_call('perplexity', 'sonar', 'aeo_recall_perplexity', $site_id,
+        $data['usage'] ?? [], (int)round((microtime(true) - $t0) * 1000));
+
     return ['success' => true, 'text' => $text, 'citations' => $urls];
 }
 
@@ -200,10 +209,11 @@ function aeo_query_perplexity(string $query): array
  * The model returns content with `annotations` of type `url_citation`, each
  * pointing at a source URL the answer was grounded in.
  */
-function aeo_query_openai_web(string $query): array
+function aeo_query_openai_web(string $query, ?int $site_id = null): array
 {
     $key = config('openai_api_key');
     if (empty($key)) return ['success' => false, 'error' => 'OpenAI API key not set'];
+    $t0 = microtime(true);
 
     $payload = [
         'model'    => 'gpt-4o-search-preview',
@@ -250,6 +260,9 @@ function aeo_query_openai_web(string $query): array
         return ['success' => false, 'error' => 'OpenAI returned no text or citations'];
     }
 
+    ai_log_call('openai', 'gpt-4o-search-preview', 'aeo_recall_openai', $site_id,
+        $data['usage'] ?? [], (int)round((microtime(true) - $t0) * 1000));
+
     return ['success' => true, 'text' => $text, 'citations' => $urls];
 }
 
@@ -260,10 +273,11 @@ function aeo_query_openai_web(string $query): array
  * Grounded answers include `groundingMetadata.groundingChunks[].web.uri` —
  * the source URLs Gemini consulted.
  */
-function aeo_query_gemini_web(string $query): array
+function aeo_query_gemini_web(string $query, ?int $site_id = null): array
 {
     $key = config('gemini_api_key');
     if (empty($key)) return ['success' => false, 'error' => 'Gemini API key not set'];
+    $t0 = microtime(true);
 
     $model = 'gemini-2.0-flash';
     $url   = 'https://generativelanguage.googleapis.com/v1beta/models/' . $model . ':generateContent?key=' . urlencode($key);
@@ -320,6 +334,9 @@ function aeo_query_gemini_web(string $query): array
         return ['success' => false, 'error' => 'Gemini returned no text or citations — grounding may have failed.'];
     }
 
+    ai_log_call('gemini', $model, 'aeo_recall_gemini', $site_id,
+        $data['usageMetadata'] ?? [], (int)round((microtime(true) - $t0) * 1000));
+
     return ['success' => true, 'text' => $text, 'citations' => $urls];
 }
 
@@ -350,14 +367,15 @@ function aeo_check_query(PDO $db, int $query_id, ?string $engine = null): array
 
     $site_domain = aeo_domain('https://' . $q['site_domain']);
 
+    $sid = (int)$q['site_id'];
     if ($engine === 'claude_web') {
-        $resp = aeo_query_claude_web($q['query_text']);
+        $resp = aeo_query_claude_web($q['query_text'], $sid);
     } elseif ($engine === 'openai_web') {
-        $resp = aeo_query_openai_web($q['query_text']);
+        $resp = aeo_query_openai_web($q['query_text'], $sid);
     } elseif ($engine === 'gemini_web') {
-        $resp = aeo_query_gemini_web($q['query_text']);
+        $resp = aeo_query_gemini_web($q['query_text'], $sid);
     } elseif ($engine === 'perplexity') {
-        $resp = aeo_query_perplexity($q['query_text']);
+        $resp = aeo_query_perplexity($q['query_text'], $sid);
     } else {
         return ['success' => false, 'error' => 'Unsupported engine: ' . $engine];
     }
@@ -513,6 +531,10 @@ function aeo_parse_response(string $engine, int $code, string $body): array
     if (!is_array($data)) return ['success' => false, 'error' => 'Unparseable response'];
 
     $urls = []; $seen = []; $text = '';
+    // Extract per-engine usage so the parallel runner can log it for cost tracking.
+    $usage = [];
+    if ($engine === 'gemini_web') $usage = $data['usageMetadata'] ?? [];
+    else                          $usage = $data['usage']        ?? [];
 
     if ($engine === 'claude_web') {
         foreach ($data['content'] ?? [] as $block) {
@@ -558,7 +580,7 @@ function aeo_parse_response(string $engine, int $code, string $body): array
     if ($text === '' && empty($urls)) {
         return ['success' => false, 'error' => aeo_engine_label($engine) . ' returned no text or citations'];
     }
-    return ['success' => true, 'text' => $text, 'citations' => $urls];
+    return ['success' => true, 'text' => $text, 'citations' => $urls, 'usage' => $usage];
 }
 
 /**
@@ -566,13 +588,14 @@ function aeo_parse_response(string $engine, int $code, string $body): array
  * Total wall time ≈ slowest engine, not sum — keeps single-query checks under
  * nginx's 60s proxy timeout.
  */
-function aeo_query_all_engines_parallel(string $query, int $timeout = 55): array
+function aeo_query_all_engines_parallel(string $query, int $timeout = 55, ?int $site_id = null): array
 {
     $engines = aeo_available_engines();
     if (empty($engines)) return [];
 
     $mh = curl_multi_init();
     $handles = [];
+    $t0_all = microtime(true);
     foreach ($engines as $eng) {
         $req = aeo_build_request($eng, $query);
         if (!$req) continue;
@@ -594,15 +617,31 @@ function aeo_query_all_engines_parallel(string $query, int $timeout = 55): array
         if ($running > 0) curl_multi_select($mh, 1.0);
     } while ($running > 0 && $status === CURLM_OK);
 
+    // Engine → (provider, model) for cost logging. Parallel runner can't easily
+    // measure per-engine wall time independently — curl_multi runs them
+    // concurrently. We approximate with curl_getinfo TOTAL_TIME, which is the
+    // per-handle elapsed time.
+    $engine_provider = [
+        'claude_web' => ['anthropic',  'claude-sonnet-4-6',       'aeo_recall_claude'],
+        'openai_web' => ['openai',     'gpt-4o-search-preview',   'aeo_recall_openai'],
+        'gemini_web' => ['gemini',     'gemini-2.0-flash',        'aeo_recall_gemini'],
+        'perplexity' => ['perplexity', 'sonar',                   'aeo_recall_perplexity'],
+    ];
     $results = [];
     foreach ($handles as $eng => $ch) {
         $body = curl_multi_getcontent($ch) ?: '';
         $code = curl_getinfo($ch, CURLINFO_HTTP_CODE);
+        $ms   = (int)round((float)curl_getinfo($ch, CURLINFO_TOTAL_TIME) * 1000);
         $err  = curl_error($ch);
         if ($err && $code === 0) {
             $results[$eng] = ['success' => false, 'error' => aeo_engine_label($eng) . ' transport: ' . $err];
         } else {
             $results[$eng] = aeo_parse_response($eng, $code, $body);
+            // Log only successful calls — failed ones didn't bill us
+            if (!empty($results[$eng]['success']) && isset($engine_provider[$eng])) {
+                [$prov, $model, $feat] = $engine_provider[$eng];
+                ai_log_call($prov, $model, $feat, $site_id, $results[$eng]['usage'] ?? [], $ms);
+            }
         }
         curl_multi_remove_handle($mh, $ch);
         curl_close($ch);
@@ -627,7 +666,7 @@ function aeo_check_query_all_engines(PDO $db, int $query_id): array
 
     $site_domain = aeo_domain('https://' . $q['site_domain']);
     $today = date('Y-m-d');
-    $raw = aeo_query_all_engines_parallel($q['query_text']);
+    $raw = aeo_query_all_engines_parallel($q['query_text'], 55, (int)$q['site_id']);
 
     $out = [];
     $latest_cited = null; $latest_position = null;

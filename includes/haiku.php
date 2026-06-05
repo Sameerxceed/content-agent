@@ -5,16 +5,24 @@
  */
 
 require_once __DIR__ . '/helpers.php';
+require_once __DIR__ . '/ai_cost.php';
 
 /**
  * Send a message to Claude Haiku and get a response.
  *
- * @param string $system_prompt  System-level instructions
- * @param string $user_message   The user/agent prompt
- * @param int    $max_tokens     Max response tokens (default from config)
+ * @param string   $system_prompt System-level instructions
+ * @param string   $user_message  The user/agent prompt
+ * @param int      $max_tokens    Max response tokens (default from config)
+ * @param string   $feature       Stable identifier for cost tracking, e.g.
+ *                                'blog_write', 'redirect_fuzzy_match',
+ *                                'plan_cluster_pick'. Default 'unspecified'
+ *                                so existing call sites don't break — they
+ *                                get backfilled to a real feature name
+ *                                over time.
+ * @param int|null $site_id       Optional — for cost-per-site reporting.
  * @return array ['success' => bool, 'content' => string, 'usage' => array, 'error' => string|null]
  */
-function haiku_chat(string $system_prompt, string $user_message, int $max_tokens = 0): array
+function haiku_chat(string $system_prompt, string $user_message, int $max_tokens = 0, string $feature = 'unspecified', ?int $site_id = null): array
 {
     $api_key    = config('haiku_api_key');
     $model      = config('haiku_model');
@@ -29,6 +37,7 @@ function haiku_chat(string $system_prompt, string $user_message, int $max_tokens
         ],
     ];
 
+    $t0 = microtime(true);
     $response = http_post(
         'https://api.anthropic.com/v1/messages',
         $payload,
@@ -38,6 +47,7 @@ function haiku_chat(string $system_prompt, string $user_message, int $max_tokens
         ],
         120
     );
+    $ms = (int)round((microtime(true) - $t0) * 1000);
 
     if ($response['error']) {
         agent_log('Haiku API error: ' . $response['error'], 'ERROR');
@@ -68,6 +78,10 @@ function haiku_chat(string $system_prompt, string $user_message, int $max_tokens
             $content .= $block['text'];
         }
     }
+
+    // Log the call cost. ai_log_call resolves its own PDO and no-ops if the
+    // ai_calls table doesn't exist yet (pre-Phase 0). Cannot break the call.
+    ai_log_call('anthropic', $model, $feature, $site_id, $data['usage'] ?? [], $ms);
 
     return [
         'success' => true,

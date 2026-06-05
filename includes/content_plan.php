@@ -71,7 +71,7 @@ function plan_generate(PDO $db, int $site_id, array $opts, callable $progress): 
 
     // ── Pass A — Claude clusters the keywords ────────────────
     $progress('Clustering keywords into topic groups (AI)...', 20);
-    $clusters = _plan_pass_a_cluster_keywords($keywords, $profile);
+    $clusters = _plan_pass_a_cluster_keywords($keywords, $profile, $site_id);
     if (empty($clusters)) {
         throw new RuntimeException('AI could not cluster the keywords. Re-run Find Keywords and try again.');
     }
@@ -80,7 +80,7 @@ function plan_generate(PDO $db, int $site_id, array $opts, callable $progress): 
     $items_target = $cadence * $horizon;
     $items_target = min(PLAN_MAX_ITEMS_PER_RUN, $items_target);
     $progress("Sequencing {$items_target} items across {$horizon} weeks (AI)...", 55);
-    $items = _plan_pass_b_sequence_items($clusters, $keywords, $profile, $horizon, $cadence, $items_target);
+    $items = _plan_pass_b_sequence_items($clusters, $keywords, $profile, $horizon, $cadence, $items_target, $site_id);
     if (empty($items)) {
         throw new RuntimeException('AI could not sequence items. Re-run Find Keywords and try again.');
     }
@@ -327,7 +327,7 @@ function _plan_load_keywords(PDO $db, int $site_id): array
  * Pass A — Claude clusters the keywords into 6-12 topic groups.
  * Returns array of clusters indexed by cluster name.
  */
-function _plan_pass_a_cluster_keywords(array $keywords, array $profile): array
+function _plan_pass_a_cluster_keywords(array $keywords, array $profile, ?int $site_id = null): array
 {
     // Build a compact keyword catalogue for Claude (id|keyword|vol|diff|intent)
     $lines = [];
@@ -362,7 +362,7 @@ function _plan_pass_a_cluster_keywords(array $keywords, array $profile): array
 
     $prompt = "Keyword catalogue (id | keyword | vol diff intent):\n\n{$catalog}\n\nProduce the cluster list now.";
 
-    $resp = haiku_chat($sys, $prompt, 8000);
+    $resp = haiku_chat($sys, $prompt, 8000, 'plan_cluster_pick', $site_id);
     if (empty($resp['success'])) {
         error_log('[plan pass A] Claude error: ' . ($resp['error'] ?? 'unknown'));
         return [];
@@ -407,7 +407,7 @@ function _plan_pass_a_cluster_keywords(array $keywords, array $profile): array
  * Pass B — Claude sequences items across the pipeline weeks. Returns array
  * of item dictionaries ready to insert into content_plan_items.
  */
-function _plan_pass_b_sequence_items(array $clusters, array $keywords, array $profile, int $horizon_weeks, int $cadence, int $items_target): array
+function _plan_pass_b_sequence_items(array $clusters, array $keywords, array $profile, int $horizon_weeks, int $cadence, int $items_target, ?int $site_id = null): array
 {
     // Build cluster summary for Claude (give it the pillar + supporting names)
     $cluster_blocks = [];
@@ -455,7 +455,7 @@ function _plan_pass_b_sequence_items(array $clusters, array $keywords, array $pr
 
     $prompt = "Clusters available:\n\n{$cluster_text}\n\nProduce the {$items_target}-item pipeline now.";
 
-    $resp = haiku_chat($sys, $prompt, 12000);
+    $resp = haiku_chat($sys, $prompt, 12000, 'plan_sequence_items', $site_id);
     if (empty($resp['success'])) {
         error_log('[plan pass B] Claude error: ' . ($resp['error'] ?? 'unknown'));
         return [];

@@ -325,7 +325,7 @@ function _review_call_claude(array $plan, ?array $profile, array $summary, array
         . "## Cluster pool — unscheduled keywords by cluster\n" . json_encode(array_slice($pool, 0, 60), JSON_PRETTY_PRINT) . "\n\n"
         . "Produce the review document now.";
 
-    $resp = haiku_chat($sys, $context, 16000);
+    $resp = haiku_chat($sys, $context, 16000, 'plan_monthly_review', (int)($plan['site_id'] ?? 0) ?: null);
     if (empty($resp['success'])) {
         error_log('[plan review] Claude error: ' . ($resp['error'] ?? 'unknown'));
         return null;
