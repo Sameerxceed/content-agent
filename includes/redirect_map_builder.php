@@ -28,6 +28,7 @@ require_once __DIR__ . '/haiku.php';
 
 const RMB_AUTO_APPROVE_THRESHOLD = 85;
 const RMB_BATCH                  = 30;
+const RMB_CLAUDE_BATCH_SIZE      = 10;  // dead URLs per Claude call
 
 /** Extract the slug = last path segment. Lowercased, dashes/underscores normalised. */
 function rmb_slug_of(string $path): string
@@ -154,6 +155,71 @@ function rmb_claude_match(string $dead_path, string $dead_type, array $candidate
 }
 
 /**
+ * Batched variant — ask Claude to pick targets for MANY dead URLs in a single
+ * call. Each entry in $items is { dead_path, dead_type, candidates: [...] }.
+ *
+ * Returns an array keyed by dead_path: { to_path, confidence, reasoning }.
+ *
+ * Why: one URL per Claude call works but burns money. For Anna's 16K-URL
+ * migration, single-call was ~$35 + ~1h wall. Batches of 10 cut that to ~$10
+ * + ~10min because the system prompt only gets paid once per batch and the
+ * per-URL overhead drops dramatically.
+ *
+ * Cap is BATCH-ENFORCED: don't pass >12 items per call. Above that, output
+ * JSON gets large enough that Claude sometimes truncates mid-array. 10 is
+ * the safe sweet spot.
+ *
+ * If Claude returns malformed output OR drops items, caller falls back to
+ * per-URL rmb_claude_match() for any dead_path missing from the response —
+ * batching never silently loses URLs.
+ */
+function rmb_claude_match_batch(array $items, ?int $site_id = null): array
+{
+    if (empty($items)) return [];
+
+    $system = "You are a website-migration specialist. For EACH old (dead) URL below, pick the SINGLE BEST currently-live URL to 301-redirect to from its candidate list. Match by topic + URL type (a dead product redirects to a live product, not a blog). If no candidate is a reasonable fit, return to_path=null with confidence=0 — that's better than a wrong redirect.\n\nOUTPUT — strict JSON, one entry per input dead URL, keyed by exact dead_path:\n{\n  \"/old/path-1\": {\"to_path\":\"/new/path\" or null, \"confidence\":0-100, \"reasoning\":\"1 short sentence\"},\n  \"/old/path-2\": {...}\n}\n\nConfidence calibration:\n- 90+: same content idea, same URL type, name is a clear evolution\n- 70-89: same type, related topic but not identical\n- 50-69: related topic but different type (e.g. product → collection)\n- <50: weak match — prefer null at this band\n- null: no candidate is a good fit; the URL should 410 Gone or get a manual decision\n\nReturn ONE entry for EVERY dead URL in the input. Do not skip any. Do not invent paths not present in the candidate list.";
+
+    $blocks = [];
+    foreach ($items as $idx => $it) {
+        $cand_lines = [];
+        foreach ($it['candidates'] as $c) {
+            $cand_lines[] = "- {$c['path']} (type={$c['url_type']}" . (!empty($c['title']) ? ", title=\"{$c['title']}\"" : '') . ')';
+        }
+        $blocks[] = "Dead URL #" . ($idx + 1) . ":\n  dead_path: {$it['dead_path']}\n  dead_type: {$it['dead_type']}\n  candidates:\n" . implode("\n", $cand_lines);
+    }
+    $user = implode("\n\n", $blocks)
+        . "\n\nReturn one JSON entry per dead URL above, keyed by the exact dead_path string.";
+
+    // Output budget: 10 items × ~180 tokens each = ~1800 + slack
+    $resp = haiku_chat($system, $user, 3000, 'redirect_fuzzy_match_batch', $site_id);
+    if (empty($resp['success'])) {
+        return ['__error' => 'claude error: ' . ($resp['error'] ?? 'unknown')];
+    }
+
+    $txt = trim($resp['content']);
+    $txt = preg_replace('/^```(?:json)?\s*|\s*```$/m', '', $txt);
+    $j = json_decode($txt, true);
+    if (!is_array($j) && preg_match('/\{[\s\S]*\}/', $txt, $m)) $j = json_decode($m[0], true);
+    if (!is_array($j)) return ['__error' => 'unparseable claude batch output'];
+
+    $out = [];
+    foreach ($j as $dead_path => $row) {
+        if (!is_array($row)) continue;
+        $to = $row['to_path'] ?? null;
+        if ($to !== null) {
+            $to = (string)$to;
+            if ($to === '' || $to === 'null') $to = null;
+        }
+        $out[$dead_path] = [
+            'to_path'    => $to,
+            'confidence' => max(0, min(100, (int)($row['confidence'] ?? 0))),
+            'reasoning'  => mb_substr((string)($row['reasoning'] ?? ''), 0, 1000),
+        ];
+    }
+    return $out;
+}
+
+/**
  * Shortlist the most promising live candidates for one dead URL. Caps the
  * Claude prompt size + helps it focus. Strategy: same-type first, then path
  * neighbours, then a generic homepage / catalog fallback.
@@ -232,48 +298,39 @@ function rmb_build_map(PDO $db, int $site_id, ?int $limit = null, ?callable $pro
             auto_approved = VALUES(auto_approved),
             updated_at = NOW()");
 
-    $processed = 0; $hits = 0; $no_target = 0; $errors = 0;
+    // Pass 1 — partition dead rows into (heuristic hits) and (needs Claude).
+    // We do this in-memory so we can BATCH the Claude calls in pass 2.
+    $heuristic_results = []; // dead_path => match array, ready to upsert
+    $claude_queue = [];      // [ { row, dead_path, dead_type, candidates } ]
+
     foreach ($dead_rows as $row) {
         $dead_path = (string)$row['path'];
         $dead_type = rmb_classify_path($dead_path);
-        $processed++;
-
-        // 1. Heuristic match first
         $match = rmb_heuristic_match($dead_path, $live_index);
-
-        // 2. Claude fuzzy if heuristic missed
-        if (!$match) {
-            $candidates = rmb_shortlist_candidates($dead_path, $dead_type, $live_index, 15);
-            $cm = rmb_claude_match($dead_path, $dead_type, $candidates, $site_id);
-            if ($cm['to_path']) {
-                $match = [
-                    'to_path' => $cm['to_path'],
-                    'confidence' => $cm['confidence'],
-                    'match_method' => 'claude_fuzzy',
-                    'reasoning' => $cm['reasoning'],
-                ];
-            } else {
-                $match = [
-                    'to_path' => null,
-                    'confidence' => 0,
-                    'match_method' => 'claude_branch',
-                    'reasoning' => $cm['reasoning'] ?: 'no living target identified',
-                ];
-            }
-        } else {
-            // Add a tiny reasoning blurb for heuristic hits so the review UI is informative
+        if ($match) {
             $match['reasoning'] = "Heuristic match: {$match['match_method']}";
+            $heuristic_results[] = ['row' => $row, 'dead_path' => $dead_path, 'match' => $match];
+        } else {
+            $candidates = rmb_shortlist_candidates($dead_path, $dead_type, $live_index, 15);
+            $claude_queue[] = [
+                'row'        => $row,
+                'dead_path'  => $dead_path,
+                'dead_type'  => $dead_type,
+                'candidates' => $candidates,
+            ];
         }
+    }
 
+    $processed = 0; $hits = 0; $no_target = 0; $errors = 0;
+
+    $apply_match = function (array $row, string $dead_path, array $match) use ($upsert, $site_id, &$processed, &$hits, &$no_target, &$errors) {
         $auto_approved = ($match['to_path'] !== null && $match['confidence'] >= RMB_AUTO_APPROVE_THRESHOLD) ? 1 : 0;
         $status = $auto_approved ? 'approved' : 'pending';
         if ($match['to_path'] === null) {
-            $status = 'pending';
             $no_target++;
         } else {
             $hits++;
         }
-
         try {
             $upsert->execute([
                 $site_id, $dead_path, sha1($dead_path), $match['to_path'],
@@ -284,8 +341,50 @@ function rmb_build_map(PDO $db, int $site_id, ?int $limit = null, ?callable $pro
             $errors++;
             error_log('[rmb] upsert: ' . $e->getMessage());
         }
+        $processed++;
+    };
 
+    // Pass 2a — write all heuristic hits first (free, fast).
+    foreach ($heuristic_results as $h) {
+        $apply_match($h['row'], $h['dead_path'], $h['match']);
         if ($progress) $progress(['processed' => $processed, 'hits' => $hits, 'no_target' => $no_target]);
+    }
+
+    // Pass 2b — batched Claude. RMB_CLAUDE_BATCH_SIZE URLs per call.
+    $batches = array_chunk($claude_queue, RMB_CLAUDE_BATCH_SIZE);
+    foreach ($batches as $batch) {
+        $items = array_map(fn($q) => [
+            'dead_path'  => $q['dead_path'],
+            'dead_type'  => $q['dead_type'],
+            'candidates' => $q['candidates'],
+        ], $batch);
+        $verdicts = rmb_claude_match_batch($items, $site_id);
+        $batch_failed = !empty($verdicts['__error']);
+
+        foreach ($batch as $q) {
+            $verdict = $verdicts[$q['dead_path']] ?? null;
+            // Fallback: per-URL call for anything the batch missed or if the
+            // whole batch errored. Guarantees no silent URL loss.
+            if ($verdict === null) {
+                $single = rmb_claude_match($q['dead_path'], $q['dead_type'], $q['candidates'], $site_id);
+                $verdict = $single;
+            }
+            $match = $verdict['to_path']
+                ? [
+                    'to_path'      => $verdict['to_path'],
+                    'confidence'   => $verdict['confidence'],
+                    'match_method' => 'claude_fuzzy',
+                    'reasoning'    => $verdict['reasoning'] ?: 'matched via Claude',
+                ]
+                : [
+                    'to_path'      => null,
+                    'confidence'   => 0,
+                    'match_method' => 'claude_branch',
+                    'reasoning'    => $verdict['reasoning'] ?: 'no living target identified',
+                ];
+            $apply_match($q['row'], $q['dead_path'], $match);
+            if ($progress) $progress(['processed' => $processed, 'hits' => $hits, 'no_target' => $no_target]);
+        }
     }
 
     $db->prepare("UPDATE redirect_runs SET status='done', finished_at=NOW(),

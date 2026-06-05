@@ -249,8 +249,54 @@ try {
         }
         $verify = shopify_admin_verify($shop_url, $token);
         if (!$verify['ok']) rd_respond(['error' => 'Shopify auth failed: ' . $verify['error']], 400);
+
+        // For >250 approved redirects, push in background — Shopify's 2 req/s
+        // rate limit + browser/nginx timeouts make synchronous push fragile
+        // past a couple of minutes.
+        $count_stmt = $db->prepare("SELECT COUNT(*) FROM redirect_map
+            WHERE site_id = ? AND status = 'approved' AND to_path IS NOT NULL");
+        $count_stmt->execute([$site_id]);
+        $approved_count = (int)$count_stmt->fetchColumn();
+
+        if ($approved_count > 250) {
+            // Concurrency guard — refuse to spawn if one is already running
+            $check = $db->prepare("SELECT id FROM redirect_runs
+                WHERE site_id = ? AND kind = 'apply' AND status = 'running' LIMIT 1");
+            $check->execute([$site_id]);
+            $running = (int)$check->fetchColumn();
+            if ($running) {
+                rd_respond(['success' => true, 'already_running' => true, 'run_id' => $running, 'total_queued' => $approved_count]);
+            }
+
+            $db->prepare("INSERT INTO redirect_runs (site_id, kind, status) VALUES (?, 'apply', 'running')")
+               ->execute([$site_id]);
+            $run_id = (int)$db->lastInsertId();
+
+            $php    = config('php_path') ?: '/usr/bin/php8.3';
+            $script = realpath(__DIR__ . '/../../agent/cron-shopify-push.php');
+            $log    = (config('log_path') ?: '/var/log/contentagent') . '/redirects.log';
+            if (PHP_OS_FAMILY === 'Windows') {
+                $cmd = sprintf('start /B "" "%s" "%s" --site=%d --run=%d', $php, $script, $site_id, $run_id);
+                pclose(popen($cmd, 'r'));
+            } else {
+                $cmd = sprintf('setsid %s %s --site=%d --run=%d </dev/null >> %s 2>&1 &',
+                    escapeshellarg($php), escapeshellarg($script), $site_id, $run_id, escapeshellarg($log));
+                exec($cmd);
+            }
+            rd_respond(['success' => true, 'launched' => true, 'run_id' => $run_id, 'total_queued' => $approved_count]);
+        }
+
+        // Small batch — synchronous is fine
         $r = shopify_admin_push_approved($db, $site_id, $shop_url, $token);
         rd_respond(['success' => true] + $r);
+    }
+
+    if ($action === 'apply_status') {
+        // UI polls this when a background apply is in flight.
+        $stmt = $db->prepare("SELECT id, status, items_processed, items_succeeded, items_failed, started_at, finished_at, error
+            FROM redirect_runs WHERE site_id = ? AND kind = 'apply' ORDER BY id DESC LIMIT 1");
+        $stmt->execute([$site_id]);
+        rd_respond(['success' => true, 'run' => $stmt->fetch() ?: null]);
     }
 
     rd_respond(['error' => 'Unknown action: ' . $action], 400);

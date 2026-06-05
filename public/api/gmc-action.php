@@ -65,6 +65,16 @@ try {
         gmc_respond($r);
     }
 
+    if ($action === 'suggest_fix') {
+        // Claude proposes corrections for ONE product's unresolved issues.
+        $notes = json_decode($site['notes'] ?? '{}', true) ?: [];
+        $mid = (string)($notes['gmc_merchant_id'] ?? '');
+        $product_id = (string)($input['product_id'] ?? '');
+        if ($mid === '' || $product_id === '') gmc_respond(['error' => 'merchant_id and product_id required'], 400);
+        $r = gmc_generate_fix($db, $site_id, $mid, $product_id);
+        gmc_respond($r);
+    }
+
     gmc_respond(['error' => 'Unknown action'], 400);
 } catch (Throwable $e) {
     error_log('[gmc-action] ' . $e->getMessage());

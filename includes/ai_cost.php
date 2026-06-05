@@ -105,17 +105,20 @@ function ai_estimate_job(string $job_type, array $params): array
             $needs_ai   = max(0, $dead - $heuristic);
             $model      = (string)($params['model'] ?? 'claude-haiku-4-5-20251001');
 
-            // Per-call shape for rmb_claude_match: ~2200 input (URL + 15
-            // candidate lines + system prompt) + ~180 output (JSON verdict).
-            $in_per  = 2200;
-            $out_per = 180;
-            $cost_per = ai_cost_for_call($model, $in_per, $out_per);
-            $ai_cost  = $cost_per * $needs_ai;
+            // Builder batches 10 URLs per Claude call. Per-batch shape:
+            //   ~3500 input (system + 10 dead URLs × ~15 candidates each)
+            //   ~1500 output (10 JSON verdicts × ~150 tokens)
+            $batch_size = 10;
+            $batches    = (int)ceil($needs_ai / $batch_size);
+            $in_per_batch  = 3500;
+            $out_per_batch = 1500;
+            $cost_per_batch = ai_cost_for_call($model, $in_per_batch, $out_per_batch);
+            $cost_per_url   = $batch_size > 0 ? $cost_per_batch / $batch_size : 0;
+            $ai_cost        = $cost_per_batch * $batches;
 
-            // Runtime: HTTP round-trip ~1.5s per Claude call + the existing
-            // builder has no inter-call sleep, but Anthropic rate-limit
-            // pushes effective throughput to ~3 calls/sec sustained.
-            $runtime = (int)ceil($needs_ai / 3) + 30; // +30s for the heuristic pass
+            // Runtime: ~3s per batch (Haiku at ~12K tokens), bounded by
+            // Anthropic concurrent-request limits.
+            $runtime = (int)ceil($batches * 3) + 30;
 
             $out['steps'] = [
                 [
@@ -126,10 +129,10 @@ function ai_estimate_job(string $job_type, array $params): array
                     'detail'    => "{$heuristic} URLs likely matched by exact-path / same-slug / .php→clean rules",
                 ],
                 [
-                    'label'     => "AI fuzzy match — Claude picks the best living target per URL",
-                    'calls'     => $needs_ai,
+                    'label'     => "AI fuzzy match — Claude picks the best living target ({$batch_size} URLs per call)",
+                    'calls'     => $batches,
                     'est_cost'  => $ai_cost,
-                    'detail'    => "{$needs_ai} URLs × ~" . number_format($cost_per, 4) . "/URL · ~{$in_per} in + ~{$out_per} out tokens each",
+                    'detail'    => "{$needs_ai} URLs across {$batches} batches · ~" . number_format($cost_per_url, 5) . "/URL · ~{$in_per_batch} in + ~{$out_per_batch} out per batch",
                     'model'     => $model,
                 ],
                 [
@@ -140,9 +143,9 @@ function ai_estimate_job(string $job_type, array $params): array
                     'detail'    => "≥85% confidence auto-approves, 60-84% to review queue, the rest to manual decision",
                 ],
             ];
-            $out['total_calls']       = $needs_ai;
-            $out['est_input_tokens']  = $needs_ai * $in_per;
-            $out['est_output_tokens'] = $needs_ai * $out_per;
+            $out['total_calls']       = $batches;
+            $out['est_input_tokens']  = $batches * $in_per_batch;
+            $out['est_output_tokens'] = $batches * $out_per_batch;
             $out['est_cost_usd']      = $ai_cost;
             $out['est_runtime_sec']   = $runtime;
             break;

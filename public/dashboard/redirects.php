@@ -665,15 +665,52 @@ async function applyShopify(btn) {
     btn.disabled = true;
     const orig = btn.innerHTML;
     btn.innerHTML = 'Pushing…';
+    const prog = document.getElementById('rd-progress');
     try {
         const r = await call('apply_to_shopify');
-        alert(`Pushed: ${r.pushed} new\nDuplicates (already on Shopify): ${r.duplicates}\nErrors: ${r.errors}\nTotal processed: ${r.total}`);
+        if (r.launched || r.already_running) {
+            // Large set — background job. Poll redirect_runs.
+            prog.style.display = 'block';
+            prog.innerHTML = `Pushing ${(r.total_queued || '?').toLocaleString()} redirects to Shopify in the background — you can leave this page.`;
+            btn.innerHTML = 'Pushing in background…';
+            pollApplyStatus();
+            return;
+        }
+        alert(`Pushed: ${r.pushed} new\nDuplicates: ${r.duplicates}\nErrors: ${r.errors}\nTotal: ${r.total}`);
         window.location.reload();
     } catch (e) {
         alert(e.message);
         btn.disabled = false;
         btn.innerHTML = orig;
     }
+}
+
+async function pollApplyStatus() {
+    const prog = document.getElementById('rd-progress');
+    const tick = async () => {
+        try {
+            const r = await call('apply_status');
+            if (!r.run) return;
+            if (r.run.status === 'running') {
+                const proc = parseInt(r.run.items_processed || 0).toLocaleString();
+                const ok = parseInt(r.run.items_succeeded || 0).toLocaleString();
+                const errs = parseInt(r.run.items_failed || 0);
+                prog.innerHTML = `Pushing to Shopify… ${proc} processed (${ok} ok${errs ? ', ' + errs + ' errors' : ''})`;
+                setTimeout(tick, 5000);
+                return;
+            }
+            if (r.run.status === 'done') {
+                prog.innerHTML = `Done — ${parseInt(r.run.items_succeeded || 0).toLocaleString()} pushed of ${parseInt(r.run.items_processed || 0).toLocaleString()}. Refreshing…`;
+                setTimeout(() => location.reload(), 1500);
+                return;
+            }
+            if (r.run.status === 'failed') {
+                prog.innerHTML = '<span style="color:#dc2626;">Apply failed: ' + (r.run.error || 'unknown') + '</span>';
+                return;
+            }
+        } catch (e) { setTimeout(tick, 8000); }
+    };
+    tick();
 }
 
 async function saveTarget(el, id) {

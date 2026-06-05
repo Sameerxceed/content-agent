@@ -84,6 +84,8 @@ $valid_jobs = [
     'psi-baseline',    // weekly: page-speed + Core Web Vitals snapshot per site
     'schema-audit',    // weekly: verify JSON-LD persistence on every tracked URL
     'content-freshness', // weekly: rank published posts by staleness for refresh
+    'gsc-fetch',         // daily: pull yesterday's GSC clicks/impressions per site
+    'gmc-audit',         // nightly: sync GMC product catalogue + diagnostics per site
 ];
 
 if (!in_array($job, $valid_jobs, true)) {

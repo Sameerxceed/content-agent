@@ -24,6 +24,7 @@
 
 require_once __DIR__ . '/helpers.php';
 require_once __DIR__ . '/integrations/google.php';
+require_once __DIR__ . '/haiku.php';
 
 const GMC_BASE = 'https://shoppingcontent.googleapis.com/content/v2.1';
 
@@ -184,6 +185,99 @@ function gmc_audit_site(PDO $db, int $site_id, string $merchant_id): array
         'products_synced' => $count,
         'products_audited'=> $audited,
         'issues_found'    => $total_issues,
+    ];
+}
+
+/**
+ * Generate a Claude-proposed fix for ONE product's outstanding GMC issues.
+ *
+ * Returns:
+ *   {
+ *     success: bool,
+ *     fixes: [ { field, old_value, new_value, addresses_issue_codes: [...], reason } ],
+ *     unfixable: [ { issue_code, reason } ],   // issues that need human intervention
+ *     error?: string
+ *   }
+ *
+ * Claude is grounded in:
+ *   - The product row (title, link, image, price, availability, condition)
+ *   - The list of unresolved gmc_issues for this product (code, severity,
+ *     description, Google's documentation link)
+ *
+ * Claude returns a list of (field, new_value) pairs the merchant can apply.
+ * Applying them is a SEPARATE step (gmc_apply_fix) because for Shopify-
+ * connected sites we push via metafields; for others the merchant edits
+ * their feed directly.
+ */
+function gmc_generate_fix(PDO $db, int $site_id, string $merchant_id, string $product_id): array
+{
+    $stmt = $db->prepare("SELECT * FROM gmc_products WHERE site_id = ? AND merchant_id = ? AND product_id = ?");
+    $stmt->execute([$site_id, $merchant_id, $product_id]);
+    $product = $stmt->fetch();
+    if (!$product) return ['success' => false, 'error' => 'Product not found'];
+
+    $stmt = $db->prepare("SELECT * FROM gmc_issues
+        WHERE site_id = ? AND merchant_id = ? AND product_id = ? AND resolved_at IS NULL
+        ORDER BY FIELD(severity, 'error','warning','suggestion')");
+    $stmt->execute([$site_id, $merchant_id, $product_id]);
+    $issues = $stmt->fetchAll();
+    if (empty($issues)) return ['success' => false, 'error' => 'No unresolved issues on this product'];
+
+    $issue_lines = [];
+    foreach ($issues as $i => $iss) {
+        $issue_lines[] = ($i + 1) . ". [{$iss['severity']}] {$iss['issue_code']}\n"
+            . "   Google says: " . ($iss['description'] ?? '(no description)') . "\n"
+            . ($iss['detail'] ? "   Detail: {$iss['detail']}\n" : '')
+            . ($iss['documentation'] ? "   Docs: {$iss['documentation']}\n" : '');
+    }
+
+    $product_snapshot = [
+        'product_id'   => $product['product_id'],
+        'title'        => $product['title'],
+        'link'         => $product['link'],
+        'image_link'   => $product['image_link'],
+        'price'        => $product['price'],
+        'availability' => $product['availability'],
+        'condition'    => $product['condition_state'],
+    ];
+
+    $system = "You are a Google Merchant Center feed specialist. The merchant has a product with one or more issues flagged by Google. Propose specific, applicable field changes that would resolve the issues — ONLY for fields you can actually correct from the information given.\n\n"
+        . "OUTPUT — strict JSON:\n"
+        . "{\n"
+        . "  \"fixes\": [\n"
+        . "    {\n"
+        . "      \"field\": \"title|description|gtin|mpn|brand|google_product_category|image_link|availability|condition|...\",\n"
+        . "      \"old_value\": \"current value (or null if not set)\",\n"
+        . "      \"new_value\": \"the corrected value\",\n"
+        . "      \"addresses_issue_codes\": [\"issue_code_1\", ...],\n"
+        . "      \"reason\": \"one short sentence explaining why this fixes the issue\"\n"
+        . "    }\n"
+        . "  ],\n"
+        . "  \"unfixable\": [ { \"issue_code\": \"...\", \"reason\": \"why a fix needs human action (e.g. need to source GTIN from manufacturer)\" } ]\n"
+        . "}\n\n"
+        . "Rules:\n"
+        . "- NEVER invent identifiers (GTIN, MPN, brand) you don't have. Put those in unfixable.\n"
+        . "- If the issue is content-quality (title too short, missing keywords), propose a corrected title.\n"
+        . "- If the issue is policy (restricted product), put in unfixable with a clear reason.\n"
+        . "- If you can't tell from the data what's wrong, put in unfixable.\n"
+        . "- Skip fixes you're <70% confident about. Conservative > wrong.";
+
+    $user = "PRODUCT SNAPSHOT:\n" . json_encode($product_snapshot, JSON_PRETTY_PRINT) . "\n\n"
+        . "UNRESOLVED ISSUES:\n" . implode("\n", $issue_lines);
+
+    $resp = haiku_chat($system, $user, 2000, 'gmc_fix_generator', $site_id);
+    if (empty($resp['success'])) return ['success' => false, 'error' => 'Claude error: ' . ($resp['error'] ?? 'unknown')];
+
+    $txt = trim($resp['content']);
+    $txt = preg_replace('/^```(?:json)?\s*|\s*```$/m', '', $txt);
+    $j = json_decode($txt, true);
+    if (!is_array($j) && preg_match('/\{[\s\S]*\}/', $txt, $m)) $j = json_decode($m[0], true);
+    if (!is_array($j)) return ['success' => false, 'error' => 'Unparseable Claude output'];
+
+    return [
+        'success'   => true,
+        'fixes'     => array_values((array)($j['fixes']     ?? [])),
+        'unfixable' => array_values((array)($j['unfixable'] ?? [])),
     ];
 }
 

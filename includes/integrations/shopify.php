@@ -226,7 +226,7 @@ function shopify_admin_set_product_metafield(string $shop_url, string $token, in
  * with applied_at + external_id on success, leaves applied=null on failure
  * so re-runs are safe (idempotent on duplicates).
  */
-function shopify_admin_push_approved(PDO $db, int $site_id, string $shop_url, string $token): array
+function shopify_admin_push_approved(PDO $db, int $site_id, string $shop_url, string $token, ?int $run_id = null, ?callable $progress = null): array
 {
     $stmt = $db->prepare("SELECT id, from_path, to_path FROM redirect_map
                           WHERE site_id = ? AND status = 'approved' AND to_path IS NOT NULL
@@ -240,14 +240,20 @@ function shopify_admin_push_approved(PDO $db, int $site_id, string $shop_url, st
     $mark_dupe = $db->prepare("UPDATE redirect_map SET
         notes = CONCAT(COALESCE(notes,''), '\n[shopify push] ', ?), updated_at = NOW() WHERE id = ?");
 
-    $pushed = 0; $duplicates = 0; $errors = 0;
+    // Progress is reported to redirect_runs row when $run_id is supplied,
+    // so the UI can poll an existing row instead of needing a new table.
+    $progress_update = $run_id
+        ? $db->prepare("UPDATE redirect_runs SET items_processed = ?, items_succeeded = ?, items_failed = ? WHERE id = ?")
+        : null;
+
+    $pushed = 0; $duplicates = 0; $errors = 0; $i = 0;
     foreach ($rows as $r) {
+        $i++;
         $res = shopify_admin_create_redirect($shop_url, $token, (string)$r['from_path'], (string)$r['to_path']);
         if (!empty($res['success'])) {
             $update->execute([$res['id'], (int)$r['id']]);
             $pushed++;
         } elseif (($res['error'] ?? '') === 'duplicate_or_conflict') {
-            // Mark as applied anyway — Shopify already has a redirect on this path
             $update->execute([null, (int)$r['id']]);
             $mark_dupe->execute(['duplicate on Shopify (kept existing)', (int)$r['id']]);
             $duplicates++;
@@ -255,6 +261,10 @@ function shopify_admin_push_approved(PDO $db, int $site_id, string $shop_url, st
             $mark_dupe->execute([$res['error'] ?? 'unknown', (int)$r['id']]);
             $errors++;
         }
+        if ($progress_update && ($i % 25 === 0 || $i === count($rows))) {
+            $progress_update->execute([$i, $pushed + $duplicates, $errors, $run_id]);
+        }
+        if ($progress) $progress(['processed' => $i, 'pushed' => $pushed, 'duplicates' => $duplicates, 'errors' => $errors, 'total' => count($rows)]);
     }
     return ['pushed' => $pushed, 'duplicates' => $duplicates, 'errors' => $errors, 'total' => count($rows)];
 }

@@ -187,6 +187,11 @@ ob_start();
                     </div>
                 </div>
                 <?php endforeach; ?>
+                <div style="margin-top:6px; display:flex; gap:6px; align-items:center;">
+                    <button class="btn btn-outline btn-sm" style="font-size:11px; padding:4px 10px;" onclick="suggestFix(this, '<?= e($p['product_id']) ?>')">&#129504; Suggest fix with AI</button>
+                    <span style="font-size:10px; color:#94a3b8;">Claude reads the product + issues and proposes corrected fields</span>
+                </div>
+                <div class="gmc-fix-result" data-pid="<?= e($p['product_id']) ?>" style="display:none; margin-top:8px;"></div>
             </div>
             <?php endif; ?>
         </div>
@@ -197,8 +202,67 @@ ob_start();
     <?php endif; ?>
 <?php endif; ?>
 
+<style>
+.gmc-fix-card { padding:10px 12px; background:#f0f9ff; border:1px solid #bae6fd; border-radius:6px; font-size:12px; }
+.gmc-fix-card h4 { margin:0 0 6px; font-size:11px; text-transform:uppercase; letter-spacing:0.4px; color:#0c4a6e; }
+.gmc-fix-row { display:grid; grid-template-columns: 110px 1fr; gap:6px; padding:4px 0; border-top:1px solid #e0f2fe; }
+.gmc-fix-row .field { font-family:ui-monospace,monospace; font-size:11px; color:#0c4a6e; font-weight:600; }
+.gmc-fix-row .change { font-size:11px; line-height:1.5; }
+.gmc-fix-row .old { color:#9ca3af; text-decoration:line-through; }
+.gmc-fix-row .new { color:#065f46; font-weight:600; }
+.gmc-fix-row .reason { color:#475569; margin-top:2px; }
+.gmc-unfixable { color:#92400e; font-size:11px; margin-top:8px; padding-top:6px; border-top:1px solid #e0f2fe; }
+</style>
 <script>
 const SITE_ID = <?= $site_id ?>;
+async function suggestFix(btn, productId) {
+    btn.disabled = true;
+    btn.innerHTML = '⏳ Thinking…';
+    const wrap = document.querySelector('.gmc-fix-result[data-pid="' + productId + '"]');
+    wrap.style.display = 'block';
+    wrap.innerHTML = '<div style="padding:8px; font-size:11px; color:#64748b;">Claude is reading the product + issues…</div>';
+    try {
+        const res = await fetch('<?= url('/api/gmc-action.php') ?>', {
+            method: 'POST', headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({ action: 'suggest_fix', site_id: SITE_ID, product_id: productId })
+        });
+        const data = await res.json();
+        if (!data.success) {
+            wrap.innerHTML = '<div style="color:#dc2626; font-size:11px;">' + (data.error || 'Failed') + '</div>';
+            btn.disabled = false; btn.innerHTML = '&#129504; Suggest fix with AI';
+            return;
+        }
+        let html = '<div class="gmc-fix-card"><h4>Proposed fixes</h4>';
+        if (!data.fixes || data.fixes.length === 0) {
+            html += '<div style="font-size:11px; color:#64748b;">No safe field-level fixes available. See "needs human action" below.</div>';
+        } else {
+            data.fixes.forEach(f => {
+                html += '<div class="gmc-fix-row">';
+                html += '<div class="field">' + (f.field || '') + '</div>';
+                html += '<div class="change">';
+                if (f.old_value) html += '<div class="old">' + escapeHtml(String(f.old_value).slice(0, 200)) + '</div>';
+                html += '<div class="new">→ ' + escapeHtml(String(f.new_value || '').slice(0, 200)) + '</div>';
+                if (f.reason) html += '<div class="reason">' + escapeHtml(f.reason) + '</div>';
+                html += '</div></div>';
+            });
+        }
+        if (data.unfixable && data.unfixable.length > 0) {
+            html += '<div class="gmc-unfixable"><strong>Needs human action:</strong><ul style="margin:4px 0 0; padding-left:18px;">';
+            data.unfixable.forEach(u => {
+                html += '<li><code>' + escapeHtml(u.issue_code || '') + '</code> — ' + escapeHtml(u.reason || '') + '</li>';
+            });
+            html += '</ul></div>';
+        }
+        html += '</div>';
+        wrap.innerHTML = html;
+        btn.innerHTML = '&#10003; Suggestions ready';
+    } catch (e) {
+        wrap.innerHTML = '<div style="color:#dc2626; font-size:11px;">' + e.message + '</div>';
+        btn.disabled = false; btn.innerHTML = '&#129504; Suggest fix with AI';
+    }
+}
+function escapeHtml(s) { return String(s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
+
 async function runAudit(btn) {
     btn.disabled = true;
     const prog = document.getElementById('gmc-progress');
