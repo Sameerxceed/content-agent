@@ -295,6 +295,67 @@ function rmb_build_map(PDO $db, int $site_id, ?int $limit = null, ?callable $pro
     return ['processed' => $processed, 'hits' => $hits, 'no_target' => $no_target, 'errors' => $errors, 'run_id' => $run_id];
 }
 
+/**
+ * Dry-run the heuristic pass over every unprocessed dead URL without writing
+ * anything or calling Claude. Used by the preflight estimator to figure out
+ * how many URLs will fall through to the (paid) AI fuzzy match.
+ *
+ * Returns counts in the same buckets the live builder would have used —
+ * which is the input the cost estimator expects.
+ *
+ * Runtime: ~30s for 16K URLs. All-PHP, no network.
+ *
+ * @return array {
+ *   dead_total: int,
+ *   already_done: int,        // dead URLs with an existing approved/applied/rejected redirect — won't reprocess
+ *   to_process: int,
+ *   heuristic_hits: int,      // would match via path_exact / slug_exact / type_match
+ *   needs_ai: int,            // would need rmb_claude_match
+ *   live_inventory_size: int,
+ * }
+ */
+function rmb_dry_run(PDO $db, int $site_id): array
+{
+    $stmt = $db->prepare("SELECT path, url_type, title FROM current_site_urls WHERE site_id = ?");
+    $stmt->execute([$site_id]);
+    $live_index = $stmt->fetchAll();
+
+    // Mirror the live builder's "what's left to process" query.
+    $sql_total = "SELECT COUNT(*) FROM historical_urls WHERE site_id = ? AND is_dead = 1";
+    $stmt = $db->prepare($sql_total);
+    $stmt->execute([$site_id]);
+    $dead_total = (int)$stmt->fetchColumn();
+
+    $sql_pending = "SELECT h.path
+        FROM historical_urls h
+        LEFT JOIN redirect_map r ON r.site_id = h.site_id
+                             AND r.from_path_hash = SHA1(h.path)
+                             AND r.status IN ('approved','applied','rejected')
+        WHERE h.site_id = ? AND h.is_dead = 1 AND r.id IS NULL";
+    $stmt = $db->prepare($sql_pending);
+    $stmt->execute([$site_id]);
+    $pending = $stmt->fetchAll(PDO::FETCH_COLUMN);
+
+    $heuristic_hits = 0;
+    if (!empty($live_index)) {
+        foreach ($pending as $dead_path) {
+            if (rmb_heuristic_match((string)$dead_path, $live_index) !== null) {
+                $heuristic_hits++;
+            }
+        }
+    }
+    $to_process = count($pending);
+
+    return [
+        'dead_total'          => $dead_total,
+        'already_done'        => max(0, $dead_total - $to_process),
+        'to_process'          => $to_process,
+        'heuristic_hits'      => $heuristic_hits,
+        'needs_ai'            => max(0, $to_process - $heuristic_hits),
+        'live_inventory_size' => count($live_index),
+    ];
+}
+
 /** Summary counts for the dashboard. */
 function rmb_site_summary(PDO $db, int $site_id): array
 {

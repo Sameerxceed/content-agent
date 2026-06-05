@@ -14,6 +14,7 @@ ob_start();
 
 require_once __DIR__ . '/../../includes/helpers.php';
 require_once __DIR__ . '/../../includes/auth.php';
+require_once __DIR__ . '/../../includes/ai_cost.php';
 
 auth_start();
 if (!auth_check()) { http_response_code(401); ob_end_clean(); echo json_encode(['error' => 'Unauthorized']); exit; }
@@ -36,6 +37,43 @@ $input   = json_decode(file_get_contents('php://input'), true) ?: [];
 $site_id = (int)($input['site_id'] ?? 0);
 if (!$site_id) cps_respond(['error' => 'site_id required'], 400);
 if (!auth_can_access_site($db, $site_id)) cps_respond(['error' => 'Site not found'], 404);
+
+// Preflight: estimate cost + scope without launching the job. Same pattern
+// as the redirect builder — UI shows the modal, user confirms, then re-POSTs
+// without preflight=1 to actually start the run.
+if (!empty($input['preflight'])) {
+    $cadence  = (int)($input['cadence']  ?? 2);
+    $horizon  = (int)($input['horizon']  ?? 12);
+    $cadence  = max(1, min(7,  $cadence));
+    $horizon  = max(4, min(26, $horizon));
+    $items    = $cadence * $horizon;
+
+    $stmt = $db->prepare("SELECT COUNT(*) FROM keywords WHERE site_id = ? AND status = 'active'");
+    $stmt->execute([$site_id]);
+    $kw_count = (int)$stmt->fetchColumn();
+
+    $est = ai_estimate_job('content_plan_generate', [
+        'item_count'    => $items,
+        'keyword_count' => $kw_count,
+    ]);
+
+    $is_admin = function_exists('auth_is_super_admin') ? auth_is_super_admin() : false;
+    if (!$is_admin) {
+        $est['est_cost_usd'] = null;
+        foreach ($est['steps'] as &$s) { $s['est_cost'] = null; }
+        unset($s);
+    }
+    cps_respond([
+        'success'       => true,
+        'preflight'     => true,
+        'estimate'      => $est,
+        'is_admin'      => $is_admin,
+        'keyword_count' => $kw_count,
+        'item_count'    => $items,
+        'horizon_weeks' => $horizon,
+        'cadence'       => $cadence,
+    ]);
+}
 
 // If a plan generation is already running, just return that job_id
 $stmt = $db->prepare("SELECT id FROM agent_runs WHERE site_id = ? AND job_type = 'content_plan_generate'

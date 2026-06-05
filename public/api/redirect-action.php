@@ -20,6 +20,7 @@ ob_start();
 require_once __DIR__ . '/../../includes/helpers.php';
 require_once __DIR__ . '/../../includes/auth.php';
 require_once __DIR__ . '/../../includes/redirect_map_builder.php';
+require_once __DIR__ . '/../../includes/ai_cost.php';
 
 auth_start();
 if (!auth_check()) { http_response_code(401); ob_end_clean(); echo json_encode(['error' => 'Unauthorized']); exit; }
@@ -55,6 +56,35 @@ $site = auth_get_accessible_site($db, $site_id);
 if (!$site) rd_respond(['error' => 'Site not found'], 404);
 
 try {
+    if ($action === 'preflight_build') {
+        // Cheap dry-run of the heuristic pass + cost estimate. Lets the user
+        // see scope + cost (admin) BEFORE we burn Claude tokens on 16K URLs.
+        $dry = rmb_dry_run($db, $site_id);
+        if ($dry['live_inventory_size'] === 0) {
+            rd_respond([
+                'error'   => 'No live URL inventory yet — run "Crawl live site" first so we know what targets exist.',
+                'dry_run' => $dry,
+            ], 400);
+        }
+        $est = ai_estimate_job('redirect_build', [
+            'dead_count'          => $dry['to_process'],
+            'heuristic_hit_count' => $dry['heuristic_hits'],
+        ]);
+        // Admin sees the dollar number; customers see scope + runtime only.
+        $is_admin = auth_is_super_admin();
+        if (!$is_admin) {
+            $est['est_cost_usd'] = null;
+            foreach ($est['steps'] as &$s) { $s['est_cost'] = null; }
+            unset($s);
+        }
+        rd_respond([
+            'success'   => true,
+            'dry_run'   => $dry,
+            'estimate'  => $est,
+            'is_admin'  => $is_admin,
+        ]);
+    }
+
     if ($action === 'crawl_site' || $action === 'build_map') {
         $script_name = $action === 'crawl_site' ? 'cron-site-crawl.php' : 'cron-redirect-build.php';
         $php    = config('php_path') ?: '/usr/bin/php8.3';

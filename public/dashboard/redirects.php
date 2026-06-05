@@ -102,6 +102,31 @@ ob_start();
 .rd-status.rejected { background:#f1f5f9; color:#64748b; }
 #rd-progress { display:none; font-size:12px; color:var(--text-light); margin-top:8px; padding:8px 10px; background:#f8fafc; border-radius:4px; border:1px dashed var(--border); }
 .rd-empty { color:var(--text-light); font-size:13px; padding:14px; background:#f8fafc; border-radius:6px; border:1px dashed var(--border); }
+/* Preflight cost-estimate modal */
+.pf-mask { display:none; position:fixed; inset:0; background:rgba(15,23,42,0.55); z-index:1000; align-items:center; justify-content:center; padding:20px; }
+.pf-mask.open { display:flex; }
+.pf-card { background:#fff; border-radius:8px; max-width:560px; width:100%; max-height:90vh; overflow:auto; box-shadow:0 20px 60px -10px rgba(0,0,0,0.3); }
+.pf-head { padding:16px 20px 10px; border-bottom:1px solid var(--border); }
+.pf-head h3 { margin:0; font-size:15px; color:var(--primary); }
+.pf-head .sub { font-size:12px; color:var(--text-light); margin-top:3px; }
+.pf-body { padding:14px 20px; }
+.pf-step { padding:10px 0; border-bottom:1px solid #f1f5f9; display:grid; grid-template-columns: 22px 1fr auto; gap:10px; align-items:start; }
+.pf-step:last-child { border-bottom:0; }
+.pf-step .ix { font-size:11px; font-weight:600; color:#94a3b8; padding-top:1px; }
+.pf-step .lbl { font-size:13px; color:#0f172a; font-weight:500; }
+.pf-step .det { font-size:11px; color:var(--text-light); margin-top:2px; line-height:1.5; }
+.pf-step .cost { font-family:ui-monospace, monospace; font-size:12px; color:#0f172a; white-space:nowrap; padding-top:1px; }
+.pf-step .cost.free { color:#059669; }
+.pf-step .cost.admin { color:#dc2626; font-weight:600; }
+.pf-totals { background:#f8fafc; padding:11px 14px; border-radius:6px; margin-top:10px; display:grid; grid-template-columns: 1fr auto; gap:8px; font-size:12px; }
+.pf-totals .k { color:var(--text-light); }
+.pf-totals .v { font-family:ui-monospace, monospace; color:#0f172a; text-align:right; }
+.pf-totals .v.admin { color:#dc2626; font-weight:700; }
+.pf-totals .v.big { font-size:14px; font-weight:600; }
+.pf-admin-banner { font-size:11px; background:#fef3c7; color:#92400e; padding:6px 10px; border-radius:4px; margin-top:8px; }
+.pf-actions { padding:14px 20px; border-top:1px solid var(--border); display:flex; gap:8px; justify-content:flex-end; flex-wrap:wrap; }
+.pf-actions .spacer { flex:1; }
+.pf-loading { padding:30px; text-align:center; color:var(--text-light); font-size:13px; }
 </style>
 
 <div style="margin-bottom:10px;">
@@ -153,6 +178,26 @@ ob_start();
         <?php endif; ?>
     </div>
     <div id="rd-progress"></div>
+
+    <!-- Preflight cost-estimate modal. Opens when user clicks "Build redirect map".
+         Shows scope + steps to everyone; dollar cost only to super-admins. -->
+    <div id="pf-mask" class="pf-mask" onclick="if(event.target===this)pfClose()">
+      <div class="pf-card">
+        <div class="pf-head">
+          <h3>Build redirect map — preview before we start</h3>
+          <div class="sub">We'll check what's already cheap before spending on AI. You see what we'll do and (admin only) what it costs.</div>
+        </div>
+        <div id="pf-content" class="pf-body">
+          <div class="pf-loading">Estimating…</div>
+        </div>
+        <div id="pf-actions" class="pf-actions" style="display:none;">
+          <button class="btn btn-outline btn-sm" onclick="pfClose()">Cancel</button>
+          <span class="spacer"></span>
+          <button class="btn btn-outline btn-sm" onclick="pfRun(100)" id="pf-test-btn" title="Process 100 URLs first — cheap safety check that the AI matches look right for this site">Run 100 first as test</button>
+          <button class="btn btn-accent btn-sm" onclick="pfRun(null)" id="pf-full-btn">Run the full job</button>
+        </div>
+      </div>
+    </div>
 
     <?php if (($summary['by_status']['approved'] ?? 0) > 0 && $platform !== 'shopify'): ?>
     <!-- Platform-aware deploy panel — pick your stack, get the right download + steps -->
@@ -415,15 +460,131 @@ async function crawl(btn) {
     } catch (e) { prog.innerHTML = '<span style="color:#dc2626;">' + e.message + '</span>'; btn.disabled = false; }
 }
 
+// "Build redirect map" no longer fires immediately — it opens the preflight
+// modal first. The modal shows what we're about to do, estimated runtime,
+// and (admin only) the dollar cost. User picks "full" / "100 first" / cancel.
+let pfBuildBtn = null;
+let pfData = null;
+
 async function buildMap(btn) {
+    pfBuildBtn = btn;
     btn.disabled = true;
+    const mask = document.getElementById('pf-mask');
+    const content = document.getElementById('pf-content');
+    const actions = document.getElementById('pf-actions');
+    content.innerHTML = '<div class="pf-loading">Estimating… running the free heuristic pass over your queue.</div>';
+    actions.style.display = 'none';
+    mask.classList.add('open');
+
+    try {
+        const data = await call('preflight_build');
+        pfData = data;
+        renderPreflight(data);
+        actions.style.display = 'flex';
+    } catch (e) {
+        content.innerHTML = '<div style="color:#dc2626;">' + e.message + '</div>';
+        actions.style.display = 'flex';
+        document.getElementById('pf-test-btn').disabled = true;
+        document.getElementById('pf-full-btn').disabled = true;
+    }
+}
+
+function pfClose() {
+    document.getElementById('pf-mask').classList.remove('open');
+    if (pfBuildBtn) { pfBuildBtn.disabled = false; pfBuildBtn = null; }
+    pfData = null;
+}
+
+async function pfRun(limit) {
+    const mask = document.getElementById('pf-mask');
+    mask.classList.remove('open');
     const prog = document.getElementById('rd-progress');
     prog.style.display = 'block';
-    prog.innerHTML = 'Building redirect map — Claude matching each dead URL to a living target. This can take a few minutes for big sites.';
+    const scopeLabel = limit ? `${limit}-URL test run` : 'full job';
+    prog.innerHTML = `Building redirect map (${scopeLabel})… Claude is matching each dead URL to a living target. This runs in the background — you can leave this page.`;
     try {
-        await call('build_map');
+        const body = limit ? { limit } : {};
+        await call('build_map', body);
         pollUntilSettled();
-    } catch (e) { prog.innerHTML = '<span style="color:#dc2626;">' + e.message + '</span>'; btn.disabled = false; }
+    } catch (e) {
+        prog.innerHTML = '<span style="color:#dc2626;">' + e.message + '</span>';
+        if (pfBuildBtn) pfBuildBtn.disabled = false;
+    }
+}
+
+function pfFmtUsd(n) {
+    if (n === null || n === undefined) return '—';
+    if (n === 0) return '$0.00';
+    if (n < 0.01) return '$' + n.toFixed(4);
+    if (n < 1)    return '$' + n.toFixed(3);
+    return '$' + n.toFixed(2);
+}
+
+function pfFmtTime(sec) {
+    if (sec < 60)  return sec + 's';
+    if (sec < 3600) return Math.round(sec / 60) + ' min';
+    const h = Math.floor(sec / 3600);
+    const m = Math.round((sec % 3600) / 60);
+    return h + 'h ' + (m ? m + 'm' : '');
+}
+
+function renderPreflight(data) {
+    const dry = data.dry_run || {};
+    const est = data.estimate || {};
+    const isAdmin = !!data.is_admin;
+    const steps = est.steps || [];
+
+    let html = '';
+    html += `<div style="font-size:12px; color:var(--text-light); margin-bottom:10px;">
+        <strong style="color:#0f172a;">${(dry.to_process || 0).toLocaleString()} URLs</strong> queued to process
+        ${dry.already_done > 0 ? `· <span title="Already approved/applied/rejected from a previous run">${dry.already_done.toLocaleString()} already done, skipped</span>` : ''}
+        · matched against <strong>${(dry.live_inventory_size || 0).toLocaleString()}</strong> live URLs
+    </div>`;
+
+    steps.forEach((s, i) => {
+        const isFree = !!s.free;
+        const costClass = isFree ? 'free' : (isAdmin ? 'admin' : '');
+        const costTxt   = isFree ? 'Free' : (isAdmin ? pfFmtUsd(s.est_cost) : (s.calls ? '—' : 'Free'));
+        html += `<div class="pf-step">
+            <div class="ix">${i + 1}.</div>
+            <div>
+                <div class="lbl">${s.label || ''}</div>
+                <div class="det">${s.detail || ''}</div>
+            </div>
+            <div class="cost ${costClass}">${costTxt}</div>
+        </div>`;
+    });
+
+    html += `<div class="pf-totals">
+        <div class="k">Total URLs that need AI</div><div class="v">${(dry.needs_ai || 0).toLocaleString()}</div>
+        <div class="k">Estimated runtime</div><div class="v big">${pfFmtTime(est.est_runtime_sec || 0)}</div>`;
+    if (isAdmin) {
+        html += `<div class="k">Estimated AI cost <span style="font-size:10px; color:#dc2626;">(admin only)</span></div>
+                 <div class="v admin big">${pfFmtUsd(est.est_cost_usd)}</div>`;
+        html += `<div class="pf-admin-banner" style="grid-column:1 / -1;">Customers do not see the dollar number — only the steps + runtime above.</div>`;
+    } else {
+        html += `<div class="k">Runs in the background</div><div class="v">You can leave this page</div>`;
+    }
+    html += `</div>`;
+
+    if ((dry.needs_ai || 0) === 0 && (dry.to_process || 0) > 0) {
+        html += `<div style="margin-top:10px; padding:9px 12px; background:#ecfdf5; border:1px solid #a7f3d0; border-radius:4px; font-size:12px; color:#065f46;">
+            Free heuristic match handles everything — no AI calls needed for this run.
+        </div>`;
+        document.getElementById('pf-test-btn').style.display = 'none';
+    } else {
+        document.getElementById('pf-test-btn').style.display = '';
+    }
+
+    if ((dry.to_process || 0) === 0) {
+        html += `<div style="margin-top:10px; padding:9px 12px; background:#fef3c7; border:1px solid #fde68a; border-radius:4px; font-size:12px; color:#92400e;">
+            Nothing left to process — every dead URL already has an approved, applied, or rejected redirect.
+        </div>`;
+        document.getElementById('pf-test-btn').disabled = true;
+        document.getElementById('pf-full-btn').disabled = true;
+    }
+
+    document.getElementById('pf-content').innerHTML = html;
 }
 
 let lastTotal = null;

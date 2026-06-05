@@ -92,6 +92,29 @@ include __DIR__ . '/_site_stepper.php';
 .empty-state .hint { font-size:11px; color:#94a3b8; margin-top:12px; }
 
 #plan-status { margin-top:10px; font-size:12px; }
+/* Preflight cost-estimate modal (shared shape with redirects.php). */
+.pf-mask { display:none; position:fixed; inset:0; background:rgba(15,23,42,0.55); z-index:1000; align-items:center; justify-content:center; padding:20px; }
+.pf-mask.open { display:flex; }
+.pf-card { background:#fff; border-radius:8px; max-width:560px; width:100%; max-height:90vh; overflow:auto; box-shadow:0 20px 60px -10px rgba(0,0,0,0.3); }
+.pf-head { padding:16px 20px 10px; border-bottom:1px solid #e2e8f0; }
+.pf-head h3 { margin:0; font-size:15px; color:#7c3aed; }
+.pf-head .sub { font-size:12px; color:#64748b; margin-top:3px; }
+.pf-body { padding:14px 20px; }
+.pf-step { padding:10px 0; border-bottom:1px solid #f1f5f9; display:grid; grid-template-columns: 22px 1fr auto; gap:10px; align-items:start; }
+.pf-step:last-child { border-bottom:0; }
+.pf-step .ix { font-size:11px; font-weight:600; color:#94a3b8; padding-top:1px; }
+.pf-step .lbl { font-size:13px; color:#0f172a; font-weight:500; }
+.pf-step .det { font-size:11px; color:#64748b; margin-top:2px; line-height:1.5; }
+.pf-step .cost { font-family:ui-monospace, monospace; font-size:12px; color:#0f172a; white-space:nowrap; padding-top:1px; }
+.pf-step .cost.free { color:#059669; }
+.pf-step .cost.admin { color:#dc2626; font-weight:600; }
+.pf-totals { background:#f8fafc; padding:11px 14px; border-radius:6px; margin-top:10px; display:grid; grid-template-columns: 1fr auto; gap:8px; font-size:12px; }
+.pf-totals .k { color:#64748b; }
+.pf-totals .v { font-family:ui-monospace, monospace; color:#0f172a; text-align:right; }
+.pf-totals .v.admin { color:#dc2626; font-weight:700; }
+.pf-totals .v.big { font-size:14px; font-weight:600; }
+.pf-admin-banner { font-size:11px; background:#fef3c7; color:#92400e; padding:6px 10px; border-radius:4px; margin-top:8px; }
+.pf-actions { padding:14px 20px; border-top:1px solid #e2e8f0; display:flex; gap:8px; justify-content:flex-end; flex-wrap:wrap; }
 </style>
 
 <?php if (!$plan): ?>
@@ -199,8 +222,113 @@ include __DIR__ . '/_site_stepper.php';
 
 <?php endif; ?>
 
+<!-- Preflight cost-estimate modal for Generate Content Plan. -->
+<div id="pf-mask" class="pf-mask" onclick="if(event.target===this)pfClose()">
+  <div class="pf-card">
+    <div class="pf-head">
+      <h3>Generate Content Plan — preview before we start</h3>
+      <div class="sub">A 12-week pipeline takes 2 Claude calls. Here's the scope and (admin only) the cost.</div>
+    </div>
+    <div id="pf-content" class="pf-body"></div>
+    <div id="pf-actions" class="pf-actions" style="display:none;">
+      <button class="btn btn-outline btn-sm" onclick="pfClose()">Cancel</button>
+      <button class="btn btn-primary btn-sm" style="background:#7c3aed;" onclick="pfRunPlan()">Generate the plan</button>
+    </div>
+  </div>
+</div>
+
 <script>
+let _planSiteId = null;
+
+// "Generate Content Plan" no longer fires immediately — it opens the preflight
+// modal first so the admin sees the AI cost and the customer sees the steps.
 async function generateContentPlan(siteId) {
+    _planSiteId = siteId;
+    const btn = document.getElementById('plan-generate-btn');
+    if (btn) { btn.disabled = true; btn.textContent = 'Estimating…'; }
+    const mask = document.getElementById('pf-mask');
+    const content = document.getElementById('pf-content');
+    const actions = document.getElementById('pf-actions');
+    content.innerHTML = '<div style="padding:30px; text-align:center; color:#64748b; font-size:13px;">Estimating cost + runtime…</div>';
+    actions.style.display = 'none';
+    mask.classList.add('open');
+    try {
+        const res = await fetch('<?= url('/api/content-plan-start.php') ?>', {
+            method: 'POST', headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({ site_id: siteId, preflight: 1 })
+        });
+        const data = await res.json();
+        if (!data.success) {
+            content.innerHTML = '<div style="color:#dc2626;">' + (data.error || 'Failed to estimate') + '</div>';
+            actions.style.display = 'flex';
+            return;
+        }
+        renderPlanPreflight(data);
+        actions.style.display = 'flex';
+    } catch (e) {
+        content.innerHTML = '<div style="color:#dc2626;">' + e.message + '</div>';
+        actions.style.display = 'flex';
+    }
+}
+
+function pfClose() {
+    document.getElementById('pf-mask').classList.remove('open');
+    const btn = document.getElementById('plan-generate-btn');
+    if (btn) { btn.disabled = false; btn.textContent = '📋 Generate Content Plan'; }
+}
+
+function pfFmtUsd(n) {
+    if (n === null || n === undefined) return '—';
+    if (n === 0) return '$0.00';
+    if (n < 0.01) return '$' + n.toFixed(4);
+    if (n < 1)    return '$' + n.toFixed(3);
+    return '$' + n.toFixed(2);
+}
+function pfFmtTime(sec) {
+    if (sec < 60)  return sec + 's';
+    if (sec < 3600) return Math.round(sec / 60) + ' min';
+    const h = Math.floor(sec / 3600);
+    const m = Math.round((sec % 3600) / 60);
+    return h + 'h ' + (m ? m + 'm' : '');
+}
+
+function renderPlanPreflight(data) {
+    const est = data.estimate || {};
+    const isAdmin = !!data.is_admin;
+    const steps = est.steps || [];
+    let html = '';
+    html += `<div style="font-size:12px; color:#64748b; margin-bottom:10px;">
+        <strong style="color:#0f172a;">${data.item_count}</strong> plan items over <strong>${data.horizon_weeks}</strong> weeks at <strong>${data.cadence}</strong>/week
+        · sourced from your <strong>${data.keyword_count}</strong> active keywords
+    </div>`;
+    steps.forEach((s, i) => {
+        const isFree = !!s.free;
+        const costClass = isFree ? 'free' : (isAdmin ? 'admin' : '');
+        const costTxt   = isFree ? 'Free' : (isAdmin ? pfFmtUsd(s.est_cost) : (s.calls ? '—' : 'Free'));
+        html += `<div class="pf-step">
+            <div class="ix">${i + 1}.</div>
+            <div>
+                <div class="lbl">${s.label || ''}</div>
+                <div class="det">${s.detail || ''}</div>
+            </div>
+            <div class="cost ${costClass}">${costTxt}</div>
+        </div>`;
+    });
+    html += `<div class="pf-totals">
+        <div class="k">Estimated runtime</div><div class="v big">${pfFmtTime(est.est_runtime_sec || 0)}</div>`;
+    if (isAdmin) {
+        html += `<div class="k">Estimated AI cost <span style="font-size:10px; color:#dc2626;">(admin only)</span></div>
+                 <div class="v admin big">${pfFmtUsd(est.est_cost_usd)}</div>
+                 <div class="pf-admin-banner" style="grid-column:1 / -1;">Customers do not see the dollar number — only the steps + runtime above.</div>`;
+    } else {
+        html += `<div class="k">Runs in the background</div><div class="v">You can leave this page</div>`;
+    }
+    html += `</div>`;
+    document.getElementById('pf-content').innerHTML = html;
+}
+
+async function pfRunPlan() {
+    document.getElementById('pf-mask').classList.remove('open');
     const btn = document.getElementById('plan-generate-btn');
     const status = document.getElementById('plan-status');
     if (btn) { btn.disabled = true; btn.textContent = 'Queuing…'; }
@@ -208,7 +336,7 @@ async function generateContentPlan(siteId) {
     try {
         const res = await fetch('<?= url('/api/content-plan-start.php') ?>', {
             method: 'POST', headers: {'Content-Type': 'application/json'},
-            body: JSON.stringify({ site_id: siteId })
+            body: JSON.stringify({ site_id: _planSiteId })
         });
         const data = await res.json();
         if (!data.success || !data.job_id) {
