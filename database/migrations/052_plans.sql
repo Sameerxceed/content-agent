@@ -37,30 +37,34 @@ CREATE TABLE IF NOT EXISTS plans (
     UNIQUE KEY uniq_code (code)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
--- Seed four tiers. Numbers calibrated from Anna's COGS modeling — Pro
--- covers her steady-state ~$3/mo with 3-4× headroom for peak months.
+-- Seed four tiers. Numbers calibrated for ~65-70% gross margin at each
+-- price point after AI cost + infra share + payment processing.
+-- AI budget per tier is sized at 4-7× steady-state cost so normal usage
+-- doesn't hit the cap; one-time migrations (e.g. 16K-URL redirect map)
+-- still need the operator to bump per-site override or charge the
+-- $99 migration fee separately.
 INSERT IGNORE INTO plans
     (code, name, price_monthly_usd, monthly_ai_budget_usd,
      max_posts_per_month, max_aeo_queries, max_images_per_month,
      max_redirect_urls_per_run, max_plan_regens_per_week, max_sites_per_user,
      allowed_models, feature_flags)
 VALUES
-    -- Starter: solo testing the waters, basics only
-    ('starter', 'Starter', 79.00, 5.00,
+    -- Basic: small Shopify boutique / B2B SaaS startup. Haiku only.
+    ('starter', 'Basic ($49/mo)', 49.00, 10.00,
      4, 5, 10, 1000, 1, 1,
      '["claude-haiku-4-5-20251001", "claude-haiku-4-5", "gemini-2.0-flash", "imagen-4.0-fast", "imagen-4.0-fast-generate-001"]',
      '{"aeo_multi_engine": false, "gmc_diagnostics": false, "agency_multisite": false, "white_label": false, "channel_staggering": false}'),
-    -- Pro: Anna's tier. Full content engine + GMC + AEO unlimited
-    ('pro', 'Pro', 199.00, 25.00,
-     0, 50, 50, 25000, 4, 1,
+    -- Pro: full content engine + multi-engine AEO + GMC. Haiku + Sonnet.
+    ('pro', 'Pro ($99/mo)', 99.00, 25.00,
+     16, 20, 30, 25000, 4, 1,
      '["claude-haiku-4-5-20251001", "claude-haiku-4-5", "claude-sonnet-4-6", "gemini-2.0-flash", "gpt-4o-search-preview", "gpt-image-1", "imagen-4.0-fast", "imagen-4.0-fast-generate-001", "sonar"]',
      '{"aeo_multi_engine": true, "gmc_diagnostics": true, "agency_multisite": false, "white_label": false, "channel_staggering": true}'),
-    -- Agency: up to 5 sites, white-label
-    ('agency', 'Agency', 499.00, 100.00,
-     0, 200, 200, 100000, 8, 5,
+    -- Agency: up to 5 sites pooled, white-label.
+    ('agency', 'Agency ($299/mo, 5 sites)', 299.00, 80.00,
+     0, 100, 100, 100000, 8, 5,
      NULL,
      '{"aeo_multi_engine": true, "gmc_diagnostics": true, "agency_multisite": true, "white_label": true, "channel_staggering": true}'),
-    -- Super: ContentAgent operator / internal use. No caps.
+    -- Super: ContentAgent operator / internal sites. No caps.
     ('super', 'Super Admin (unlimited)', 0.00, 0.00,
      0, 0, 0, 0, 0, 0,
      NULL,
