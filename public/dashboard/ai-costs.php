@@ -101,7 +101,7 @@ if ($table_exists) {
             DATE(created_at) AS d,
             SUM(cost_usd) AS cost,
             COUNT(*) AS calls
-        FROM ai_calls WHERE {$since_sql}
+        FROM ai_calls WHERE {$since_sql_unqualified}
         GROUP BY DATE(created_at)
         ORDER BY d ASC")->fetchAll();
 }
