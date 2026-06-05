@@ -7,12 +7,33 @@
 $user = auth_user();
 $current_page = basename($_SERVER['PHP_SELF'], '.php');
 
-// Detect "in-site" mode: a site_id is in the URL (?site=X or ?id=X on site.php)
+// Detect "in-site" mode: a site_id is in the URL (?site=X or ?id=X on site.php).
+// Falls back to the last-visited site stored in session so the per-site sidebar
+// stays put when the user clicks into a global page like Cron Jobs / AI Costs /
+// Integrations / Settings — otherwise the sidebar would mode-switch every time.
 $ctx_site_id = 0;
 if (!empty($_GET['site']) && is_numeric($_GET['site'])) {
     $ctx_site_id = (int)$_GET['site'];
 } elseif ($current_page === 'site' && !empty($_GET['id']) && is_numeric($_GET['id'])) {
     $ctx_site_id = (int)$_GET['id'];
+} elseif (!empty($_SESSION['last_site_id'])) {
+    $ctx_site_id = (int)$_SESSION['last_site_id'];
+}
+
+// Remember whatever per-site context the user is in so global pages can keep
+// rendering the per-site sidebar. Only stash when the URL explicitly carries
+// site context — don't loop back the session fallback into itself.
+if (!empty($_GET['site']) || ($current_page === 'site' && !empty($_GET['id']))) {
+    $_SESSION['last_site_id'] = $ctx_site_id;
+}
+
+// Landing on the global dashboard ("All sites") is the user's explicit signal
+// they want to leave per-site mode. Clear the session so the sidebar drops to
+// the global nav and stays there until they pick a site again.
+if ($current_page === 'index') {
+    unset($_SESSION['last_site_id']);
+    $ctx_site_id = 0;
+    $ctx_site = null;
 }
 
 // If we have a site context, fetch the site name for the sidebar header

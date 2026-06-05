@@ -43,8 +43,11 @@ $range_map = [
 if (!isset($range_map[$range])) $range = '30d';
 $hours = $range_map[$range]['hours'];
 
-// All queries scoped by the same SINCE clause.
-$since_sql = "created_at > DATE_SUB(NOW(), INTERVAL {$hours} HOUR)";
+// All queries scoped by the same SINCE clause. Qualified column because
+// the per-site pivot joins `sites` which also has a `created_at` column —
+// unqualified makes MySQL throw "Column 'created_at' is ambiguous".
+$since_sql_unqualified = "created_at > DATE_SUB(NOW(), INTERVAL {$hours} HOUR)";
+$since_sql_qualified   = "c.created_at > DATE_SUB(NOW(), INTERVAL {$hours} HOUR)";
 
 $summary = ['total_cost' => 0, 'total_calls' => 0, 'total_in' => 0, 'total_out' => 0, 'oldest' => null];
 $by_site = $by_feature = $by_model = $by_day = [];
@@ -56,7 +59,7 @@ if ($table_exists) {
             COALESCE(SUM(input_tokens), 0)  AS total_in,
             COALESCE(SUM(output_tokens), 0) AS total_out,
             MIN(created_at) AS oldest
-        FROM ai_calls WHERE {$since_sql}")->fetch();
+        FROM ai_calls WHERE {$since_sql_unqualified}")->fetch();
     if ($row) $summary = $row;
 
     $by_site = $db->query("SELECT
@@ -67,8 +70,8 @@ if ($table_exists) {
             SUM(c.input_tokens)            AS in_tok,
             SUM(c.output_tokens)           AS out_tok
         FROM ai_calls c LEFT JOIN sites s ON s.id = c.site_id
-        WHERE {$since_sql}
-        GROUP BY c.site_id
+        WHERE {$since_sql_qualified}
+        GROUP BY c.site_id, s.name
         ORDER BY cost DESC
         LIMIT 50")->fetchAll();
 
@@ -78,7 +81,7 @@ if ($table_exists) {
             SUM(cost_usd) AS cost,
             AVG(cost_usd) AS avg_cost,
             AVG(ms) AS avg_ms
-        FROM ai_calls WHERE {$since_sql}
+        FROM ai_calls WHERE {$since_sql_unqualified}
         GROUP BY feature
         ORDER BY cost DESC
         LIMIT 30")->fetchAll();
@@ -89,7 +92,7 @@ if ($table_exists) {
             SUM(cost_usd) AS cost,
             SUM(input_tokens) AS in_tok,
             SUM(output_tokens) AS out_tok
-        FROM ai_calls WHERE {$since_sql}
+        FROM ai_calls WHERE {$since_sql_unqualified}
         GROUP BY provider, model
         ORDER BY cost DESC")->fetchAll();
 
