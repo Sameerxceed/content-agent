@@ -7,6 +7,25 @@
 require_once __DIR__ . '/helpers.php';
 
 /**
+ * Hero images live at /uploads/posts/{site_id}/{post_id}/... on ContentAgent's
+ * own filesystem. Customer CMSes render the URL against THEIR own domain, so a
+ * raw relative path produces a 404 (the file isn't on their server).
+ *
+ * Prefix with ContentAgent's absolute URL so the customer's frontend fetches
+ * the image from where it lives. Leaves already-absolute URLs untouched (e.g.
+ * if someone pastes an external image URL or we later move to S3).
+ */
+function cms_absolutise_image_url(string $url): string
+{
+    $url = trim($url);
+    if ($url === '') return '';
+    if (preg_match('#^https?://#i', $url)) return $url; // already absolute
+    if (!str_starts_with($url, '/')) return $url;       // not a path we recognise
+    $app_url = rtrim((string)config('app_url'), '/');
+    return $app_url . $url;
+}
+
+/**
  * Push a post to the Xceed CMS.
  *
  * @param array $post  Post data from ContentAgent database
@@ -37,7 +56,11 @@ function cms_push_post(array $post, string $cms_url, string $cms_api_key): array
         'excerpt'         => $post['excerpt'] ?? '',
         'body'            => $post['body'],
         'cover_icon'      => get_cover_icon($post['tags'] ?? '[]'),
-        'hero_image_url'  => $post['hero_image_url'] ?? '',
+        // hero_image_url is stored as a relative path like /uploads/posts/N/M/...
+        // Xceed's frontend renders that path against its OWN domain → 404. Prefix
+        // with ContentAgent's absolute URL so the customer's frontend fetches the
+        // image from where it actually lives.
+        'hero_image_url'  => cms_absolutise_image_url($post['hero_image_url'] ?? ''),
         'hero_image_alt'  => $post['hero_image_alt'] ?? ($post['title'] ?? ''),
         'tags'            => $tags,
         'read_time'       => $read_time,
@@ -139,7 +162,7 @@ function cms_update_post(array $post, string $cms_url, string $cms_api_key): arr
         'title'           => $post['title'],
         'excerpt'         => $post['excerpt'] ?? '',
         'body'            => $post['body'],
-        'hero_image_url'  => $post['hero_image_url'] ?? '',
+        'hero_image_url'  => cms_absolutise_image_url($post['hero_image_url'] ?? ''),
         'hero_image_alt'  => $post['hero_image_alt'] ?? ($post['title'] ?? ''),
         'tags'            => $tags,
         'seo_title'       => $post['seo_title'] ?? $post['title'],
