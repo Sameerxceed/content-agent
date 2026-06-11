@@ -388,35 +388,184 @@ include __DIR__ . '/_site_stepper.php';
                 </div>
             </div>
 
-            <div class="setup-section">
+            <?php
+                require_once __DIR__ . '/../../includes/channel_schedule.php';
+                $current_offsets = channel_schedule_get($site);
+                $offset_channels = [
+                    'cms'        => ['name' => 'CMS (blog article)', 'icon' => '&#9998;',  'desc' => 'Your website / blog'],
+                    'schema'     => ['name' => 'Schema',             'icon' => '&#10070;', 'desc' => 'JSON-LD for SEO'],
+                    'llms'       => ['name' => 'llms.txt',           'icon' => '&#129302;','desc' => 'AI crawler discovery'],
+                    'linkedin'   => ['name' => 'LinkedIn',           'icon' => '&#128279;','desc' => 'Personal or company page'],
+                    'twitter'    => ['name' => 'Twitter / X',        'icon' => '&#128038;','desc' => 'Thread on your handle'],
+                    'newsletter' => ['name' => 'Newsletter',         'icon' => '&#9993;',  'desc' => 'Sent to subscribers'],
+                ];
+                // Presets — clicking populates all 6 offsets in one go.
+                $presets = [
+                    'b2b' => [
+                        'label' => 'B2B SaaS (recommended)',
+                        'desc'  => 'Blog leads, social next day, newsletter mid-week — gives each channel its own moment',
+                        'offsets' => ['cms' => 0, 'schema' => 0, 'llms' => 0, 'linkedin' => 1, 'twitter' => 1, 'newsletter' => 2],
+                    ],
+                    'b2c' => [
+                        'label' => 'B2C / ecommerce',
+                        'desc'  => 'Everything together — social drives traffic to the post the same day it goes live',
+                        'offsets' => ['cms' => 0, 'schema' => 0, 'llms' => 0, 'linkedin' => 0, 'twitter' => 0, 'newsletter' => 0],
+                    ],
+                    'solo' => [
+                        'label' => 'Solo creator',
+                        'desc'  => 'Twitter first to build buzz, blog next day, newsletter caps the week',
+                        'offsets' => ['twitter' => 0, 'cms' => 1, 'schema' => 1, 'llms' => 1, 'linkedin' => 1, 'newsletter' => 3],
+                    ],
+                ];
+                // Group channels by their current offset day for the visual timeline.
+                $by_day = [];
+                foreach ($offset_channels as $ch => $meta) {
+                    $d = (int)($current_offsets[$ch] ?? 0);
+                    $by_day[$d][] = $ch;
+                }
+                ksort($by_day);
+                $max_day = max(array_keys($by_day) ?: [0]);
+                $min_day = min(array_keys($by_day) ?: [0]);
+            ?>
+            <style>
+            .cps-section { margin-top:14px; }
+            .cps-section h3 { margin:0 0 4px; }
+            .cps-section .desc { margin:0 0 14px; font-size:13px; color:#64748b; }
+            .cps-presets { display:flex; flex-wrap:wrap; gap:8px; margin-bottom:16px; }
+            .cps-preset { padding:9px 14px; background:#fff; border:1px solid #e2e8f0; border-radius:8px; cursor:pointer; text-align:left; min-width:180px; flex:1; max-width:280px; transition:all 0.15s; }
+            .cps-preset:hover { border-color:#7c3aed; background:#faf5ff; }
+            .cps-preset .pn { font-size:13px; font-weight:600; color:#0f172a; }
+            .cps-preset .pd { font-size:11px; color:#64748b; margin-top:2px; line-height:1.4; }
+            .cps-timeline { background:#f8fafc; border:1px solid #e2e8f0; border-radius:8px; padding:14px 18px; margin-bottom:16px; overflow-x:auto; }
+            .cps-tl-label { font-size:10px; text-transform:uppercase; letter-spacing:0.5px; color:#64748b; margin-bottom:8px; }
+            .cps-tl-rail { position:relative; display:flex; gap:4px; min-height:78px; padding:6px 0; }
+            .cps-tl-day { flex:1; min-width:90px; display:flex; flex-direction:column; align-items:center; padding:4px 0; border-left:1px dashed #cbd5e1; position:relative; }
+            .cps-tl-day:first-child { border-left:0; }
+            .cps-tl-daylabel { font-size:11px; font-weight:600; color:#475569; margin-bottom:6px; white-space:nowrap; }
+            .cps-tl-daylabel .reltext { font-size:9px; color:#94a3b8; font-weight:400; display:block; line-height:1.2; margin-top:1px; }
+            .cps-tl-chips { display:flex; flex-direction:column; gap:3px; width:100%; padding:0 6px; }
+            .cps-tl-chip { font-size:10px; padding:3px 7px; background:#fff; border:1px solid #c7d2fe; border-radius:10px; color:#3730a3; text-align:center; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+            .cps-tl-empty { font-size:10px; color:#cbd5e1; font-style:italic; }
+            .cps-grid { display:grid; grid-template-columns:repeat(auto-fit, minmax(220px, 1fr)); gap:10px; }
+            .cps-card { padding:11px 14px; background:#fff; border:1px solid #e2e8f0; border-radius:6px; display:flex; align-items:center; gap:10px; }
+            .cps-card .ico { font-size:18px; line-height:1; }
+            .cps-card .meta { flex:1; min-width:0; }
+            .cps-card .nm { font-size:13px; font-weight:600; color:#0f172a; line-height:1.2; }
+            .cps-card .sub { font-size:10px; color:#94a3b8; margin-top:2px; }
+            .cps-card .pick { display:flex; align-items:center; gap:5px; }
+            .cps-card input[type=number] { width:54px; padding:4px 6px; font-size:12px; border:1px solid #cbd5e1; border-radius:4px; font-family:ui-monospace, monospace; text-align:right; }
+            .cps-card .unit { font-size:10px; color:#64748b; }
+            </style>
+
+            <div class="setup-section cps-section">
                 <h3>Channel publish schedule</h3>
-                <p class="desc">Stagger each channel by days from the post's target date. Default plays the standard B2B playbook: blog leads, LinkedIn the next day, newsletter mid-week. Set to 0 to fire all together.</p>
-                <?php
-                    require_once __DIR__ . '/../../includes/channel_schedule.php';
-                    $current_offsets = channel_schedule_get($site);
-                    $offset_channels = [
-                        'cms'        => 'CMS (blog article)',
-                        'linkedin'   => 'LinkedIn',
-                        'newsletter' => 'Newsletter',
-                        'twitter'    => 'Twitter / X',
-                        'schema'     => 'Schema (structured data)',
-                        'llms'       => 'llms.txt',
-                    ];
-                ?>
-                <div class="setup-grid-3">
-                    <?php foreach ($offset_channels as $ch => $label): ?>
-                    <div class="form-group">
-                        <label style="font-size:12px;"><?= e($label) ?></label>
-                        <div style="display:flex;align-items:center;gap:6px;">
-                            <input type="number" name="channel_offset_<?= e($ch) ?>" class="form-control"
-                                   value="<?= (int)($current_offsets[$ch] ?? 0) ?>" min="-7" max="14" step="1"
-                                   style="width:80px;">
-                            <span style="font-size:11px;color:#64748b;">days after publish</span>
-                        </div>
+                <p class="desc">Stagger each channel by days. Default leads with the blog, then LinkedIn the next day, newsletter mid-week — gives each channel its own moment instead of dumping everything at once.</p>
+
+                <!-- Presets — one click populates all 6 offsets -->
+                <div class="cps-tl-label">Quick presets</div>
+                <div class="cps-presets">
+                  <?php foreach ($presets as $pk => $p): ?>
+                    <button type="button" class="cps-preset" onclick='cpsApplyPreset(<?= json_encode($p['offsets']) ?>)'>
+                      <div class="pn"><?= e($p['label']) ?></div>
+                      <div class="pd"><?= e($p['desc']) ?></div>
+                    </button>
+                  <?php endforeach; ?>
+                </div>
+
+                <!-- Visual timeline of where each channel currently lands -->
+                <div class="cps-timeline">
+                    <div class="cps-tl-label">Timeline preview</div>
+                    <div class="cps-tl-rail" id="cps-timeline-rail">
+                        <?php
+                            // Render 8 days (Day 0 → +7) so the user sees future spread room.
+                            $rel_text = function($d) {
+                                if ($d === 0) return 'same day';
+                                if ($d === 1) return 'next day';
+                                if ($d === -1) return 'day before';
+                                return ($d > 0 ? '+' : '') . $d . ' days';
+                            };
+                            for ($d = 0; $d <= max(7, $max_day); $d++):
+                                $chips = $by_day[$d] ?? [];
+                        ?>
+                          <div class="cps-tl-day" data-day="<?= $d ?>">
+                            <div class="cps-tl-daylabel">Day <?= ($d > 0 ? '+' : '') . $d ?><span class="reltext"><?= $rel_text($d) ?></span></div>
+                            <div class="cps-tl-chips">
+                              <?php if (empty($chips)): ?>
+                                <span class="cps-tl-empty">—</span>
+                              <?php else: foreach ($chips as $ch): ?>
+                                <span class="cps-tl-chip"><?= $offset_channels[$ch]['icon'] ?? '' ?> <?= e($offset_channels[$ch]['name']) ?></span>
+                              <?php endforeach; endif; ?>
+                            </div>
+                          </div>
+                        <?php endfor; ?>
                     </div>
-                    <?php endforeach; ?>
+                </div>
+
+                <!-- Per-channel offsets — edit + the timeline above updates live -->
+                <div class="cps-tl-label">Per-channel offset (days after blog Day 0)</div>
+                <div class="cps-grid">
+                  <?php foreach ($offset_channels as $ch => $meta): ?>
+                    <div class="cps-card">
+                      <div class="ico"><?= $meta['icon'] ?></div>
+                      <div class="meta">
+                        <div class="nm"><?= e($meta['name']) ?></div>
+                        <div class="sub"><?= e($meta['desc']) ?></div>
+                      </div>
+                      <div class="pick">
+                        <input type="number" name="channel_offset_<?= e($ch) ?>" id="cps_offset_<?= e($ch) ?>"
+                               value="<?= (int)($current_offsets[$ch] ?? 0) ?>" min="-7" max="14" step="1"
+                               data-channel="<?= e($ch) ?>" onchange="cpsRefreshTimeline()">
+                        <span class="unit">day(s)</span>
+                      </div>
+                    </div>
+                  <?php endforeach; ?>
                 </div>
             </div>
+
+            <script>
+            const CPS_CHANNELS = <?= json_encode(array_map(fn($m) => ['name' => $m['name'], 'icon' => $m['icon']], $offset_channels)) ?>;
+
+            function cpsApplyPreset(offsets) {
+              for (const ch in offsets) {
+                const el = document.getElementById('cps_offset_' + ch);
+                if (el) el.value = offsets[ch];
+              }
+              cpsRefreshTimeline();
+            }
+
+            function cpsRefreshTimeline() {
+              const byDay = {};
+              for (const ch in CPS_CHANNELS) {
+                const el = document.getElementById('cps_offset_' + ch);
+                if (!el) continue;
+                const d = parseInt(el.value || 0, 10);
+                if (!byDay[d]) byDay[d] = [];
+                byDay[d].push(ch);
+              }
+              const days = Object.keys(byDay).map(Number);
+              const maxDay = Math.max(7, ...(days.length ? days : [0]));
+              const relText = (d) => d === 0 ? 'same day' : d === 1 ? 'next day' : d === -1 ? 'day before' : (d > 0 ? '+' : '') + d + ' days';
+
+              const rail = document.getElementById('cps-timeline-rail');
+              let html = '';
+              for (let d = Math.min(0, ...(days.length ? days : [0])); d <= maxDay; d++) {
+                const chips = byDay[d] || [];
+                html += '<div class="cps-tl-day" data-day="' + d + '">';
+                html += '<div class="cps-tl-daylabel">Day ' + (d > 0 ? '+' + d : d) + '<span class="reltext">' + relText(d) + '</span></div>';
+                html += '<div class="cps-tl-chips">';
+                if (chips.length === 0) {
+                  html += '<span class="cps-tl-empty">—</span>';
+                } else {
+                  chips.forEach(ch => {
+                    const c = CPS_CHANNELS[ch];
+                    html += '<span class="cps-tl-chip">' + c.icon + ' ' + c.name + '</span>';
+                  });
+                }
+                html += '</div></div>';
+              }
+              rail.innerHTML = html;
+            }
+            </script>
 
             <div class="setup-section">
                 <h3>Weekly digest recipient</h3>
