@@ -382,10 +382,20 @@ include __DIR__ . '/_site_stepper.php';
                 <p class="desc">Optional. When set, every approved post is also pushed to your own CMS via this API. Failure here doesn't block — ContentAgent always hosts a working copy.</p>
 
                 <?php
-                    $platform = strtolower((string)($site['platform'] ?? ''));
-                    $is_shopify = $platform === 'shopify';
-                    $oauth_configured = (bool)config('shopify_client_id') && (bool)config('shopify_client_secret');
+                    // Detect Shopify from platform column OR cms_url OR the token prefix
+                    // — handles brand-new sites where the wizard hasn't filled in
+                    // `platform` yet but the URL/token is unambiguous.
+                    $platform      = strtolower((string)($site['platform'] ?? ''));
                     $current_token = (string)($site['cms_api_key'] ?? '');
+                    $cms_url_lc    = strtolower((string)($site['cms_url'] ?? ''));
+                    $domain_lc     = strtolower((string)($site['domain'] ?? ''));
+                    $is_shopify    = $platform === 'shopify'
+                        || str_contains($cms_url_lc, 'myshopify.com')
+                        || str_contains($domain_lc, 'myshopify.com')
+                        || str_starts_with($current_token, 'shpat_')
+                        || str_starts_with($current_token, 'atkn_')
+                        || str_starts_with($current_token, 'shpca_');
+                    $oauth_configured = (bool)config('shopify_client_id') && (bool)config('shopify_client_secret');
                     $token_kind = '';
                     if (str_starts_with($current_token, 'atkn_'))      $token_kind = 'atkn (Dev Dashboard — GraphQL)';
                     elseif (str_starts_with($current_token, 'shpat_')) $token_kind = 'shpat (Legacy custom app — REST)';
