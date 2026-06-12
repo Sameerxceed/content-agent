@@ -377,29 +377,51 @@ ob_start();
 <?php
 // Per-tab bulk approve — counts pending rows in the current bucket that have a
 // target. Skips the All/Approved/Rejected/No-target tabs (nothing to approve
-// there in one safe sweep).
+// there in one safe sweep). The CSV-of-this-tab button is broader: shows up
+// on any filtered tab with rows that have a target, so the user can stage
+// uploads bucket-by-bucket.
 $bucket_approvable = 0;
 $bucket_label      = '';
-if (in_array($filter, ['pending','high','medium','low'], true)) {
+$bucket_total      = 0;
+if (in_array($filter, ['pending','high','medium','low','approved'], true)) {
     $bucket_filter = [
-        'pending' => '',
-        'high'    => ' AND confidence >= 85',
-        'medium'  => ' AND confidence BETWEEN 60 AND 84',
-        'low'     => ' AND (confidence < 60 OR confidence IS NULL)',
+        'pending'  => " AND status = 'pending'",
+        'high'     => " AND confidence >= 85",
+        'medium'   => " AND confidence BETWEEN 60 AND 84",
+        'low'      => " AND (confidence < 60 OR confidence IS NULL)",
+        'approved' => " AND status IN ('approved','applied')",
     ][$filter];
+    // Approvable subset = pending with a target (skip Approved tab — those
+    // are already approved).
+    if ($filter !== 'approved') {
+        $cnt = $db->prepare("SELECT COUNT(*) FROM redirect_map
+                              WHERE site_id = ? AND status = 'pending' AND to_path IS NOT NULL{$bucket_filter}");
+        $cnt->execute([$site_id]);
+        $bucket_approvable = (int)$cnt->fetchColumn();
+    }
+    // Total exportable = any row in this bucket with a target (regardless of status).
     $cnt = $db->prepare("SELECT COUNT(*) FROM redirect_map
-                          WHERE site_id = ? AND status = 'pending' AND to_path IS NOT NULL{$bucket_filter}");
+                          WHERE site_id = ? AND to_path IS NOT NULL{$bucket_filter}");
     $cnt->execute([$site_id]);
-    $bucket_approvable = (int)$cnt->fetchColumn();
-    $bucket_label = ['pending'=>'pending','high'=>'high-confidence','medium'=>'medium-confidence','low'=>'low-confidence'][$filter];
+    $bucket_total = (int)$cnt->fetchColumn();
+    $bucket_label = ['pending'=>'pending','high'=>'high-confidence','medium'=>'medium-confidence','low'=>'low-confidence','approved'=>'approved'][$filter];
 }
 ?>
-<?php if ($bucket_approvable > 0): ?>
-<div style="max-width:980px; margin:0 0 10px; display:flex; justify-content:flex-end;">
-    <button class="btn btn-outline btn-sm" onclick="approveBucket(this, '<?= e($filter) ?>', <?= $bucket_approvable ?>)"
-            title="Bulk-approve every pending row in this tab that already has a target">
-        ✓ Approve all <?= $bucket_approvable ?> <?= e($bucket_label) ?>
-    </button>
+<?php if ($bucket_approvable > 0 || $bucket_total > 0): ?>
+<div style="max-width:980px; margin:0 0 10px; display:flex; justify-content:flex-end; gap:6px;">
+    <?php if ($bucket_total > 0): ?>
+        <a class="btn btn-outline btn-sm"
+           href="<?= url('/api/redirect-action.php?action=export_csv&site_id=' . $site_id . '&filter=' . urlencode($filter)) ?>"
+           title="Download a CSV of just the <?= e($bucket_label) ?> rows (for staged Shopify import)">
+            ↓ CSV (<?= $bucket_total ?> <?= e($bucket_label) ?>)
+        </a>
+    <?php endif; ?>
+    <?php if ($bucket_approvable > 0): ?>
+        <button class="btn btn-outline btn-sm" onclick="approveBucket(this, '<?= e($filter) ?>', <?= $bucket_approvable ?>)"
+                title="Bulk-approve every pending row in this tab that already has a target">
+            ✓ Approve all <?= $bucket_approvable ?> <?= e($bucket_label) ?>
+        </button>
+    <?php endif; ?>
 </div>
 <?php endif; ?>
 

@@ -205,9 +205,44 @@ try {
     }
 
     if ($action === 'export_csv') {
-        // Shopify URL Redirects bulk-import CSV: columns Redirect from,Redirect to
+        // Shopify URL Redirects bulk-import CSV: columns Redirect from,Redirect to.
+        //
+        // Optional `filter` argument scopes the export to a confidence bucket
+        // or status — matches the tabs on the redirect page so a customer can
+        // grab a CSV of just the medium-conf set, just the high-conf set, etc.
+        // No filter (default) = today's behaviour: every approved/applied row.
+        $filter = (string)($_GET['filter'] ?? $payload['filter'] ?? 'default');
+        $where = 'site_id = ? AND to_path IS NOT NULL';
+        switch ($filter) {
+            case 'high':
+                $where .= " AND confidence >= 85";
+                $suffix = '-high-conf';
+                break;
+            case 'medium':
+                $where .= " AND confidence BETWEEN 60 AND 84";
+                $suffix = '-medium-conf';
+                break;
+            case 'low':
+                $where .= " AND (confidence < 60 OR confidence IS NULL)";
+                $suffix = '-low-conf';
+                break;
+            case 'pending':
+                $where .= " AND status = 'pending'";
+                $suffix = '-pending';
+                break;
+            case 'approved':
+                $where .= " AND status IN ('approved','applied')";
+                $suffix = '-approved';
+                break;
+            case 'all':
+                $suffix = '-all';
+                break;
+            default:
+                $where .= " AND status IN ('approved','applied')";
+                $suffix = '';
+        }
         $stmt = $db->prepare("SELECT from_path, to_path FROM redirect_map
-                              WHERE site_id = ? AND status IN ('approved','applied') AND to_path IS NOT NULL
+                              WHERE {$where}
                               ORDER BY id");
         $stmt->execute([$site_id]);
         $rows = [['Redirect from', 'Redirect to']];
@@ -217,7 +252,7 @@ try {
         rewind($out);
         $body = stream_get_contents($out);
         fclose($out);
-        rd_csv($body, 'shopify-url-redirects.csv');
+        rd_csv($body, 'shopify-url-redirects' . $suffix . '.csv');
     }
 
     if ($action === 'bulk_approve') {
