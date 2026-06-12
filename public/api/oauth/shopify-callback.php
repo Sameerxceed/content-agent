@@ -56,41 +56,10 @@ if (empty($_SESSION['shopify_oauth_nonce']) || !hash_equals($_SESSION['shopify_o
     redirect($back);
 }
 
-// HMAC check — protects against forged callbacks. We pass the RAW query
-// string (not $_GET) because Shopify computes HMAC over the URL-encoded
-// form they sent, and re-encoding from $_GET doesn't reliably reproduce
-// the same bytes.
-$raw_qs = (string)($_SERVER['QUERY_STRING'] ?? '');
-if (!shopify_verify_hmac($raw_qs)) {
-    // TEMP DEBUG — log computed-vs-received so we can diagnose the mismatch.
-    // Remove once the HMAC flow is verified working.
-    $debug_secret = (string)config('shopify_client_secret');
-    $debug_pairs = [];
-    $debug_hmac_received = '';
-    foreach (explode('&', $raw_qs) as $pair) {
-        if ($pair === '') continue;
-        $eq = strpos($pair, '=');
-        $key = $eq === false ? $pair : substr($pair, 0, $eq);
-        if ($key === 'hmac') { $debug_hmac_received = $eq === false ? '' : urldecode(substr($pair, $eq + 1)); continue; }
-        if ($key === 'signature') continue;
-        $debug_pairs[$key] = $pair;
-    }
-    ksort($debug_pairs);
-    $debug_message  = implode('&', $debug_pairs);
-    $debug_computed_with_prefix = hash_hmac('sha256', $debug_message, $debug_secret);
-    $debug_computed_no_prefix   = hash_hmac('sha256', $debug_message, preg_replace('/^shpss_/', '', $debug_secret));
-    @file_put_contents('/tmp/shopify_hmac_debug.log',
-        date('c') . "\n" .
-        "raw_qs: $raw_qs\n" .
-        "message: $debug_message\n" .
-        "received_hmac: $debug_hmac_received\n" .
-        "computed_with_prefix: $debug_computed_with_prefix\n" .
-        "computed_no_prefix:   $debug_computed_no_prefix\n" .
-        "secret_len: " . strlen($debug_secret) . "\n" .
-        "----\n",
-        FILE_APPEND);
-
-    $_SESSION['flash_error'] = 'Shopify auth signature invalid. Try connecting again. (Debug log written to /tmp/shopify_hmac_debug.log)';
+// HMAC check — protects against forged callbacks. Pass the RAW query
+// string (not $_GET); shopify_verify_hmac decodes values internally.
+if (!shopify_verify_hmac((string)($_SERVER['QUERY_STRING'] ?? ''))) {
+    $_SESSION['flash_error'] = 'Shopify auth signature invalid. Try connecting again.';
     redirect($back);
 }
 

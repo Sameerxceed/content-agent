@@ -91,43 +91,39 @@ function shopify_get_install_url(string $shop, int $site_id): string
 }
 
 /**
- * Verify the HMAC signature Shopify includes on the callback. This protects
- * against tampering — anyone could forge a callback with a fake code, but
- * only Shopify can produce a valid HMAC because it requires our client_secret.
+ * Verify the HMAC signature Shopify includes on the callback.
  *
- * Algorithm: take the RAW query string Shopify sent, remove the `hmac` and
- * `signature` params, sort remaining params alphabetically, re-join with
- * `&`, HMAC-SHA256 with client_secret, hex-encode.
+ * Algorithm (per Shopify's reference Python impl):
+ *   1. Parse the raw query string with parse_str (URL-decodes values).
+ *   2. Pull out + remove `hmac` and `signature`.
+ *   3. Sort the remaining params alphabetically by key.
+ *   4. Join as `key=value` pairs with `&`. NB: values are DECODED here —
+ *      Shopify signs the decoded form, not the URL-encoded form. So
+ *      `state=abc:9` (not `state=abc%3A9`) is what gets hashed.
+ *   5. HMAC-SHA256 with client_secret, hex-encode, compare.
  *
- * Important: we must work off `$_SERVER['QUERY_STRING']`, NOT `$_GET`. PHP
- * URL-decodes `$_GET` values, and Shopify computed HMAC over the encoded
- * form they sent. Re-encoding from `$_GET` with http_build_query() doesn't
- * always reproduce the same bytes (different encoding for `:`, `/`, etc.),
- * which makes the signature mismatch even when the request is genuine.
+ * Confirmed empirically: signing the encoded form (preserving %3A etc.)
+ * produces a mismatching hash even when the request is genuine.
  */
 function shopify_verify_hmac(string $raw_query): bool
 {
     $secret = (string)config('shopify_client_secret');
     if (!$secret) return false;
 
-    $pairs = explode('&', $raw_query);
-    $kept_pairs = [];
-    $received_hmac = '';
-    foreach ($pairs as $pair) {
-        if ($pair === '') continue;
-        $eq = strpos($pair, '=');
-        $key = $eq === false ? $pair : substr($pair, 0, $eq);
-        if ($key === 'hmac') {
-            $received_hmac = $eq === false ? '' : urldecode(substr($pair, $eq + 1));
-            continue;
-        }
-        if ($key === 'signature') continue;
-        $kept_pairs[$key] = $pair; // preserve Shopify's exact URL-encoding
-    }
+    parse_str($raw_query, $params);
+    $received_hmac = (string)($params['hmac'] ?? '');
     if ($received_hmac === '') return false;
+    unset($params['hmac'], $params['signature']);
 
-    ksort($kept_pairs);
-    $message  = implode('&', $kept_pairs);
+    ksort($params);
+    $pairs = [];
+    foreach ($params as $k => $v) {
+        // Skip array-typed values — Shopify never sends arrays on the
+        // OAuth callback, so this is defensive only.
+        if (is_array($v)) continue;
+        $pairs[] = $k . '=' . $v;
+    }
+    $message  = implode('&', $pairs);
     $computed = hash_hmac('sha256', $message, $secret);
     return hash_equals($computed, $received_hmac);
 }
