@@ -389,9 +389,11 @@ include __DIR__ . '/_site_stepper.php';
                     $current_token = (string)($site['cms_api_key'] ?? '');
                     $cms_url_lc    = strtolower((string)($site['cms_url'] ?? ''));
                     $domain_lc     = strtolower((string)($site['domain'] ?? ''));
+                    $name_lc       = strtolower((string)($site['name'] ?? ''));
                     $is_shopify    = $platform === 'shopify'
                         || str_contains($cms_url_lc, 'myshopify.com')
                         || str_contains($domain_lc, 'myshopify.com')
+                        || str_contains($name_lc, 'myshopify.com')
                         || str_starts_with($current_token, 'shpat_')
                         || str_starts_with($current_token, 'atkn_')
                         || str_starts_with($current_token, 'shpca_');
