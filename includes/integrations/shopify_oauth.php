@@ -95,20 +95,41 @@ function shopify_get_install_url(string $shop, int $site_id): string
  * against tampering — anyone could forge a callback with a fake code, but
  * only Shopify can produce a valid HMAC because it requires our client_secret.
  *
- * Algorithm: take all query params except `hmac` and `signature`, sort by key,
- * URL-encode as a query string, HMAC-SHA256 with client_secret, hex-encode.
+ * Algorithm: take the RAW query string Shopify sent, remove the `hmac` and
+ * `signature` params, sort remaining params alphabetically, re-join with
+ * `&`, HMAC-SHA256 with client_secret, hex-encode.
+ *
+ * Important: we must work off `$_SERVER['QUERY_STRING']`, NOT `$_GET`. PHP
+ * URL-decodes `$_GET` values, and Shopify computed HMAC over the encoded
+ * form they sent. Re-encoding from `$_GET` with http_build_query() doesn't
+ * always reproduce the same bytes (different encoding for `:`, `/`, etc.),
+ * which makes the signature mismatch even when the request is genuine.
  */
-function shopify_verify_hmac(array $query): bool
+function shopify_verify_hmac(string $raw_query): bool
 {
     $secret = (string)config('shopify_client_secret');
     if (!$secret) return false;
-    $hmac = $query['hmac'] ?? '';
-    if (!$hmac) return false;
-    unset($query['hmac'], $query['signature']);
-    ksort($query);
-    $message = http_build_query($query);
+
+    $pairs = explode('&', $raw_query);
+    $kept_pairs = [];
+    $received_hmac = '';
+    foreach ($pairs as $pair) {
+        if ($pair === '') continue;
+        $eq = strpos($pair, '=');
+        $key = $eq === false ? $pair : substr($pair, 0, $eq);
+        if ($key === 'hmac') {
+            $received_hmac = $eq === false ? '' : urldecode(substr($pair, $eq + 1));
+            continue;
+        }
+        if ($key === 'signature') continue;
+        $kept_pairs[$key] = $pair; // preserve Shopify's exact URL-encoding
+    }
+    if ($received_hmac === '') return false;
+
+    ksort($kept_pairs);
+    $message  = implode('&', $kept_pairs);
     $computed = hash_hmac('sha256', $message, $secret);
-    return hash_equals($computed, $hmac);
+    return hash_equals($computed, $received_hmac);
 }
 
 /**

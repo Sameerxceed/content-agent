@@ -56,8 +56,11 @@ if (empty($_SESSION['shopify_oauth_nonce']) || !hash_equals($_SESSION['shopify_o
     redirect($back);
 }
 
-// HMAC check — protects against forged callbacks.
-if (!shopify_verify_hmac($_GET)) {
+// HMAC check — protects against forged callbacks. We pass the RAW query
+// string (not $_GET) because Shopify computes HMAC over the URL-encoded
+// form they sent, and re-encoding from $_GET doesn't reliably reproduce
+// the same bytes.
+if (!shopify_verify_hmac((string)($_SERVER['QUERY_STRING'] ?? ''))) {
     $_SESSION['flash_error'] = 'Shopify auth signature invalid. Try connecting again.';
     redirect($back);
 }
