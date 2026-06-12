@@ -19,6 +19,7 @@
  */
 
 require_once __DIR__ . '/../helpers.php';
+require_once __DIR__ . '/shopify_graphql.php';
 
 const SHOPIFY_API_VERSION = '2024-10';
 const SHOPIFY_DELAY_US    = 600000;   // 0.6s between requests = ~1.6 req/sec
@@ -73,9 +74,13 @@ function shopify_admin_call(string $method, string $url, string $token, ?array $
 /**
  * Verify the access token works against the Shopify store.
  * Returns ['ok' => bool, 'shop' => array|null, 'error' => string|null].
+ *
+ * Routes to GraphQL for atkn_ tokens (Dev Dashboard automation tokens —
+ * they don't accept REST).
  */
 function shopify_admin_verify(string $shop_url, string $token): array
 {
+    if (shopify_uses_graphql($token)) return shopify_graphql_verify($shop_url, $token);
     $r = shopify_admin_call('GET', shopify_admin_base($shop_url) . '/shop.json', $token);
     if ($r['error']) return ['ok' => false, 'shop' => null, 'error' => $r['error']];
     return ['ok' => true, 'shop' => $r['body']['shop'] ?? null, 'error' => null];
@@ -87,6 +92,7 @@ function shopify_admin_verify(string $shop_url, string $token): array
  */
 function shopify_admin_list_redirects(string $shop_url, string $token, int $cap = 1000): array
 {
+    if (shopify_uses_graphql($token)) return shopify_graphql_list_redirects($shop_url, $token, $cap);
     $out = [];
     $url = shopify_admin_base($shop_url) . '/redirects.json?limit=250';
     while ($url && count($out) < $cap) {
@@ -111,6 +117,7 @@ function shopify_admin_list_redirects(string $shop_url, string $token, int $cap 
  */
 function shopify_admin_create_redirect(string $shop_url, string $token, string $path, string $target): array
 {
+    if (shopify_uses_graphql($token)) return shopify_graphql_create_redirect($shop_url, $token, $path, $target);
     if ($path === '' || $target === '') return ['success' => false, 'id' => null, 'error' => 'path and target required'];
     $r = shopify_admin_call('POST', shopify_admin_base($shop_url) . '/redirects.json', $token, [
         'redirect' => ['path' => $path, 'target' => $target],
@@ -129,6 +136,8 @@ function shopify_admin_create_redirect(string $shop_url, string $token, string $
 
 /**
  * Delete a redirect by id. Used when the user "reverts" an applied row.
+ * For atkn_ token sites, $redirect_id may be a GID string passed as int-cast —
+ * caller should pass the original string via shopify_admin_delete_redirect_any().
  */
 function shopify_admin_delete_redirect(string $shop_url, string $token, int $redirect_id): array
 {
@@ -136,6 +145,18 @@ function shopify_admin_delete_redirect(string $shop_url, string $token, int $red
     usleep(SHOPIFY_DELAY_US);
     if ($r['status'] === 200 || $r['status'] === 204) return ['success' => true];
     return ['success' => false, 'error' => $r['error'] ?: 'HTTP ' . $r['status']];
+}
+
+/**
+ * Polymorphic delete — accepts either a numeric REST id or a GraphQL GID
+ * string. Picks the right transport based on token prefix + id shape.
+ */
+function shopify_admin_delete_redirect_any(string $shop_url, string $token, $id): array
+{
+    if (shopify_uses_graphql($token)) {
+        return shopify_graphql_delete_redirect($shop_url, $token, (string)$id);
+    }
+    return shopify_admin_delete_redirect($shop_url, $token, (int)$id);
 }
 
 /**

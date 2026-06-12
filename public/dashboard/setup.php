@@ -380,11 +380,70 @@ include __DIR__ . '/_site_stepper.php';
             <div class="setup-section">
                 <h3>Push destination — your CMS</h3>
                 <p class="desc">Optional. When set, every approved post is also pushed to your own CMS via this API. Failure here doesn't block — ContentAgent always hosts a working copy.</p>
+
+                <?php
+                    $platform = strtolower((string)($site['platform'] ?? ''));
+                    $is_shopify = $platform === 'shopify';
+                    $oauth_configured = (bool)config('shopify_client_id') && (bool)config('shopify_client_secret');
+                    $current_token = (string)($site['cms_api_key'] ?? '');
+                    $token_kind = '';
+                    if (str_starts_with($current_token, 'atkn_'))      $token_kind = 'atkn (Dev Dashboard — GraphQL)';
+                    elseif (str_starts_with($current_token, 'shpat_')) $token_kind = 'shpat (Legacy custom app — REST)';
+                    elseif (str_starts_with($current_token, 'shpca_')) $token_kind = 'shpca (CLI custom app — REST)';
+                ?>
+
+                <?php if ($is_shopify): ?>
+                    <div style="background:#f0f9ff; border:1px solid #bae6fd; border-radius:8px; padding:14px 16px; margin-bottom:14px;">
+                        <div style="display:flex; justify-content:space-between; gap:14px; align-items:flex-start; flex-wrap:wrap;">
+                            <div style="flex:1; min-width:260px;">
+                                <strong style="color:#0c4a6e;">Shopify connection</strong>
+                                <?php if ($current_token): ?>
+                                    <div style="font-size:12px; color:#0f172a; margin-top:6px;">
+                                        ✓ Token saved
+                                        <?php if ($token_kind): ?> <span style="color:#475569;">(<?= e($token_kind) ?>)</span><?php endif; ?>
+                                    </div>
+                                <?php else: ?>
+                                    <div style="font-size:12px; color:#475569; margin-top:6px;">
+                                        Not connected yet. Use OAuth (recommended) or paste a token from your Shopify admin.
+                                    </div>
+                                <?php endif; ?>
+                            </div>
+                            <div style="display:flex; gap:8px; align-items:center;">
+                                <?php if ($oauth_configured): ?>
+                                    <form method="GET" action="<?= url('/api/oauth/shopify-install.php') ?>" style="display:flex; gap:6px; align-items:center;">
+                                        <input type="hidden" name="site_id" value="<?= $site_id ?>">
+                                        <input type="text" name="shop" placeholder="my-store.myshopify.com" required
+                                               value="<?= e(parse_url((string)($site['cms_url'] ?? ''), PHP_URL_HOST) ?: '') ?>"
+                                               style="padding:6px 10px; border:1px solid #cbd5e1; border-radius:6px; font-size:12px; width:220px;">
+                                        <button type="submit" class="btn btn-primary" style="font-size:12px; padding:7px 14px;">
+                                            <?= $current_token ? 'Reconnect Shopify' : 'Connect Shopify' ?>
+                                        </button>
+                                    </form>
+                                <?php else: ?>
+                                    <span style="font-size:11px; color:#92400e; background:#fef3c7; padding:5px 9px; border-radius:6px;">
+                                        OAuth not configured server-side — paste a token below instead.
+                                    </span>
+                                <?php endif; ?>
+                            </div>
+                        </div>
+
+                        <details style="margin-top:10px; font-size:12px;">
+                            <summary style="cursor:pointer; color:#0c4a6e;">Why two paths? (token types explained)</summary>
+                            <div style="padding:10px 0 0 0; color:#334155; line-height:1.6;">
+                                <strong>OAuth (recommended)</strong> — one click, no token to copy. Works for every Shopify store; we get a permanent <code>shpat_</code> token under the hood.<br>
+                                <strong>Manual paste — <code>shpat_</code></strong> token from legacy Custom Apps (Shopify admin → Apps → "Develop apps"). Uses Shopify's REST Admin API.<br>
+                                <strong>Manual paste — <code>atkn_</code></strong> token from the new Dev Dashboard (introduced Jan 2026). We auto-route these through Shopify's GraphQL Admin API; no extra config needed.<br>
+                                <em>If OAuth fails or your store is in development mode, paste any of the above into the API key field and save.</em>
+                            </div>
+                        </details>
+                    </div>
+                <?php endif; ?>
+
                 <div class="setup-grid-2">
                     <div class="form-group"><label for="cms_url">CMS URL</label>
-                        <input type="text" id="cms_url" name="cms_url" class="form-control" value="<?= e($site['cms_url'] ?? '') ?>" placeholder="https://cms.yourdomain.com"></div>
+                        <input type="text" id="cms_url" name="cms_url" class="form-control" value="<?= e($site['cms_url'] ?? '') ?>" placeholder="<?= $is_shopify ? 'https://my-store.myshopify.com' : 'https://cms.yourdomain.com' ?>"></div>
                     <div class="form-group"><label for="cms_api_key">CMS API key</label>
-                        <input type="text" id="cms_api_key" name="cms_api_key" class="form-control" value="<?= e($site['cms_api_key'] ?? '') ?>" placeholder="your-api-key"></div>
+                        <input type="text" id="cms_api_key" name="cms_api_key" class="form-control" value="<?= e($site['cms_api_key'] ?? '') ?>" placeholder="<?= $is_shopify ? 'shpat_… or atkn_…' : 'your-api-key' ?>"></div>
                 </div>
             </div>
 

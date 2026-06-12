@@ -9,6 +9,7 @@
 
 require_once __DIR__ . '/base.php';
 require_once __DIR__ . '/../cms-connector.php';
+require_once __DIR__ . '/../connectors/shopify.php';
 
 class CmsChannel extends ChannelAdapter
 {
@@ -70,6 +71,28 @@ class CmsChannel extends ChannelAdapter
                     $post['body'] = (string)($post['body'] ?? '') . $script_tags;
                 }
             }
+        }
+
+        // Platform routing: Shopify gets the Shopify connector (REST or GraphQL
+        // auto-routed by token prefix), everyone else uses the generic Xceed-
+        // style REST CMS API. We also detect Shopify via cms_url since some
+        // sites pre-date the `platform` column being filled in.
+        $platform = strtolower((string)($site['platform'] ?? ''));
+        $is_shopify = $platform === 'shopify' || str_contains((string)($site['cms_url'] ?? ''), 'myshopify.com');
+
+        if ($is_shopify) {
+            $result = shopify_push_post($post, (string)$site['cms_url'], (string)$site['cms_api_key']);
+            if (!empty($result['success'])) {
+                return [
+                    'success'      => true,
+                    'external_id'  => isset($result['remote_id']) ? (string)$result['remote_id'] : null,
+                    // Shopify's connector returns a fully-qualified blog URL; use it
+                    // directly so customers land on their own store, not on the
+                    // synthetic /blog/<slug> we'd construct for hosted-CMS sites.
+                    'external_url' => $result['url'] ?? null,
+                ];
+            }
+            return ['success' => false, 'error' => $result['error'] ?? 'Unknown Shopify error'];
         }
 
         $result = cms_push_post($post, $site['cms_url'], $site['cms_api_key']);

@@ -11,13 +11,23 @@
  */
 
 require_once __DIR__ . '/../helpers.php';
+require_once __DIR__ . '/../integrations/shopify_graphql.php';
 
 /**
  * Push a post to Shopify blog.
+ *
+ * Routes to GraphQL articleCreate for atkn_ tokens (Dev Dashboard automation
+ * tokens, which can't use REST). For legacy shpat_ tokens the existing REST
+ * path runs unchanged.
  */
 function shopify_push_post(array $post, string $shop_url, string $access_token, int $blog_id = 0): array
 {
     $shop_url = rtrim($shop_url, '/');
+
+    if (shopify_uses_graphql($access_token)) {
+        // GraphQL path — blog_id (REST int) is ignored; GraphQL needs GID.
+        return shopify_graphql_create_article($post, $shop_url, $access_token, null);
+    }
 
     // Get or find the blog ID
     if (!$blog_id) {
@@ -115,10 +125,18 @@ function shopify_get_default_blog(string $shop_url, string $access_token): ?int
 }
 
 /**
- * Test Shopify connection.
+ * Test Shopify connection. Routes to GraphQL for atkn_ tokens.
  */
 function shopify_test_connection(string $shop_url, string $access_token): array
 {
+    if (shopify_uses_graphql($access_token)) {
+        $v = shopify_graphql_verify($shop_url, $access_token);
+        if ($v['ok']) {
+            return ['success' => true, 'shop' => $v['shop']['name'] ?? '', 'domain' => $v['shop']['domain'] ?? ''];
+        }
+        return ['success' => false, 'error' => $v['error'] ?? 'verify_failed'];
+    }
+
     $api = rtrim($shop_url, '/') . '/admin/api/2024-01/shop.json';
 
     $ch = curl_init($api);

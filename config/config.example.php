@@ -63,6 +63,12 @@ return [
     'facebook_app_id'     => '',
     'facebook_app_secret' => '',
 
+    // Shopify (OAuth2 — public/custom app via Partner or Dev Dashboard)
+    // Redirect URI to register: {app_url}/api/oauth/shopify-callback.php
+    // Scopes: write_content, write_redirect_urls, read_products, read_themes
+    'shopify_client_id'     => '',
+    'shopify_client_secret' => '',
+
     // Stripe Billing
     'stripe_secret_key'       => '',
     'stripe_webhook_secret'   => '',
