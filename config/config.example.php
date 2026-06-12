@@ -65,7 +65,7 @@ return [
 
     // Shopify (OAuth2 — public/custom app via Partner or Dev Dashboard)
     // Redirect URI to register: {app_url}/api/oauth/shopify-callback.php
-    // Scopes: write_content, write_url_redirects, read_products, read_themes
+    // Scopes: write_content, write_online_store_navigation, read_products, read_themes
     'shopify_client_id'     => '',
     'shopify_client_secret' => '',
 

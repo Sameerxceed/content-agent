@@ -13,7 +13,7 @@
  * 2. Set "App URL" = config('app_url') . '/dashboard/setup.php'
  * 3. Set "Allowed redirection URL" =
  *    config('app_url') . '/api/oauth/shopify-callback.php'
- * 4. Set scopes: write_content, write_url_redirects, read_products, read_themes
+ * 4. Set scopes: write_content, write_online_store_navigation, read_products, read_themes
  * 5. Copy Client ID + Client Secret into config.php as shopify_client_id /
  *    shopify_client_secret.
  *
@@ -27,14 +27,16 @@
 require_once __DIR__ . '/../helpers.php';
 
 /**
- * Scopes we request. write_content covers articles + pages, write_url_redirects
- * covers the 301 map, read_products powers GMC + image SEO, read_themes lets
- * us deploy the branded 404 page.
- *
- * NOTE: the redirect scope is `write_url_redirects` (underscore, plural). It's
- * easy to misremember as `write_redirect_urls` — that scope doesn't exist.
+ * Scopes we request:
+ *   - write_content                  → blog articles + pages
+ *   - write_online_store_navigation  → URL redirects (Shopify moved redirects
+ *                                      under the Navigation API in 2026; the
+ *                                      old `write_url_redirects` scope was
+ *                                      retired)
+ *   - read_products                  → GMC feed audit + Image SEO
+ *   - read_themes                    → deploy branded 404.liquid to theme
  */
-const SHOPIFY_OAUTH_SCOPES = 'write_content,write_url_redirects,read_products,read_themes';
+const SHOPIFY_OAUTH_SCOPES = 'write_content,write_online_store_navigation,read_products,read_themes';
 
 /**
  * Normalise whatever the user typed into a canonical shop hostname.
