@@ -1,6 +1,18 @@
 RewriteEngine On
 
-# Pretty URLs: /legal/<site_id>/<slug>  → view.php?site=<site_id>&slug=<slug>
+# ContentAgent's own legal pages (App Store URLs must be site-agnostic):
+#   /legal/privacy  → privacy.php
+#   /legal/terms    → terms.php
+#   /legal/support  → support.php
+RewriteCond %{REQUEST_FILENAME} !-f
+RewriteRule ^privacy$ privacy.php [L]
+RewriteCond %{REQUEST_FILENAME} !-f
+RewriteRule ^terms$ terms.php [L]
+RewriteCond %{REQUEST_FILENAME} !-f
+RewriteRule ^support$ support.php [L]
+
+# Customer-site legal docs (per-tenant):
+#   /legal/<site_id>/<slug>  → view.php?site=<site_id>&slug=<slug>
 RewriteCond %{REQUEST_FILENAME} !-f
 RewriteCond %{REQUEST_FILENAME} !-d
 RewriteRule ^([0-9]+)/([a-z0-9\-]+)$ view.php?site=$1&slug=$2 [L,QSA]
