@@ -223,10 +223,22 @@ try {
     if ($action === 'bulk_approve') {
         // Approve every pending row that has a non-null to_path. Skips
         // no-target rows (those need a manual decision).
+        //
+        // Optional `filter` argument narrows the approval to the same
+        // confidence bucket the user is currently viewing — so clicking
+        // "Approve all" on the Medium tab approves only the 60-84% rows,
+        // not the low-confidence ones too. Mirrors the filter SQL from
+        // public/dashboard/redirects.php.
+        $filter = (string)($payload['filter'] ?? 'all');
+        $bucket_sql = '';
+        if ($filter === 'high')   $bucket_sql = ' AND confidence >= 85';
+        if ($filter === 'medium') $bucket_sql = ' AND confidence BETWEEN 60 AND 84';
+        if ($filter === 'low')    $bucket_sql = ' AND (confidence < 60 OR confidence IS NULL)';
+
         $stmt = $db->prepare("UPDATE redirect_map SET status = 'approved', updated_at = NOW()
-                              WHERE site_id = ? AND status = 'pending' AND to_path IS NOT NULL");
+                              WHERE site_id = ? AND status = 'pending' AND to_path IS NOT NULL{$bucket_sql}");
         $stmt->execute([$site_id]);
-        rd_respond(['success' => true, 'approved' => $stmt->rowCount()]);
+        rd_respond(['success' => true, 'approved' => $stmt->rowCount(), 'filter' => $filter]);
     }
 
     if ($action === 'export_not_found') {

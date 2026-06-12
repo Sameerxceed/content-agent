@@ -374,6 +374,35 @@ ob_start();
     <a class="rd-pill <?= $filter === 'rejected'  ? 'active' : '' ?>" href="?site=<?= $site_id ?>&filter=rejected">Rejected (<?= (int)($summary['by_status']['rejected'] ?? 0) ?>)</a>
 </div>
 
+<?php
+// Per-tab bulk approve — counts pending rows in the current bucket that have a
+// target. Skips the All/Approved/Rejected/No-target tabs (nothing to approve
+// there in one safe sweep).
+$bucket_approvable = 0;
+$bucket_label      = '';
+if (in_array($filter, ['pending','high','medium','low'], true)) {
+    $bucket_filter = [
+        'pending' => '',
+        'high'    => ' AND confidence >= 85',
+        'medium'  => ' AND confidence BETWEEN 60 AND 84',
+        'low'     => ' AND (confidence < 60 OR confidence IS NULL)',
+    ][$filter];
+    $cnt = $db->prepare("SELECT COUNT(*) FROM redirect_map
+                          WHERE site_id = ? AND status = 'pending' AND to_path IS NOT NULL{$bucket_filter}");
+    $cnt->execute([$site_id]);
+    $bucket_approvable = (int)$cnt->fetchColumn();
+    $bucket_label = ['pending'=>'pending','high'=>'high-confidence','medium'=>'medium-confidence','low'=>'low-confidence'][$filter];
+}
+?>
+<?php if ($bucket_approvable > 0): ?>
+<div style="max-width:980px; margin:0 0 10px; display:flex; justify-content:flex-end;">
+    <button class="btn btn-outline btn-sm" onclick="approveBucket(this, '<?= e($filter) ?>', <?= $bucket_approvable ?>)"
+            title="Bulk-approve every pending row in this tab that already has a target">
+        ✓ Approve all <?= $bucket_approvable ?> <?= e($bucket_label) ?>
+    </button>
+</div>
+<?php endif; ?>
+
 <div style="max-width:980px;">
     <?php if (empty($redirects)): ?>
         <div class="rd-empty">
@@ -651,6 +680,24 @@ async function approveAllPending(btn) {
     btn.innerHTML = 'Approving…';
     try {
         const r = await call('bulk_approve');
+        alert(`Approved ${r.approved} redirects.`);
+        window.location.reload();
+    } catch (e) {
+        alert(e.message);
+        btn.disabled = false;
+        btn.innerHTML = orig;
+    }
+}
+
+async function approveBucket(btn, filter, count) {
+    const labels = {pending:'pending', high:'high-confidence', medium:'medium-confidence', low:'low-confidence'};
+    const label = labels[filter] || filter;
+    if (!confirm(`Approve all ${count} ${label} redirects that have a target?`)) return;
+    btn.disabled = true;
+    const orig = btn.innerHTML;
+    btn.innerHTML = 'Approving…';
+    try {
+        const r = await call('bulk_approve', {filter: filter});
         alert(`Approved ${r.approved} redirects.`);
         window.location.reload();
     } catch (e) {
