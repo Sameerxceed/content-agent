@@ -16,6 +16,7 @@
 require_once __DIR__ . '/../../includes/helpers.php';
 require_once __DIR__ . '/../../includes/auth.php';
 require_once __DIR__ . '/../../includes/integrations/linkedin.php';
+require_once __DIR__ . '/../../includes/integrations/pinterest.php';
 require_once __DIR__ . '/../../includes/integrations/google.php';
 
 auth_start();
@@ -474,24 +475,27 @@ include __DIR__ . '/_site_stepper.php';
                     'llms'       => ['name' => 'llms.txt',           'icon' => '&#129302;','desc' => 'AI crawler discovery'],
                     'linkedin'   => ['name' => 'LinkedIn',           'icon' => '&#128279;','desc' => 'Personal or company page'],
                     'twitter'    => ['name' => 'Twitter / X',        'icon' => '&#128038;','desc' => 'Thread on your handle'],
+                    'pinterest'  => ['name' => 'Pinterest',          'icon' => '&#128204;','desc' => 'Pin to your chosen board'],
                     'newsletter' => ['name' => 'Newsletter',         'icon' => '&#9993;',  'desc' => 'Sent to subscribers'],
                 ];
-                // Presets — clicking populates all 6 offsets in one go.
+                // Presets — clicking populates every offset in one go. B2B
+                // typically skips Pinterest (-1 = "don't publish here"); B2C
+                // benefits most from Pinterest (visual / buyer intent).
                 $presets = [
                     'b2b' => [
                         'label' => 'B2B SaaS (recommended)',
                         'desc'  => 'Blog leads, social next day, newsletter mid-week — gives each channel its own moment',
-                        'offsets' => ['cms' => 0, 'schema' => 0, 'llms' => 0, 'linkedin' => 1, 'twitter' => 1, 'newsletter' => 2],
+                        'offsets' => ['cms' => 0, 'schema' => 0, 'llms' => 0, 'linkedin' => 1, 'twitter' => 1, 'pinterest' => -1, 'newsletter' => 2],
                     ],
                     'b2c' => [
                         'label' => 'B2C / ecommerce',
-                        'desc'  => 'Everything together — social drives traffic to the post the same day it goes live',
-                        'offsets' => ['cms' => 0, 'schema' => 0, 'llms' => 0, 'linkedin' => 0, 'twitter' => 0, 'newsletter' => 0],
+                        'desc'  => 'Blog + schema today, Pinterest tomorrow for visual discovery, social same day',
+                        'offsets' => ['cms' => 0, 'schema' => 0, 'llms' => 0, 'linkedin' => 0, 'twitter' => 0, 'pinterest' => 1, 'newsletter' => 0],
                     ],
                     'solo' => [
                         'label' => 'Solo creator',
-                        'desc'  => 'Twitter first to build buzz, blog next day, newsletter caps the week',
-                        'offsets' => ['twitter' => 0, 'cms' => 1, 'schema' => 1, 'llms' => 1, 'linkedin' => 1, 'newsletter' => 3],
+                        'desc'  => 'Twitter first to build buzz, blog next day, Pinterest + newsletter mid-week',
+                        'offsets' => ['twitter' => 0, 'cms' => 1, 'schema' => 1, 'llms' => 1, 'linkedin' => 1, 'pinterest' => 2, 'newsletter' => 3],
                     ],
                 ];
                 // Group channels by their current offset day for the visual timeline.
@@ -673,6 +677,7 @@ include __DIR__ . '/_site_stepper.php';
                 'google_search_console'  => ['name' => 'Google Search Console', 'desc' => 'Track impressions, clicks, position from Google. Also unlocks Merchant Center diagnostics if you sell on Google Shopping.', 'configure' => google_get_auth_url($site_id), 'connect_url' => google_get_auth_url($site_id), 'reconnect_url' => google_get_auth_url($site_id), 'disconnect_action' => 'google_search_console', 'cta' => 'Connect Google'],
                 'linkedin'               => ['name' => 'LinkedIn',  'desc' => 'Post to your LinkedIn page or personal profile.', 'configure' => '/dashboard/linkedin-author.php?site=' . $site_id, 'connect_url' => linkedin_get_auth_url($site_id), 'cta' => 'Connect LinkedIn'],
                 'twitter'                => ['name' => 'Twitter / X', 'desc' => 'Auto-post threads to your X account.', 'configure' => '/dashboard/integrations.php#twitter', 'cta' => 'Connect Twitter'],
+                'pinterest'              => ['name' => 'Pinterest', 'desc' => 'Auto-pin each blog post to your chosen board — high-buyer-intent traffic for visual products.', 'configure' => '/dashboard/pinterest-board.php?site=' . $site_id, 'connect_url' => url('/api/oauth/pinterest-install.php?site_id=' . $site_id), 'reconnect_url' => url('/api/oauth/pinterest-install.php?site_id=' . $site_id), 'disconnect_action' => 'pinterest', 'cta' => 'Connect Pinterest'],
                 'newsletter'             => ['name' => 'Newsletter (Resend)', 'desc' => 'Send blog drops to your subscriber list.', 'configure' => '/dashboard/integrations.php#resend', 'cta' => 'Configure'],
             ];
             foreach ($channel_meta as $key => $meta):

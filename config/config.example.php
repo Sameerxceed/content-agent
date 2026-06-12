@@ -63,6 +63,12 @@ return [
     'facebook_app_id'     => '',
     'facebook_app_secret' => '',
 
+    // Pinterest (OAuth2 — register at developers.pinterest.com)
+    // Redirect URI to register: {app_url}/api/oauth/pinterest-callback.php
+    // Scopes: boards:read, pins:write, user_accounts:read
+    'pinterest_client_id'     => '',
+    'pinterest_client_secret' => '',
+
     // Shopify (OAuth2 — public/custom app via Partner or Dev Dashboard)
     // Redirect URI to register: {app_url}/api/oauth/shopify-callback.php
     // Scopes: write_content, write_online_store_navigation, read_products, read_themes

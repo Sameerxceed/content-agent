@@ -19,6 +19,7 @@ function channel_schedule_defaults(): array
         'llms'       => 0, // index regeneration; same day
         'linkedin'   => 1, // mid-week professional engagement peak
         'twitter'    => 1,
+        'pinterest'  => 1, // next-day pinning so blog has time to render hero image
         'newsletter' => 2, // mid-week open-rate sweet spot
     ];
 }

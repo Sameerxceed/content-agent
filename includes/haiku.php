@@ -384,6 +384,23 @@ function haiku_repurpose_for_channel(array $post, string $channel, array $site):
                 . ($blog_url ? "Link: {$blog_url}\n\n" : '')
                 . "Write the newsletter section featuring this post.",
         ],
+        'pinterest' => [
+            // Pinterest pins have a title (~100 char) AND a description (~500
+            // char). We return both as "Title\n\nDescription" — the channel
+            // adapter splits on the blank line. Pinterest's algorithm rewards
+            // keyword-rich descriptions + 3-6 relevant hashtags at the end.
+            'system' => "You write Pinterest pins for a business that drives traffic from Pinterest searchers to its blog.\n"
+                . "Format the output as exactly two parts separated by a blank line:\n"
+                . "  PART 1 (title): a click-worthy headline, max 90 characters, no clickbait. Title case. No emoji.\n"
+                . "  PART 2 (description): 150-300 characters that promise what the reader will get from the linked post. "
+                . "Use specific words a Pinterest user would actually search for. End with 3-6 relevant hashtags (lowercase, no spaces).\n"
+                . "Tone: {$brand_tone}. Voice: {$site_name}.\n"
+                . "{$brand_block}"
+                . "Output ONLY the title, blank line, then the description with hashtags. No labels, no quotes.",
+            'prompt' => "Source blog post:\n\nTitle: {$title}\n\nContent: {$body_excerpt}\n\n"
+                . ($blog_url ? "Link Pinterest users will click to: {$blog_url}\n\n" : '')
+                . "Write the pin title and description that will make Pinterest searchers tap through.",
+        ],
     ];
 
     if (!isset($templates[$channel])) {
