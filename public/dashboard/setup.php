@@ -410,15 +410,21 @@ include __DIR__ . '/_site_stepper.php';
                             </div>
                             <div style="display:flex; gap:8px; align-items:center;">
                                 <?php if ($oauth_configured): ?>
-                                    <form method="GET" action="<?= url('/api/oauth/shopify-install.php') ?>" style="display:flex; gap:6px; align-items:center;">
-                                        <input type="hidden" name="site_id" value="<?= $site_id ?>">
-                                        <input type="text" name="shop" placeholder="my-store.myshopify.com" required
+                                    <?php /* NOT a real <form> — we're nested inside the Setup save-form and HTML
+                                            disallows nested forms (browser drops the inner one). Use JS to navigate. */ ?>
+                                    <div style="display:flex; gap:6px; align-items:center;">
+                                        <input type="text" id="shopify_oauth_shop" placeholder="my-store.myshopify.com" required
                                                value="<?= e(parse_url((string)($site['cms_url'] ?? ''), PHP_URL_HOST) ?: '') ?>"
                                                style="padding:6px 10px; border:1px solid #cbd5e1; border-radius:6px; font-size:12px; width:220px;">
-                                        <button type="submit" class="btn btn-primary" style="font-size:12px; padding:7px 14px;">
+                                        <button type="button" class="btn btn-primary" style="font-size:12px; padding:7px 14px;"
+                                                onclick="(function(){
+                                                    var s = document.getElementById('shopify_oauth_shop').value.trim();
+                                                    if(!s){ alert('Enter your Shopify shop domain'); return; }
+                                                    window.location.href = '<?= url('/api/oauth/shopify-install.php') ?>?site_id=<?= $site_id ?>&shop=' + encodeURIComponent(s);
+                                                })();">
                                             <?= $current_token ? 'Reconnect Shopify' : 'Connect Shopify' ?>
                                         </button>
-                                    </form>
+                                    </div>
                                 <?php else: ?>
                                     <span style="font-size:11px; color:#92400e; background:#fef3c7; padding:5px 9px; border-radius:6px;">
                                         OAuth not configured server-side — paste a token below instead.
